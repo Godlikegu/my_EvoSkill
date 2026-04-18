@@ -1,0 +1,16 @@
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.coverage
+build/
+dist/
+*.egg-info/
+.DS_Store
+runtime_logs/*
+!runtime_logs/.gitkeep
+artifacts/workspaces/*
+artifacts/logs/*
+!artifacts/.gitkeep
+.conda_env/

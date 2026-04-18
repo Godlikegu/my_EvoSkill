@@ -1,0 +1,393 @@
+{
+  "execution_conventions": {
+    "entrypoint": "work/main.py",
+    "read_first": [
+      "README_public.md"
+    ],
+    "readable_paths": [
+      "README_public.md",
+      "data/raw_data.npz",
+      "data/meta_data.json",
+      "requirements.txt"
+    ],
+    "writable_paths": [
+      "work",
+      "output",
+      "checkpoints"
+    ]
+  },
+  "family": "chemistry",
+  "judge_metrics": [
+    "ncc_vs_ref",
+    "nrmse_vs_ref",
+    "temperature_error_K"
+  ],
+  "judge_spec": {
+    "adapter_path": "evaluation/judge_adapter.py",
+    "callable": "evaluate_run",
+    "metric_sources": [
+      {
+        "callable": "compute_metrics",
+        "kind": "script",
+        "metric": "ncc_vs_ref",
+        "source_path": "src/visualization.py"
+      },
+      {
+        "callable": "compute_metrics",
+        "kind": "script",
+        "metric": "nrmse_vs_ref",
+        "source_path": "src/visualization.py"
+      },
+      {
+        "callable": "compute_metrics",
+        "kind": "script",
+        "metric": "temperature_error_K",
+        "source_path": "src/visualization.py"
+      }
+    ],
+    "metrics": [
+      "ncc_vs_ref",
+      "nrmse_vs_ref",
+      "temperature_error_K"
+    ],
+    "metrics_config_path": "evaluation/metrics.json",
+    "ready": true,
+    "registration_contract_path": "evaluation/registration_contract.json",
+    "required_fields": [
+      "estimated_temperature_K",
+      "reconstructed_spectrum",
+      "nu_axis"
+    ],
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_manifest",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "output_contract": {
+    "required_outputs": [
+      {
+        "format": "npz",
+        "numeric_fields": [
+          "estimated_temperature_K",
+          "reconstructed_spectrum",
+          "nu_axis"
+        ],
+        "path": "output/reconstruction.npz",
+        "required_fields": [
+          "estimated_temperature_K",
+          "reconstructed_spectrum",
+          "nu_axis"
+        ],
+        "same_shape_fields": [
+          "reconstructed_spectrum",
+          "nu_axis"
+        ]
+      }
+    ]
+  },
+  "proxy_output_name": "reconstruction.npz",
+  "proxy_spec": {
+    "numeric_fields": [
+      "estimated_temperature_K",
+      "reconstructed_spectrum",
+      "nu_axis"
+    ],
+    "output_dtype": "npz",
+    "primary_output": "output/reconstruction.npz",
+    "required_fields": [
+      "estimated_temperature_K",
+      "reconstructed_spectrum",
+      "nu_axis"
+    ],
+    "same_shape_fields": [
+      "reconstructed_spectrum",
+      "nu_axis"
+    ]
+  },
+  "public_eval_spec": {
+    "alignments": [
+      {
+        "atol": 1e-06,
+        "field": "nu_axis",
+        "mode": "allclose",
+        "output_path": "output/reconstruction.npz",
+        "rtol": 1e-06,
+        "source_field": "nu_axis",
+        "source_path": "data/raw_data.npz"
+      },
+      {
+        "field": "reconstructed_spectrum",
+        "mode": "shape",
+        "output_path": "output/reconstruction.npz",
+        "source_field": "measurements",
+        "source_path": "data/raw_data.npz"
+      }
+    ]
+  },
+  "public_policy": {
+    "public_data_allowlist": [
+      "data/raw_data.npz",
+      "data/meta_data.json"
+    ],
+    "public_data_denylist": [
+      "ground_truth.npz",
+      "reference_outputs"
+    ],
+    "readme_policy": {
+      "preserve_sections": [
+        "Method Hints",
+        "References",
+        "Data Description",
+        "Problem Description",
+        "Background"
+      ],
+      "preserve_user_eval_notes": true,
+      "remove_path_patterns": [
+        "(?i)data/ground_truth\\.",
+        "(?i)data/baseline_reference\\.",
+        "(?i)data/simu\\.",
+        "(?i)evaluation/reference_outputs/",
+        "(?i)evaluation/tests/",
+        "(?i)\\bmain\\.py\\b",
+        "(?i)\\bsrc/",
+        "(?i)\\bnotebooks/",
+        "(?i)\\bplan/"
+      ],
+      "remove_sections": []
+    }
+  },
+  "registration_contract": {
+    "execution_conventions": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "README_public.md"
+      ],
+      "readable_paths": [
+        "README_public.md",
+        "data/raw_data.npz",
+        "data/meta_data.json",
+        "requirements.txt"
+      ],
+      "writable_paths": [
+        "work",
+        "output",
+        "checkpoints"
+      ]
+    },
+    "family": "chemistry",
+    "judge_contract": {
+      "metrics": [
+        {
+          "callable": "compute_metrics",
+          "description": "Cosine similarity between reconstructed spectrum and hidden reference spectrum.",
+          "inputs": {
+            "params_pred": {
+              "temperature": {
+                "output_field": "estimated_temperature_K",
+                "scalar_index": 0
+              }
+            },
+            "params_true": {
+              "temperature": {
+                "field": "temperature",
+                "resource_path": "data/ground_truth.npz",
+                "scalar_index": 0
+              }
+            },
+            "y_pred": {
+              "output_field": "reconstructed_spectrum"
+            },
+            "y_true": {
+              "field": "measurements",
+              "index": 0,
+              "resource_path": "data/raw_data.npz"
+            }
+          },
+          "kind": "script",
+          "name": "ncc_vs_ref",
+          "pass_condition": {
+            "operator": ">=",
+            "threshold": 0.898525
+          },
+          "result_key": "ncc",
+          "source_path": "src/visualization.py"
+        },
+        {
+          "callable": "compute_metrics",
+          "description": "NRMSE between reconstructed spectrum and hidden reference spectrum.",
+          "inputs": {
+            "params_pred": {
+              "temperature": {
+                "output_field": "estimated_temperature_K",
+                "scalar_index": 0
+              }
+            },
+            "params_true": {
+              "temperature": {
+                "field": "temperature",
+                "resource_path": "data/ground_truth.npz",
+                "scalar_index": 0
+              }
+            },
+            "y_pred": {
+              "output_field": "reconstructed_spectrum"
+            },
+            "y_true": {
+              "field": "measurements",
+              "index": 0,
+              "resource_path": "data/raw_data.npz"
+            }
+          },
+          "kind": "script",
+          "name": "nrmse_vs_ref",
+          "pass_condition": {
+            "operator": "<=",
+            "threshold": 0.020064
+          },
+          "result_key": "nrmse",
+          "source_path": "src/visualization.py"
+        },
+        {
+          "callable": "compute_metrics",
+          "description": "Absolute temperature error against the hidden ground truth.",
+          "inputs": {
+            "params_pred": {
+              "temperature": {
+                "output_field": "estimated_temperature_K",
+                "scalar_index": 0
+              }
+            },
+            "params_true": {
+              "temperature": {
+                "field": "temperature",
+                "resource_path": "data/ground_truth.npz",
+                "scalar_index": 0
+              }
+            },
+            "y_pred": {
+              "output_field": "reconstructed_spectrum"
+            },
+            "y_true": {
+              "field": "measurements",
+              "index": 0,
+              "resource_path": "data/raw_data.npz"
+            }
+          },
+          "kind": "script",
+          "name": "temperature_error_K",
+          "pass_condition": {
+            "operator": "<=",
+            "threshold": 50.0
+          },
+          "result_key": "temperature_error_K",
+          "source_path": "src/visualization.py"
+        }
+      ]
+    },
+    "output_contract": {
+      "format": "npz",
+      "numeric_fields": [
+        "estimated_temperature_K",
+        "reconstructed_spectrum",
+        "nu_axis"
+      ],
+      "path": "output/reconstruction.npz",
+      "required_fields": [
+        "estimated_temperature_K",
+        "reconstructed_spectrum",
+        "nu_axis"
+      ],
+      "same_shape_fields": [
+        "reconstructed_spectrum",
+        "nu_axis"
+      ]
+    },
+    "resources": [
+      {
+        "authority": "authoritative",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Task description and public constraints for the solver.",
+        "visibility": "public"
+      },
+      {
+        "authority": "authoritative",
+        "path": "data/raw_data.npz",
+        "role": "public_input_data",
+        "semantics": "Public observation data available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "authority": "authoritative",
+        "path": "data/meta_data.json",
+        "role": "public_metadata",
+        "semantics": "Public physical parameters, constants, and experiment configuration.",
+        "visibility": "public"
+      },
+      {
+        "authority": "authoritative",
+        "path": "evaluation/metrics.json",
+        "role": "hidden_metric_config",
+        "semantics": "Metric threshold configuration used by the hidden judge.",
+        "visibility": "private"
+      },
+      {
+        "authority": "authoritative",
+        "path": "data/ground_truth.npz",
+        "role": "hidden_reference",
+        "semantics": "Hidden ground-truth reference used for metric evaluation.",
+        "visibility": "private"
+      },
+      {
+        "authority": "supplementary",
+        "path": "evaluation/reference_outputs/inversion_result.png",
+        "role": "hidden_reference",
+        "semantics": "Hidden reference output retained for offline evaluation or parity checks.",
+        "visibility": "private"
+      },
+      {
+        "authority": "supplementary",
+        "path": "evaluation/reference_outputs/reconstruction.npz",
+        "role": "hidden_reference",
+        "semantics": "Hidden reference output retained for offline evaluation or parity checks.",
+        "visibility": "private"
+      },
+      {
+        "authority": "supplementary",
+        "path": "src/visualization.py",
+        "role": "metric_helper",
+        "semantics": "Task-private Python source that defines or computes evaluation metrics.",
+        "visibility": "private"
+      },
+      {
+        "authority": "supplementary",
+        "path": "main.py",
+        "role": "metric_helper",
+        "semantics": "Task-private Python source that defines or computes evaluation metrics.",
+        "visibility": "private"
+      }
+    ],
+    "runtime_policy": {
+      "execution_budget_seconds": 240,
+      "model_timeout_seconds": 600
+    },
+    "task_id": "cars_spectroscopy"
+  },
+  "registration_contract_path": "evaluation/registration_contract.json",
+  "runtime_layout": {
+    "checkpoints_dir": "checkpoints",
+    "data_dir": "data",
+    "output_dir": "output",
+    "public_bundle_dir": "public_bundle",
+    "work_dir": "work"
+  },
+  "runtime_policy": {
+    "execution_budget_seconds": 240,
+    "model_timeout_seconds": 600
+  },
+  "source_task_dir": "../tasks/cars_spectroscopy",
+  "task_id": "cars_spectroscopy"
+}

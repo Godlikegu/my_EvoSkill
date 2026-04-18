@@ -1,0 +1,147 @@
+# Task Registration
+
+## Summary
+
+MyEvoSkill now treats task onboarding as a contract-driven control-plane step.
+Raw task directories under `tasks/<task_id>/` first produce a draft
+`registration_contract`, then register only after the user confirms the final
+contract.
+
+The task-registration surface is exposed through:
+
+- installed CLI: `myevoskill-task-contract-draft`
+- installed CLI: `myevoskill-task-register`
+- module CLI: `python -m myevoskill.task_registration`
+- Python APIs: `draft_task_contract(...)`, `register_task(...)`
+
+## CLI Usage
+
+Step 1. Provide `tasks/<task_id>/evaluation/registration_input.json`, then
+generate the draft contract:
+
+```bash
+myevoskill-task-contract-draft --task-root ../tasks/conventional_ptychography --output-root .
+```
+
+This command writes:
+
+- `tasks/<task_id>/evaluation/registration_input.json`
+- `tasks/<task_id>/evaluation/registration_contract.draft.json`
+- `tasks/<task_id>/evaluation/contract_generation.notes.json`
+
+The draft CLI accepts an optional `--registration-input` override, but by
+default it reads `tasks/<task_id>/evaluation/registration_input.json`.
+
+If the first agent result fails local contract validation, the harness performs
+exactly one repair round by feeding the validation errors and the previous
+draft summary back to the Claude registration agent.
+
+`registration_input.json` is the registration-stage semantic interface. It
+declares:
+
+- which files are task description, public input, public metadata, public eval
+  helpers, hidden references, and hidden metric config
+- which files carry evaluation logic, for example `main.py` or
+  `src/visualization.py`
+- which metrics, operators, and thresholds define pass/fail
+- optional execution hints such as `read_first`, suggested entrypoint, and
+  suggested output path
+
+Step 2. After the user confirms
+`tasks/<task_id>/evaluation/registration_contract.json`, register the task:
+
+```bash
+myevoskill-task-register --task-root ../tasks/conventional_ptychography --output-root .
+```
+
+This installed CLI is available after `pip install -e .`.
+
+Equivalent module form after editable install:
+
+```bash
+python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
+```
+
+Repo-local module form without installation:
+
+```bash
+PYTHONPATH=src python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
+```
+
+Optional arguments:
+
+- `--output-root`
+  Project root where `registry/tasks/` should be written. Defaults to the
+  current working directory.
+- `--registration-input`
+  Optional override for the task-local `registration_input.json` path used by
+  the registration agent.
+
+## Generated Artifacts
+
+Draft generation writes:
+
+- `tasks/<task_id>/evaluation/registration_input.json`
+  User-provided semantic input that tells the registration agent which task
+  resources and metric conventions matter.
+- `tasks/<task_id>/evaluation/registration_contract.draft.json`
+  Registration-agent draft. The user reviews this file and confirms it into
+  `registration_contract.json`.
+- `tasks/<task_id>/evaluation/contract_generation.notes.json`
+  Draft notes, structured warnings, declared inputs used, resource validation,
+  agent completion metadata, and draft attempt summaries. `warnings` is always
+  present and is `[]` when there is no conflict.
+
+Confirmed registration writes:
+
+- `registry/tasks/<task_id>.json`
+  Formal manifest derived from the confirmed registration contract.
+- `registry/tasks/<task_id>.notes.json`
+  Registry mirror of the registration notes and judge validation checks.
+- `tasks/<task_id>/evaluation/judge_adapter.py`
+  Ready hidden-judge adapter generated from the confirmed contract.
+
+## Registration Rules
+
+The registration module is contract-first:
+
+- the draft stage is driven by `registration_input.json` plus the mandatory
+  Claude registration agent
+- the agent may explore the task directory read-only, but the user-declared
+  semantics are the high-priority input
+- if the agent's inference conflicts with the user declaration, the conflict is
+  reported in `contract_generation.notes.json` warnings instead of being
+  silently overwritten
+- metric pass/fail conditions are normalized into
+  `judge_contract.metrics[*].pass_condition = { operator, threshold }`
+- the confirmed source of truth is
+  `tasks/<task_id>/evaluation/registration_contract.json`
+- formal registration refuses to proceed without a confirmed contract
+- formal registration performs static task-local path validation on confirmed
+  `resources[*].path`, `source_path`, and metric input resource paths
+- live execution refuses to run unless the manifest has `judge_spec.ready=true`
+  and the confirmed contract is loadable
+
+The default public output contract is unified to:
+
+- path: `output/reconstruction.npz`
+- format: `npz`
+
+If a task currently emits HDF5 or another private format, registration should
+still recommend a public `npz` contract and note that an explicit export is
+needed.
+
+## Manual Follow-up
+
+The draft contract is not the final truth source. Before registration, confirm:
+
+- `family`
+- `resources[*].semantics`, especially metric-helper and hidden-reference files
+- `output_contract`
+- `judge_contract.metrics`
+- `judge_contract.metrics[*].pass_condition`
+- `execution_conventions`
+
+Batch runners should consume only registered manifests from
+`registry/tasks/*.json`. They should not bypass registration and run arbitrary
+task directories directly.

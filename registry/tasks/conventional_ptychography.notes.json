@@ -1,0 +1,390 @@
+{
+  "attempt_count": 2,
+  "attempt_summaries": [
+    {
+      "attempt": 1,
+      "completion_source": "result_message",
+      "status": "invalid_contract",
+      "validation_errors": [
+        "missing execution_conventions.read_first",
+        "missing execution_conventions.readable_paths",
+        "missing execution_conventions.writable_paths",
+        "missing output_contract.numeric_fields",
+        "missing output_contract.same_shape_fields",
+        "resources[0].semantics is required",
+        "resources[0].visibility must be one of: ['private', 'public']",
+        "resources[1].semantics is required",
+        "resources[1].visibility must be one of: ['private', 'public']",
+        "resources[2].semantics is required",
+        "resources[2].visibility must be one of: ['private', 'public']",
+        "resources[3].semantics is required",
+        "resources[3].visibility must be one of: ['private', 'public']",
+        "resources[4].semantics is required",
+        "resources[4].visibility must be one of: ['private', 'public']",
+        "resources[5].semantics is required",
+        "resources[5].visibility must be one of: ['private', 'public']",
+        "resources[6].semantics is required",
+        "resources[6].visibility must be one of: ['private', 'public']",
+        "resources[7].semantics is required",
+        "resources[7].visibility must be one of: ['private', 'public']"
+      ],
+      "vendor_session_ref": {
+        "matched_native_exists": true,
+        "matched_native_path": "C:\\Users\\admin\\.claude\\projects\\D--yan1-agent-AutoSkill-tasks-conventional-ptychography\\c15ffd3d-6e12-4c34-9bc0-28e99ef098be.jsonl",
+        "project_key": "D--yan1-agent-AutoSkill-tasks-conventional-ptychography",
+        "projects_root": "C:\\Users\\admin\\.claude\\projects",
+        "sdk_backend": "claude_sdk",
+        "session_id": "c15ffd3d-6e12-4c34-9bc0-28e99ef098be"
+      }
+    },
+    {
+      "attempt": 2,
+      "completion_source": "result_message",
+      "status": "succeeded",
+      "vendor_session_ref": {
+        "matched_native_exists": true,
+        "matched_native_path": "C:\\Users\\admin\\.claude\\projects\\D--yan1-agent-AutoSkill-tasks-conventional-ptychography\\225df723-62d4-48f3-acdc-7f294baae46d.jsonl",
+        "project_key": "D--yan1-agent-AutoSkill-tasks-conventional-ptychography",
+        "projects_root": "C:\\Users\\admin\\.claude\\projects",
+        "sdk_backend": "claude_sdk",
+        "session_id": "225df723-62d4-48f3-acdc-7f294baae46d"
+      }
+    }
+  ],
+  "completion_source": "result_message",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\conventional_ptychography\\evaluation\\registration_contract.json",
+  "contract": {
+    "execution_conventions": {
+      "dependencies": "requirements.txt",
+      "entrypoint": "main.py",
+      "notes": "Solver must save a .npz file with a complex-valued 'object' field of shape (542, 542). The judge extracts phase via np.angle, mean-subtracts, and compares against the hidden ground truth.",
+      "output_path": "output/reconstruction.npz",
+      "read_first": [
+        "README.md",
+        "main.py"
+      ],
+      "readable_paths": [
+        "README.md",
+        "main.py",
+        "requirements.txt",
+        "data/raw_data.npz",
+        "data/meta_data.json",
+        "src/visualization.py",
+        "src/preprocessing.py",
+        "src/solvers.py",
+        "src/physics_model.py",
+        "src/utils.py",
+        "src/generate_data.py",
+        "notebooks/conventional_ptychography.ipynb",
+        "plan/approach.md",
+        "plan/design.md"
+      ],
+      "runtime": "python",
+      "writable_paths": [
+        "output/",
+        "output/reconstruction.npz"
+      ]
+    },
+    "family": "physics",
+    "judge_contract": {
+      "metrics": [
+        {
+          "description": "Cosine similarity between mean-centered reconstructed and ground-truth phase maps. Phase is extracted via np.angle, then mean-subtracted to resolve global phase ambiguity.",
+          "kind": "standard",
+          "mode": "phase_ncc",
+          "name": "phase_ncc",
+          "output_field": "object",
+          "pass_condition": {
+            "operator": ">=",
+            "threshold": 0.878
+          },
+          "reference_field": "object",
+          "reference_resource_path": "data/ground_truth.npz"
+        },
+        {
+          "description": "Normalized RMSE between mean-centered reconstructed and ground-truth phase maps. NRMSE = sqrt(mean((phase_recon - phase_gt)^2)) / (max(phase_gt) - min(phase_gt)). Phases are mean-subtracted before comparison.",
+          "kind": "standard",
+          "mode": "phase_nrmse",
+          "name": "phase_nrmse",
+          "output_field": "object",
+          "pass_condition": {
+            "operator": "<=",
+            "threshold": 0.0477
+          },
+          "reference_field": "object",
+          "reference_resource_path": "data/ground_truth.npz"
+        }
+      ]
+    },
+    "output_contract": {
+      "field_specs": {
+        "object": {
+          "description": "Reconstructed complex-valued transmission function of the sample.",
+          "dtype": "complex64",
+          "shape": [
+            542,
+            542
+          ]
+        }
+      },
+      "format": "npz",
+      "numeric_fields": [
+        "object"
+      ],
+      "path": "output/reconstruction.npz",
+      "required_fields": [
+        "object"
+      ],
+      "same_shape_fields": [
+        [
+          "object"
+        ]
+      ]
+    },
+    "resources": [
+      {
+        "authority": "authoritative",
+        "format": "markdown",
+        "notes": "Primary task description and public reconstruction objective.",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Primary task description: recover a complex-valued object from overlapping far-field diffraction patterns using ptychographic phase retrieval.",
+        "visibility": "public"
+      },
+      {
+        "authority": "authoritative",
+        "fields": [
+          "ptychogram",
+          "encoder"
+        ],
+        "format": "npz",
+        "notes": "Far-field diffraction intensities and scan positions available to the solver.",
+        "path": "data/raw_data.npz",
+        "role": "public_input_data",
+        "semantics": "Far-field diffraction intensities (100, 128, 128) float32 and Fermat-spiral scan positions (100, 2) float32.",
+        "visibility": "public"
+      },
+      {
+        "authority": "authoritative",
+        "format": "json",
+        "notes": "Optical and geometric parameters for the simulated ptychography experiment.",
+        "path": "data/meta_data.json",
+        "role": "public_metadata",
+        "semantics": "Optical and geometric parameters: wavelength, detector distance, pixel sizes, object grid size, propagator model.",
+        "visibility": "public"
+      },
+      {
+        "authority": "authoritative",
+        "format": "python",
+        "notes": "Reference reconstruction pipeline that computes phase_ncc and phase_nrmse against hidden ground truth.",
+        "path": "main.py",
+        "role": "metric_helper",
+        "semantics": "Reference mPIE reconstruction pipeline that also computes phase_ncc and phase_nrmse against hidden ground truth. Shows the metric computation logic (np.angle, mean-subtraction, cosine similarity, NRMSE).",
+        "visibility": "public"
+      },
+      {
+        "authority": "supplementary",
+        "format": "python",
+        "notes": "Visualization helpers used by the reference reconstruction pipeline.",
+        "path": "src/visualization.py",
+        "role": "metric_helper",
+        "semantics": "Visualization helpers (complex-to-HSV, reconstruction summary plots) used by the reference pipeline.",
+        "visibility": "public"
+      },
+      {
+        "authority": "authoritative",
+        "fields": [
+          "object"
+        ],
+        "format": "npz",
+        "notes": "Hidden complex-valued ground-truth object used for phase metrics.",
+        "path": "data/ground_truth.npz",
+        "role": "hidden_reference",
+        "semantics": "Hidden complex-valued ground-truth object (542, 542) complex64 against which phase metrics are computed.",
+        "visibility": "private"
+      },
+      {
+        "authority": "supplementary",
+        "format": "hdf5",
+        "notes": "Reference HDF5 reconstruction emitted by the baseline mPIE implementation.",
+        "path": "evaluation/reference_outputs/recon.hdf5",
+        "role": "hidden_reference",
+        "semantics": "Reference HDF5 reconstruction emitted by the baseline mPIE implementation (7 rounds x 50 iterations).",
+        "visibility": "private"
+      },
+      {
+        "authority": "authoritative",
+        "format": "json",
+        "notes": "Thresholds and metric definitions for pass/fail decisions.",
+        "path": "evaluation/metrics.json",
+        "role": "hidden_metric_config",
+        "semantics": "Pass/fail thresholds: ncc_boundary=0.878, nrmse_boundary=0.0477, plus metric definitions (NRMSE formula, NCC formula).",
+        "visibility": "private"
+      }
+    ],
+    "task_id": "conventional_ptychography"
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "result_message",
+    "open_questions": [
+      "The output_contract requires an 'object' field in a .npz file. The solver may also optionally output a 'probe' field, but only 'object' is required for evaluation.",
+      "The suggested output path is 'output/reconstruction.npz' per execution_hints. The existing main.py writes to 'evaluation/reference_outputs/recon.hdf5' (HDF5), so the agent solver must produce .npz format at the declared output path instead."
+    ],
+    "source_files": [
+      "README.md",
+      "data/ground_truth.npy",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/positions.npy",
+      "data/raw_data.npz",
+      "data/simu.hdf5",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/__pycache__/judge_adapter.cpython-314.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/recon.hdf5",
+      "evaluation/reference_outputs/reconstruction_summary.png",
+      "evaluation/registration_contract.draft.json",
+      "evaluation/registration_contract.json",
+      "evaluation/registration_input.json",
+      "main.py",
+      "notebooks/conventional_ptychography.ipynb",
+      "oe-31-9-13763.pdf",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/utils.py",
+      "src/visualization.py"
+    ],
+    "status": "draft_generated",
+    "vendor_session_ref": {
+      "matched_native_exists": true,
+      "matched_native_path": "C:\\Users\\admin\\.claude\\projects\\D--yan1-agent-AutoSkill-tasks-conventional-ptychography\\225df723-62d4-48f3-acdc-7f294baae46d.jsonl",
+      "project_key": "D--yan1-agent-AutoSkill-tasks-conventional-ptychography",
+      "projects_root": "C:\\Users\\admin\\.claude\\projects",
+      "sdk_backend": "claude_sdk",
+      "session_id": "225df723-62d4-48f3-acdc-7f294baae46d"
+    }
+  },
+  "data_summary": {},
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\conventional_ptychography\\evaluation\\registration_contract.draft.json",
+  "evaluation_summary": {},
+  "judge_generation": {
+    "status": "not_started",
+    "validation_checks": []
+  },
+  "judge_path": "",
+  "judge_recommendations": {
+    "generation_hints": [],
+    "metrics": []
+  },
+  "manifest_path": "",
+  "metric_source_candidates": [],
+  "missing_items": [],
+  "output_detection": {},
+  "readme_summary": {},
+  "registration_input": {
+    "evaluation_logic_resources": [
+      {
+        "authority": "authoritative",
+        "notes": "Reference reconstruction pipeline that computes phase_ncc and phase_nrmse against the hidden ground truth.",
+        "path": "main.py"
+      },
+      {
+        "authority": "supplementary",
+        "notes": "Visualization helpers used by the reference reconstruction pipeline.",
+        "path": "src/visualization.py"
+      }
+    ],
+    "execution_hints": {
+      "read_first": [
+        "README.md",
+        "main.py"
+      ],
+      "suggested_entrypoint": "main.py",
+      "suggested_output_path": "output/reconstruction.npz"
+    },
+    "family": "physics",
+    "hidden_metric_config_resources": [
+      {
+        "authority": "authoritative",
+        "notes": "Thresholds for phase NCC and phase NRMSE pass/fail decisions.",
+        "path": "evaluation/metrics.json"
+      }
+    ],
+    "hidden_reference_resources": [
+      {
+        "authority": "authoritative",
+        "notes": "Hidden complex-valued ground-truth object used for phase metrics.",
+        "path": "data/ground_truth.npz"
+      },
+      {
+        "authority": "supplementary",
+        "notes": "Reference HDF5 reconstruction emitted by the baseline implementation.",
+        "path": "evaluation/reference_outputs/recon.hdf5"
+      }
+    ],
+    "pass_metrics": [
+      {
+        "description": "Cosine similarity between mean-centered reconstructed and ground-truth phase maps.",
+        "kind": "standard",
+        "name": "phase_ncc",
+        "operator": ">=",
+        "threshold": 0.878
+      },
+      {
+        "description": "Normalized RMSE between mean-centered reconstructed and ground-truth phase maps.",
+        "kind": "standard",
+        "name": "phase_nrmse",
+        "operator": "<=",
+        "threshold": 0.0477
+      }
+    ],
+    "public_eval_resources": [],
+    "public_input_resources": [
+      {
+        "authority": "authoritative",
+        "notes": "Far-field diffraction measurements and encoder positions available to the solver.",
+        "path": "data/raw_data.npz"
+      }
+    ],
+    "public_metadata_resources": [
+      {
+        "authority": "authoritative",
+        "notes": "Optical and geometric parameters for the simulated ptychography experiment.",
+        "path": "data/meta_data.json"
+      }
+    ],
+    "task_description_resources": [
+      {
+        "authority": "authoritative",
+        "notes": "Primary task description and public reconstruction objective.",
+        "path": "README.md"
+      }
+    ],
+    "task_id": "conventional_ptychography"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\conventional_ptychography\\evaluation\\registration_input.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\conventional_ptychography.notes.json",
+  "resource_validation": [],
+  "task_id": "conventional_ptychography",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\conventional_ptychography",
+  "vendor_session_ref": {
+    "matched_native_exists": true,
+    "matched_native_path": "C:\\Users\\admin\\.claude\\projects\\D--yan1-agent-AutoSkill-tasks-conventional-ptychography\\225df723-62d4-48f3-acdc-7f294baae46d.jsonl",
+    "project_key": "D--yan1-agent-AutoSkill-tasks-conventional-ptychography",
+    "projects_root": "C:\\Users\\admin\\.claude\\projects",
+    "sdk_backend": "claude_sdk",
+    "session_id": "225df723-62d4-48f3-acdc-7f294baae46d"
+  },
+  "warnings": []
+}

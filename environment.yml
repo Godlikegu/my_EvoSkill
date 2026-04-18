@@ -1,0 +1,16 @@
+name: myevoskill
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - nodejs>=20
+  - pytest>=7.1
+  - pyyaml>=6.0
+  - pydantic>=2.0
+  - numpy>=1.24
+  - scipy>=1.10
+  - pip:
+      - claude-agent-sdk
+      - inspect-ai>=0.3

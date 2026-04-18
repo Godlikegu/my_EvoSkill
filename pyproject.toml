@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "myevoskill"
+version = "0.1.0"
+description = "Secure skill distillation and transfer validation scaffold."
+requires-python = ">=3.9"
+
+[project.scripts]
+myevoskill-task-contract-draft = "myevoskill.task_registration:contract_draft_main"
+myevoskill-task-register = "myevoskill.task_registration:main"
+myevoskill-task-live = "myevoskill.live_runner:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "external_network: tests that require a real outbound network call and explicit API credentials",
+]
