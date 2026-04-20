@@ -42,6 +42,27 @@ from .task_runtime import (
     coerce_runtime_layout,
     coerce_runtime_policy,
 )
+from .task_contract import (
+    PUBLIC_TASK_CONTRACT_FILENAME,
+    TASK_CONTRACT_FILENAME,
+    build_metric_requirements,
+    derive_public_task_contract,
+    evaluate_metric,
+    load_task_contract,
+    load_task_contract_from_manifest,
+    output_field_map as task_contract_output_field_map,
+    output_metric_input_checks,
+    output_requirements_from_contract,
+    task_contract_execution,
+    task_contract_path_from_manifest,
+    task_contract_paths,
+    task_contract_primary_output_path,
+    task_contract_output_format,
+    validate_output_payload_against_contract,
+    validate_task_contract,
+    validate_task_contract_shapes,
+    validate_task_contract_task_paths,
+)
 
 CONTRACT_DRAFT_FILENAME = "registration_contract.draft.json"
 CONTRACT_FILENAME = "registration_contract.json"
@@ -99,6 +120,7 @@ def ensure_task_runtime_env(
         task_id=task_id,
         family=family,
         requirements_path=requirements_path,
+        project_root=output_root,
     )
     return manager.ensure_env(spec)
 
@@ -850,6 +872,186 @@ def validate_registration_contract_shapes(
     return sorted(dict.fromkeys(errors))
 
 
+def _build_manifest_from_task_contract(
+    *,
+    task_root: Path,
+    output_root: Path,
+    contract: Mapping[str, Any],
+    public_contract: Mapping[str, Any],
+    readme_info: Mapping[str, Any],
+    data_summary: Mapping[str, Any],
+    evaluation_summary: Mapping[str, Any],
+    output_detection: Mapping[str, Any],
+    runtime_env: Mapping[str, Any],
+    ready: bool,
+) -> dict[str, Any]:
+    public_policy = _build_public_policy(task_root, readme_info, data_summary, evaluation_summary)
+    return {
+        "task_id": str(contract.get("task_id", "") or ""),
+        "family": str(contract.get("family", "") or ""),
+        "source_task_dir": _relative_source_task_dir(task_root, output_root),
+        "public_policy": public_policy,
+        "runtime_layout": coerce_runtime_layout(contract.get("runtime_layout")),
+        "runtime_policy": coerce_runtime_policy(contract.get("runtime_policy")),
+        "runtime_env": dict(runtime_env or {}),
+        "public_eval_spec": _build_public_eval_spec(data_summary, output_detection),
+        "primary_output_path": task_contract_primary_output_path(contract),
+        "task_contract_path": f"evaluation/{TASK_CONTRACT_FILENAME}",
+        "task_contract_public_path": f"evaluation/{PUBLIC_TASK_CONTRACT_FILENAME}",
+        "judge_adapter_path": DEFAULT_JUDGE_ADAPTER_PATH,
+        "ready": bool(ready),
+    }
+
+
+def render_ready_task_contract_judge(contract: Mapping[str, Any]) -> str:
+    metric_names = [
+        str(item.get("name", "") or "")
+        for item in contract.get("metrics", []) or []
+        if isinstance(item, Mapping) and str(item.get("name", "") or "")
+    ]
+    contract_path_literal = json.dumps(f"evaluation/{TASK_CONTRACT_FILENAME}", ensure_ascii=False)
+    metric_names_literal = json.dumps(metric_names, ensure_ascii=False)
+    sentinel_literal = json.dumps(GENERATED_JUDGE_SENTINEL, ensure_ascii=False)
+    return "\n".join(
+        [
+            '"""Task-local ready judge adapter generated from task_contract.json."""',
+            "",
+            f"# {GENERATED_JUDGE_SENTINEL}",
+            "from __future__ import annotations",
+            "",
+            "from pathlib import Path",
+            "from typing import Any, Mapping",
+            "",
+            "import numpy as np",
+            "",
+            "from myevoskill.judging import HiddenJudge",
+            "from myevoskill.models import JudgeResult, RunRecord",
+            "from myevoskill.task_contract import (",
+            "    build_metric_requirements,",
+            "    evaluate_metric,",
+            "    load_task_contract_from_manifest,",
+            "    validate_output_payload_against_contract,",
+            ")",
+            "from myevoskill.task_runtime import resolve_primary_output_path",
+            "",
+            "GENERATED_JUDGE_READY = True",
+            f"GENERATED_METRIC_NAMES = {metric_names_literal}",
+            f"GENERATED_REGISTRATION_CONTRACT_PATH = {contract_path_literal}",
+            f"GENERATED_SENTINEL = {sentinel_literal}",
+            "",
+            "",
+            "def _load_contract(task_root: Path, manifest: Mapping[str, Any]) -> dict[str, Any]:",
+            "    return load_task_contract_from_manifest(task_root, manifest)",
+            "",
+            "",
+            "def evaluate_run(",
+            "    task_root: Path,",
+            "    run_record: RunRecord,",
+            "    manifest: Mapping[str, Any],",
+            ") -> JudgeResult:",
+            "    task_root = Path(task_root)",
+            "    contract = _load_contract(task_root, manifest)",
+            "    requirements = build_metric_requirements(contract)",
+            "    output_path = resolve_primary_output_path(run_record.workspace_root, manifest)",
+            "    if not output_path.exists():",
+            "        return HiddenJudge().evaluate(",
+            "            task_id=run_record.task_id,",
+            "            metrics_actual={},",
+            "            requirements=requirements,",
+            "            failure_tags=['missing_output'],",
+            "        )",
+            "    metrics_actual: dict[str, float] = {}",
+            "    try:",
+            "        with np.load(output_path, allow_pickle=False) as output_payload:",
+            "            output_validation = validate_output_payload_against_contract(output_payload, contract)",
+            "            if output_validation['missing_fields']:",
+            "                return HiddenJudge().evaluate(",
+            "                    task_id=run_record.task_id,",
+            "                    metrics_actual={},",
+            "                    requirements=requirements,",
+            "                    failure_tags=['missing_required_field'],",
+            "                )",
+            "            if output_validation['warnings']:",
+            "                return HiddenJudge().evaluate(",
+            "                    task_id=run_record.task_id,",
+            "                    metrics_actual={},",
+            "                    requirements=requirements,",
+            "                    failure_tags=['invalid_output_schema'],",
+            "                )",
+            "            for metric in contract.get('metrics', []) or []:",
+            "                metric_name = str(metric.get('name', '') or '')",
+            "                if not metric_name:",
+            "                    continue",
+            "                metrics_actual[metric_name] = evaluate_metric(",
+            "                    task_root,",
+            "                    contract,",
+            "                    metric,",
+            "                    output_payload=output_payload,",
+            "                )",
+            "    except Exception as exc:",
+            "        return HiddenJudge().evaluate(",
+            "            task_id=run_record.task_id,",
+            "            metrics_actual=metrics_actual,",
+            "            requirements=requirements,",
+            "            failure_tags=[f'judge_runtime_error:{type(exc).__name__}'],",
+            "        )",
+            "    return HiddenJudge().evaluate(",
+            "        task_id=run_record.task_id,",
+            "        metrics_actual=metrics_actual,",
+            "        requirements=requirements,",
+            "        failure_tags=[],",
+            "    )",
+            "",
+        ]
+    )
+
+
+def validate_generated_task_contract_judge(
+    *,
+    task_root: Path,
+    judge_path: Path,
+    manifest: Mapping[str, Any],
+    python_executable: Path,
+    contract: Mapping[str, Any],
+) -> list[str]:
+    checks: list[str] = []
+    source = Path(judge_path).read_text(encoding="utf-8")
+    if GENERATED_JUDGE_SENTINEL not in source:
+        raise ValueError("judge_adapter.py is missing the generated ready sentinel")
+    if READY_JUDGE_MARKER not in source:
+        raise ValueError("judge_adapter.py is not marked as ready")
+
+    validation_result = invoke_judge_runner(
+        python_executable,
+        mode="validate",
+        payload={"judge_path": str(Path(judge_path).resolve())},
+    )
+    if not bool(validation_result.get("callable_present", False)):
+        raise AttributeError("generated judge is missing evaluate_run(task_root, run_record, manifest)")
+    checks.append("judge_importable")
+    checks.append("judge_callable_present")
+    if not bool(validation_result.get("generated_ready", False)):
+        raise ValueError("judge_adapter.py is not marked as ready")
+
+    generated_metrics = list(validation_result.get("generated_metric_names", []) or [])
+    expected_metrics = [
+        str(item.get("name", "") or "")
+        for item in contract.get("metrics", []) or []
+        if isinstance(item, Mapping) and str(item.get("name", "") or "")
+    ]
+    if generated_metrics != expected_metrics:
+        raise ValueError("generated judge metric list does not match task contract metrics")
+    checks.append("judge_metrics_match_task_contract")
+
+    generated_contract_path = str(validation_result.get("generated_contract_path", "") or "")
+    manifest_contract_path = task_contract_path_from_manifest(manifest)
+    if generated_contract_path != manifest_contract_path:
+        raise ValueError("generated judge contract path does not match manifest task_contract_path")
+    checks.append("judge_contract_path_match_manifest")
+    checks.append("judge_ready_marker_present")
+    return checks
+
+
 def register_confirmed_task(
     task_root: Path,
     *,
@@ -861,6 +1063,136 @@ def register_confirmed_task(
     output_root = _resolve_output_root(output_root)
     task_id = task_root.name
     paths = registration_contract_paths(task_root)
+    canonical_contract_paths = task_contract_paths(task_root)
+    if canonical_contract_paths["contract_path"].exists():
+        contract = load_task_contract(task_root)
+        validation_errors = validate_task_contract(contract)
+        if validation_errors:
+            raise ValueError(
+                "task_contract.json validation failed:\n- " + "\n- ".join(validation_errors)
+            )
+        task_path_errors = validate_task_contract_task_paths(task_root, contract)
+        if task_path_errors:
+            raise ValueError(
+                "task_contract.json task-local path validation failed:\n- "
+                + "\n- ".join(task_path_errors)
+            )
+        shape_validation_errors = validate_task_contract_shapes(task_root, contract)
+        if shape_validation_errors:
+            raise ValueError(
+                "task_contract.json shape validation failed:\n- "
+                + "\n- ".join(shape_validation_errors)
+            )
+
+        readme_info = _read_readme_info(task_root / "README.md")
+        data_summary = _build_data_summary(task_root / "data")
+        evaluation_summary = _build_evaluation_summary(task_root / "evaluation")
+        output_detection = _build_output_detection(task_root, data_summary, readme_info, task_id)
+        cache_record = ensure_task_runtime_env(
+            task_root,
+            output_root=output_root,
+            task_id=task_id,
+            family=str(contract.get("family", "") or ""),
+        )
+        runtime_env = runtime_env_manifest_payload(
+            cache_record,
+            output_root=output_root,
+            task_root=task_root,
+        )
+        public_contract = derive_public_task_contract(contract)
+        canonical_contract_paths["public_contract_path"].write_text(
+            json.dumps(public_contract, indent=2, sort_keys=True, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        manifest = _build_manifest_from_task_contract(
+            task_root=task_root,
+            output_root=output_root,
+            contract=contract,
+            public_contract=public_contract,
+            readme_info=readme_info,
+            data_summary=data_summary,
+            evaluation_summary=evaluation_summary,
+            output_detection=output_detection,
+            runtime_env=runtime_env,
+            ready=False,
+        )
+        judge_source = render_ready_task_contract_judge(contract)
+        paths["judge_path"].parent.mkdir(parents=True, exist_ok=True)
+        paths["judge_path"].write_text(judge_source, encoding="utf-8")
+        validation_checks = validate_generated_task_contract_judge(
+            task_root=task_root,
+            judge_path=paths["judge_path"],
+            manifest=manifest,
+            python_executable=cache_record.python_executable,
+            contract=contract,
+        )
+        manifest = _build_manifest_from_task_contract(
+            task_root=task_root,
+            output_root=output_root,
+            contract=contract,
+            public_contract=public_contract,
+            readme_info=readme_info,
+            data_summary=data_summary,
+            evaluation_summary=evaluation_summary,
+            output_detection=output_detection,
+            runtime_env=runtime_env,
+            ready=True,
+        )
+        registry_root = _registry_tasks_root(output_root)
+        manifest_path = registry_root / f"{task_id}.json"
+        registry_root.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        notes_payload = _build_notes_payload(
+            task_id=task_id,
+            task_root=task_root,
+            output_root=output_root,
+            registration_input_path=canonical_contract_paths["contract_path"],
+            registration_input={"task_contract_path": str(canonical_contract_paths["contract_path"])},
+            draft_path=canonical_contract_paths["contract_path"],
+            confirmed_path=canonical_contract_paths["contract_path"],
+            manifest_path=manifest_path,
+            judge_path=paths["judge_path"],
+            contract=contract,
+            missing_items=[],
+            warnings=[],
+            readme_info=readme_info,
+            data_summary=data_summary,
+            evaluation_summary=evaluation_summary,
+            output_detection=output_detection,
+            metric_source_candidates=[
+                str(dict(metric.get("helper") or {}).get("file_id", "") or "")
+                for metric in contract.get("metrics", []) or []
+                if isinstance(metric, Mapping)
+            ],
+            completion_source="task_contract",
+            judge_validation_checks=validation_checks,
+            contract_status="confirmed_registered",
+            judge_status="ready",
+            runtime_env={
+                "status": "ready",
+                "env_hash": cache_record.env_hash,
+                "python_executable": str(cache_record.python_executable),
+                "install_report_path": str(cache_record.install_report_path),
+                "build_log_path": str(cache_record.build_log_path),
+            },
+        )
+        paths["notes_path"].write_text(
+            json.dumps(notes_payload, indent=2, sort_keys=True, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        _write_registry_notes_copy(task_id, output_root=output_root, payload=notes_payload)
+        return TaskRegistrationResult(
+            task_id=task_id,
+            manifest_path=manifest_path,
+            judge_path=paths["judge_path"],
+            notes_path=paths["notes_path"],
+            missing_items=[],
+            warnings=[],
+        )
+
     contract = load_registration_contract(task_root, confirmed=True)
     normalized_input: dict[str, Any] = {}
     if paths["input_path"].exists():
@@ -1355,6 +1687,41 @@ def ensure_live_ready_manifest(
     task_root: Path,
 ) -> dict[str, Any]:
     """Reject live execution when the manifest or confirmed contract is not ready."""
+
+    if str(manifest.get("task_contract_path", "") or "").strip():
+        if not bool(manifest.get("ready", False)):
+            raise RuntimeError(
+                "live run refused: manifest ready is false; run task registration first"
+            )
+        runtime_env = dict(manifest.get("runtime_env") or {})
+        if not runtime_env:
+            raise RuntimeError(
+                "live run refused: manifest runtime_env is missing; rerun task registration"
+            )
+        if not bool(runtime_env.get("ready", False)):
+            raise RuntimeError(
+                "live run refused: manifest runtime_env.ready is false; rerun task registration"
+            )
+        contract = load_task_contract_from_manifest(task_root, manifest)
+        validation_errors = validate_task_contract(contract)
+        if validation_errors:
+            raise RuntimeError(
+                "live run refused: task_contract.json is invalid:\n- "
+                + "\n- ".join(validation_errors)
+            )
+        task_path_errors = validate_task_contract_task_paths(task_root, contract)
+        if task_path_errors:
+            raise RuntimeError(
+                "live run refused: task_contract.json has invalid task-local paths:\n- "
+                + "\n- ".join(task_path_errors)
+            )
+        shape_errors = validate_task_contract_shapes(task_root, contract)
+        if shape_errors:
+            raise RuntimeError(
+                "live run refused: task_contract.json has invalid shape bindings:\n- "
+                + "\n- ".join(shape_errors)
+            )
+        return contract
 
     judge_spec = dict(manifest.get("judge_spec") or {})
     if not bool(judge_spec.get("ready", False)):

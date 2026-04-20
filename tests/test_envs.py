@@ -1,14 +1,15 @@
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-from myevoskill.envs import EnvManager, EnvSpec
+from myevoskill.envs import EnvManager, EnvSpec, build_task_env_spec
 
 
 def _patch_env_build(monkeypatch):
-    def _fake_create_venv(self, venv_dir):
+    def _fake_create_venv(self, venv_dir, *, python_executable):
         python_executable = self._venv_python_executable(Path(venv_dir))
         python_executable.parent.mkdir(parents=True, exist_ok=True)
         python_executable.write_text("", encoding="utf-8")
@@ -78,7 +79,7 @@ def test_checkpoint_restore_does_not_rebuild_env(tmp_path, monkeypatch):
 def test_env_manager_writes_install_report_on_build_failure(tmp_path, monkeypatch):
     manager = EnvManager(tmp_path / "env_cache")
 
-    def _fake_create_venv(self, venv_dir):
+    def _fake_create_venv(self, venv_dir, *, python_executable):
         python_executable = self._venv_python_executable(Path(venv_dir))
         python_executable.parent.mkdir(parents=True, exist_ok=True)
         python_executable.write_text("", encoding="utf-8")
@@ -113,5 +114,20 @@ def test_dev_environment_files_exist():
     assert (root / "environment.yml").exists()
     assert (root / "scripts" / "create_dev_env.sh").exists()
     assert (root / "scripts" / "print_env_info.py").exists()
+
+
+def test_build_task_env_spec_uses_explicit_python_executable(tmp_path):
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text("numpy==1.26.0\n", encoding="utf-8")
+
+    spec = build_task_env_spec(
+        task_id="demo-task",
+        family="demo",
+        requirements_path=requirements,
+        python_executable=Path(sys.executable),
+    )
+
+    assert spec.python_executable == str(Path(sys.executable).resolve())
+    assert spec.python_version == f"{sys.version_info.major}.{sys.version_info.minor}"
 
 

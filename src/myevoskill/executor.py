@@ -31,6 +31,15 @@ from .model_provider import (
     OpenAICompatibleAdapter,
 )
 from .models import EffectiveRuntimePolicy, ExecutorSessionConfig, RunRecord, TaskBundle
+from .task_contract import (
+    load_public_task_contract_from_root,
+    output_field_map,
+    output_metric_input_checks,
+    output_requirements_from_contract,
+    resolve_metric_input_value,
+    task_contract_execution,
+    validate_output_payload_against_contract,
+)
 from .task_runtime import (
     coerce_runtime_layout,
     ensure_clean_run_directory,
@@ -2182,6 +2191,17 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
 
     def _load_manifest_output_contract(self, task_bundle: TaskBundle) -> dict[str, Any]:
         task_spec = load_task_spec(task_bundle)
+        task_contract = self._load_public_task_contract(
+            task_spec=task_spec,
+            root=task_bundle.public_bundle_dir,
+        )
+        if task_contract:
+            required_outputs = output_requirements_from_contract(task_contract)
+            if not required_outputs:
+                raise RuntimeError(
+                    f"task '{task_bundle.task_id}' is missing task_contract.public.json output"
+                )
+            return {"required_outputs": required_outputs}
         output_contract = dict(task_spec.get("output_contract") or {})
         required_outputs = list(output_contract.get("required_outputs") or [])
         if not required_outputs:
@@ -2196,13 +2216,36 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         for index, item in enumerate(required_outputs, start=1):
             path_value = str(item.get("path", "") or "").strip()
             format_value = str(item.get("format", "") or "").strip()
+            field_specs = [
+                dict(field or {})
+                for field in item.get("fields", []) or []
+                if isinstance(field, Mapping)
+            ]
             required_fields = [str(field) for field in item.get("required_fields", []) or []]
+            if field_specs and not required_fields:
+                required_fields = [
+                    str(field.get("name", "") or "")
+                    for field in field_specs
+                    if str(field.get("name", "") or "")
+                ]
             description = f"Output requirement {index}: produce `{path_value}`"
             if format_value:
                 description += f" ({format_value})"
             lines.append(description)
             if required_fields:
                 lines.append("   Required fields: " + ", ".join(required_fields))
+            for field in field_specs:
+                field_name = str(field.get("name", "") or "").strip()
+                if not field_name:
+                    continue
+                field_shape = list(field.get("shape", []) or [])
+                field_dtype = str(field.get("dtype", "") or "").strip()
+                details = f"   Field `{field_name}`"
+                if field_dtype:
+                    details += f" dtype={field_dtype}"
+                if field_shape:
+                    details += f" shape={field_shape}"
+                lines.append(details)
         return lines
 
     def _workspace_entrypoint_command(self) -> str:
@@ -2273,6 +2316,17 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             return "README_public.md"
         return normalized
 
+    def _load_public_task_contract(
+        self,
+        *,
+        task_spec: Mapping[str, Any],
+        root: Path,
+    ) -> dict[str, Any]:
+        try:
+            return load_public_task_contract_from_root(root, task_spec)
+        except FileNotFoundError:
+            return {}
+
     def _load_workspace_registration_contract(self, task_bundle: TaskBundle) -> dict[str, Any]:
         if not task_bundle.task_spec_path.exists():
             return {}
@@ -2280,6 +2334,12 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             task_spec = json.loads(task_bundle.task_spec_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             return {}
+        public_contract = self._load_public_task_contract(
+            task_spec=task_spec,
+            root=task_bundle.public_bundle_dir,
+        )
+        if public_contract:
+            return public_contract
         contract = task_spec.get("registration_contract")
         if isinstance(contract, dict):
             return contract
@@ -2289,6 +2349,33 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         self,
         registration_contract: Mapping[str, Any],
     ) -> dict[str, Any]:
+        if "execution" in registration_contract:
+            execution = task_contract_execution(registration_contract)
+            files_by_id = {
+                str(item.get("id", "") or ""): dict(item or {})
+                for item in registration_contract.get("files", []) or []
+                if isinstance(item, Mapping) and str(item.get("id", "") or "")
+            }
+            return {
+                "read_first": [
+                    self._workspace_visible_contract_path(
+                        str(files_by_id[item].get("path", "") or "")
+                    )
+                    for item in execution.get("read_first", []) or []
+                    if item in files_by_id
+                ],
+                "readable_paths": [
+                    self._workspace_visible_contract_path(
+                        str(files_by_id[item].get("path", "") or "")
+                    )
+                    for item in execution.get("readable_files", []) or []
+                    if item in files_by_id
+                ],
+                "writable_paths": list(execution.get("writable_paths", []) or []),
+                "entrypoint": self._workspace_visible_contract_path(
+                    str(execution.get("entrypoint", "") or "").strip()
+                ),
+            }
         execution = dict(registration_contract.get("execution_conventions") or {})
         return {
             "read_first": [
@@ -2320,6 +2407,22 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         lines: list[str] = []
         seen_paths: set[str] = set()
         if isinstance(registration_contract, Mapping):
+            if "files" in registration_contract:
+                for raw_file in registration_contract.get("files", []) or []:
+                    if not isinstance(raw_file, Mapping):
+                        continue
+                    if str(raw_file.get("visibility", "") or "") != "public":
+                        continue
+                    workspace_path = self._workspace_visible_contract_path(
+                        str(raw_file.get("path", "") or "")
+                    )
+                    if not workspace_path or workspace_path not in available:
+                        continue
+                    semantics = str(raw_file.get("semantics", "") or "").strip()
+                    if not semantics:
+                        continue
+                    lines.append(f"- `{workspace_path}`: {semantics}")
+                    seen_paths.add(workspace_path)
             for raw_resource in registration_contract.get("resources", []) or []:
                 if not isinstance(raw_resource, Mapping):
                     continue
@@ -2340,6 +2443,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 seen_paths.add(workspace_path)
         fallback_semantics = [
             ("README_public.md", "authoritative task description and public constraints."),
+            ("task_contract.public.json", "authoritative interface contract for files, outputs, and metrics."),
             ("data/raw_data.npz", "public observation data, including measured spectra and axes."),
             ("data/meta_data.json", "physical parameters, constants, and experiment configuration."),
             ("requirements.txt", "available dependency set for the workspace."),
@@ -2388,36 +2492,11 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         runtime_paths: dict[str, Path],
         tool_policy: dict[str, Any],
     ) -> dict[str, Any]:
-        proxy_spec = dict(task_spec.get("proxy_spec") or {})
-        required_outputs = self._required_output_specs(task_spec)
-        primary_output = str(proxy_spec.get("primary_output", "") or "").strip()
-        if not primary_output and required_outputs:
-            primary_output = str(required_outputs[0].get("path", "") or "").strip()
-
-        normalized_outputs: list[dict[str, Any]] = []
-        for item in required_outputs:
-            path_value = str(item.get("path", "") or "").strip()
-            if not path_value:
-                continue
-            required_fields = [str(field) for field in item.get("required_fields") or []]
-            numeric_fields = [str(field) for field in item.get("numeric_fields") or []]
-            same_shape_fields = [str(field) for field in item.get("same_shape_fields") or []]
-            if path_value == primary_output:
-                if not required_fields:
-                    required_fields = [str(field) for field in proxy_spec.get("required_fields") or []]
-                if not numeric_fields:
-                    numeric_fields = [str(field) for field in proxy_spec.get("numeric_fields") or []]
-                if not same_shape_fields:
-                    same_shape_fields = [str(field) for field in proxy_spec.get("same_shape_fields") or []]
-            normalized_outputs.append(
-                {
-                    "path": path_value,
-                    "format": str(item.get("format", "") or "").strip().lower(),
-                    "required_fields": required_fields,
-                    "numeric_fields": numeric_fields,
-                    "same_shape_fields": same_shape_fields,
-                }
-            )
+        task_contract = self._load_public_task_contract(
+            task_spec=task_spec,
+            root=runtime_paths["runtime_root"],
+        )
+        required_outputs = self._required_output_specs(task_spec, task_contract=task_contract)
 
         readonly_roots = self._public_self_eval_read_roots(tool_policy)
         readonly_snapshot = self._snapshot_roots(runtime_paths["runtime_root"], readonly_roots)
@@ -2425,7 +2504,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "version": 1,
             "entrypoint": self._workspace_entrypoint_command(),
             "self_eval_command": self._workspace_self_eval_command(),
-            "required_outputs": normalized_outputs,
+            "required_outputs": required_outputs,
+            "metric_input_checks": output_metric_input_checks(task_contract) if task_contract else [],
             "readonly_roots": readonly_roots,
             "readonly_snapshot": readonly_snapshot,
             "alignments": self._resolve_public_eval_alignments(task_spec),
@@ -2460,6 +2540,34 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "def _load_npz(path: Path) -> dict[str, np.ndarray]:\n"
             "    with np.load(path, allow_pickle=False) as payload:\n"
             "        return {name: np.asarray(payload[name]) for name in payload.files}\n\n"
+            "def _apply_slice(value: np.ndarray, slice_selector):\n"
+            "    if slice_selector is None:\n"
+            "        return value\n"
+            "    start, stop, step = list(slice_selector)[:3]\n"
+            "    return np.asarray(value)[slice(start, stop, step)]\n\n"
+            "def _apply_selectors(value: np.ndarray, selectors: dict[str, object]) -> np.ndarray:\n"
+            "    result = np.asarray(value)\n"
+            "    slice_selector = selectors.get('slice')\n"
+            "    if slice_selector is not None:\n"
+            "        result = _apply_slice(result, slice_selector)\n"
+            "    if selectors.get('index') is not None:\n"
+            "        result = np.asarray(result)[int(selectors['index'])]\n"
+            "    if bool(selectors.get('squeeze', False)):\n"
+            "        result = np.squeeze(result)\n"
+            "    return np.asarray(result)\n\n"
+            "def _apply_preprocess(value: np.ndarray, preprocess: str) -> np.ndarray:\n"
+            "    mode = str(preprocess or 'identity').strip().lower() or 'identity'\n"
+            "    if mode == 'identity':\n"
+            "        return np.asarray(value)\n"
+            "    if mode == 'abs':\n"
+            "        return np.abs(value)\n"
+            "    if mode == 'angle':\n"
+            "        return np.angle(value)\n"
+            "    if mode == 'real':\n"
+            "        return np.real(value)\n"
+            "    if mode == 'imag':\n"
+            "        return np.imag(value)\n"
+            "    raise ValueError(f'unsupported preprocess: {preprocess!r}')\n\n"
             "def main() -> int:\n"
             "    workspace_root = Path(__file__).resolve().parents[1]\n"
             "    spec_path = Path(__file__).with_name('self_eval_spec.json')\n"
@@ -2494,15 +2602,42 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "            errors.append(f'unreadable artifact: {relative_path}')\n"
             "            continue\n"
             "        output_cache[relative_path] = payload\n"
-            "        required_fields = [str(field) for field in item.get('required_fields', []) or []]\n"
-            "        numeric_fields = [str(field) for field in item.get('numeric_fields', []) or []]\n"
-            "        same_shape_fields = [str(field) for field in item.get('same_shape_fields', []) or []]\n"
-            "        field_shapes: dict[str, tuple[int, ...]] = {}\n"
+            "        field_specs = [dict(field) for field in item.get('fields', []) or []]\n"
+            "        required_fields = [str(field) for field in item.get('required_fields', []) or [] if str(field or '').strip()]\n"
+            "        if field_specs:\n"
+            "            required_fields = list(dict.fromkeys([\n"
+            "                *required_fields,\n"
+            "                *[str(field.get('name', '') or '') for field in field_specs if str(field.get('name', '') or '')],\n"
+            "            ]))\n"
             "        for field in required_fields:\n"
             "            if field not in payload:\n"
             "                errors.append(f'missing required field: {field}')\n"
             "            else:\n"
             "                checks.append({'name': f'field_present:{relative_path}:{field}', 'ok': True})\n"
+            "        numeric_fields = [str(field) for field in item.get('numeric_fields', []) or [] if str(field or '').strip()]\n"
+            "        same_shape_fields = [str(field) for field in item.get('same_shape_fields', []) or [] if str(field or '').strip()]\n"
+            "        for field_spec in field_specs:\n"
+            "            field = str(field_spec.get('name', '') or '')\n"
+            "            if not field or field not in payload:\n"
+            "                continue\n"
+            "            value = np.asarray(payload[field])\n"
+            "            if not np.issubdtype(value.dtype, np.number):\n"
+            "                errors.append(f'non-numeric field: {field}')\n"
+            "                continue\n"
+            "            checks.append({'name': f'numeric_field:{relative_path}:{field}', 'ok': True})\n"
+            "            if np.any(~np.isfinite(np.asarray(value, dtype=np.complex128).view(np.float64))):\n"
+            "                errors.append(f'nan_or_inf field: {field}')\n"
+            "            expected_shape = list(field_spec.get('shape', []) or [])\n"
+            "            if expected_shape and list(value.shape) != expected_shape:\n"
+            "                errors.append(\n"
+            "                    f'invalid shape for field {field}: expected {expected_shape}, observed {list(value.shape)}'\n"
+            "                )\n"
+            "            expected_dtype = str(field_spec.get('dtype', '') or '')\n"
+            "            if expected_dtype and str(value.dtype) != expected_dtype:\n"
+            "                errors.append(\n"
+            "                    f'invalid dtype for field {field}: expected {expected_dtype}, observed {value.dtype}'\n"
+            "                )\n\n"
+            "        detected_shapes = {}\n"
             "        for field in numeric_fields:\n"
             "            if field not in payload:\n"
             "                continue\n"
@@ -2511,16 +2646,34 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "                errors.append(f'non-numeric field: {field}')\n"
             "                continue\n"
             "            checks.append({'name': f'numeric_field:{relative_path}:{field}', 'ok': True})\n"
-            "            if np.any(~np.isfinite(value)):\n"
+            "            if np.any(~np.isfinite(np.asarray(value, dtype=np.complex128).view(np.float64))):\n"
             "                errors.append(f'nan_or_inf field: {field}')\n"
             "            if field in same_shape_fields:\n"
-            "                field_shapes[field] = tuple(value.shape)\n"
-            "        unique_shapes = {shape for shape in field_shapes.values()}\n"
-            "        if len(unique_shapes) > 1:\n"
+            "                detected_shapes[field] = tuple(value.shape)\n"
+            "        if detected_shapes and len(set(detected_shapes.values())) > 1:\n"
+            "            errors.append('required fields have inconsistent shapes')\n\n"
+            "    for rule in list(spec.get('metric_input_checks') or []):\n"
+            "        output_path = str(rule.get('output_path', '') or '').strip()\n"
+            "        field = str(rule.get('field', '') or '').strip()\n"
+            "        metric_name = str(rule.get('metric_name', '') or '').strip()\n"
+            "        input_name = str(rule.get('input_name', '') or '').strip()\n"
+            "        expected_shape = list(rule.get('expected_shape', []) or [])\n"
+            "        payload = output_cache.get(output_path)\n"
+            "        if payload is None or field not in payload:\n"
+            "            continue\n"
+            "        try:\n"
+            "            value = _apply_selectors(np.asarray(payload[field]), dict(rule.get('selectors') or {}))\n"
+            "            value = _apply_preprocess(value, str(rule.get('preprocess', 'identity') or 'identity'))\n"
+            "        except Exception as exc:\n"
+            "            errors.append(f'metric input resolution failed: {metric_name}:{input_name} ({exc})')\n"
+            "            continue\n"
+            "        observed_shape = list(np.asarray(value).shape)\n"
+            "        if observed_shape != expected_shape:\n"
             "            errors.append(\n"
-            "                'required fields have inconsistent shapes: '\n"
-            "                + ', '.join(f'{field}={field_shapes[field]}' for field in sorted(field_shapes))\n"
-            "            )\n\n"
+            "                f'metric input shape mismatch: {metric_name}:{input_name} expected {expected_shape}, observed {observed_shape}'\n"
+            "            )\n"
+            "        else:\n"
+            "            checks.append({'name': f'metric_input_shape:{metric_name}:{input_name}', 'ok': True})\n\n"
             "    for rule in list(spec.get('alignments') or []):\n"
             "        output_path = str(rule.get('output_path', '') or rule.get('path', '') or '').strip()\n"
             "        field = str(rule.get('field', '') or '').strip()\n"
@@ -2598,11 +2751,34 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         )
         return spec
 
-    def _required_output_specs(self, task_spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def _required_output_specs(
+        self,
+        task_spec: dict[str, Any],
+        *,
+        task_contract: Optional[Mapping[str, Any]] = None,
+    ) -> list[dict[str, Any]]:
+        task_contract = dict(task_contract or {})
+        if task_contract:
+            return output_requirements_from_contract(task_contract)
+        primary_output = str(task_spec.get("primary_output_path", "") or "").strip()
+        if primary_output:
+            return [{"path": primary_output, "format": "npz"}]
         output_contract = dict(task_spec.get("output_contract") or {})
         required_outputs = list(output_contract.get("required_outputs") or [])
         if required_outputs:
-            return [dict(item or {}) for item in required_outputs]
+            proxy_spec = dict(task_spec.get("proxy_spec") or {})
+            merged_outputs: list[dict[str, Any]] = []
+            for item in required_outputs:
+                normalized = dict(item or {})
+                normalized.setdefault("format", str(proxy_spec.get("output_dtype", "") or ""))
+                if not normalized.get("required_fields"):
+                    normalized["required_fields"] = list(proxy_spec.get("required_fields") or [])
+                if not normalized.get("numeric_fields"):
+                    normalized["numeric_fields"] = list(proxy_spec.get("numeric_fields") or [])
+                if not normalized.get("same_shape_fields"):
+                    normalized["same_shape_fields"] = list(proxy_spec.get("same_shape_fields") or [])
+                merged_outputs.append(normalized)
+            return merged_outputs
         proxy_spec = dict(task_spec.get("proxy_spec") or {})
         primary_output = str(proxy_spec.get("primary_output", "") or "").strip()
         if not primary_output:
@@ -2623,11 +2799,12 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         task_spec: dict[str, Any],
         runtime_paths: dict[str, Path],
     ) -> dict[str, Any]:
-        proxy_spec = dict(task_spec.get("proxy_spec") or {})
-        primary_output = str(proxy_spec.get("primary_output", "") or "").strip()
-        required_outputs = self._required_output_specs(task_spec)
-        if not primary_output and required_outputs:
-            primary_output = str(required_outputs[0].get("path", "") or "").strip()
+        task_contract = self._load_public_task_contract(
+            task_spec=task_spec,
+            root=runtime_paths["runtime_root"],
+        )
+        required_outputs = self._required_output_specs(task_spec, task_contract=task_contract)
+        primary_output = str(required_outputs[0].get("path", "") or "").strip() if required_outputs else ""
 
         existing_outputs: list[str] = []
         missing_outputs: list[str] = []
@@ -2650,39 +2827,56 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             if relative_path == primary_output:
                 primary_output_exists = True
 
-            required_fields = [str(field) for field in item.get("required_fields") or []]
-            numeric_fields = [str(field) for field in item.get("numeric_fields") or []]
-            same_shape_fields = [str(field) for field in item.get("same_shape_fields") or []]
-            if relative_path == primary_output:
-                if not required_fields:
-                    required_fields = [str(field) for field in proxy_spec.get("required_fields") or []]
-                if not numeric_fields:
-                    numeric_fields = [str(field) for field in proxy_spec.get("numeric_fields") or []]
-                if not same_shape_fields:
-                    same_shape_fields = [str(field) for field in proxy_spec.get("same_shape_fields") or []]
-
             if str(item.get("format", "") or "").strip().lower() != "npz":
                 continue
             try:
                 with np.load(output_path, allow_pickle=False) as payload:
-                    item_missing_fields: list[str] = []
-                    for field in required_fields:
-                        if field not in payload.files:
-                            item_missing_fields.append(field)
-                    shapes: list[tuple[int, ...]] = []
-                    for field in numeric_fields:
-                        if field not in payload.files:
-                            continue
-                        value = np.asarray(payload[field])
-                        if not np.issubdtype(value.dtype, np.number):
-                            schema_warnings.append(f"non-numeric field: {field}")
-                            continue
-                        if np.any(~np.isfinite(value)):
-                            schema_warnings.append(f"nan_or_inf field: {field}")
-                        if field in same_shape_fields:
-                            shapes.append(tuple(value.shape))
-                    if shapes and any(shape != shapes[0] for shape in shapes[1:]):
-                        schema_warnings.append("required fields have inconsistent shapes")
+                    if task_contract:
+                        output_validation = validate_output_payload_against_contract(payload, task_contract)
+                        item_missing_fields = list(output_validation.get("missing_fields", []))
+                        schema_warnings.extend(list(output_validation.get("warnings", [])))
+                        for check in output_metric_input_checks(task_contract):
+                            if str(check.get("output_path", "") or "").strip() != relative_path:
+                                continue
+                            try:
+                                resolve_metric_input_value(
+                                    runtime_paths["runtime_root"],
+                                    task_contract,
+                                    {
+                                        "source": "output",
+                                        "field": str(check.get("field", "") or ""),
+                                        "selectors": dict(check.get("selectors") or {}),
+                                        "preprocess": str(check.get("preprocess", "identity") or "identity"),
+                                        "expected_shape": list(check.get("expected_shape", []) or []),
+                                    },
+                                    output_payload=payload,
+                                )
+                            except Exception as exc:
+                                schema_warnings.append(
+                                    f"metric input resolution failed: {check.get('metric_name', '')}:{check.get('input_name', '')} ({exc})"
+                                )
+                    else:
+                        required_fields = [str(field) for field in item.get("required_fields") or []]
+                        numeric_fields = [str(field) for field in item.get("numeric_fields") or []]
+                        same_shape_fields = [str(field) for field in item.get("same_shape_fields") or []]
+                        item_missing_fields = []
+                        for field in required_fields:
+                            if field not in payload.files:
+                                item_missing_fields.append(field)
+                        shapes: list[tuple[int, ...]] = []
+                        for field in numeric_fields:
+                            if field not in payload.files:
+                                continue
+                            value = np.asarray(payload[field])
+                            if not np.issubdtype(value.dtype, np.number):
+                                schema_warnings.append(f"non-numeric field: {field}")
+                                continue
+                            if np.any(~np.isfinite(value)):
+                                schema_warnings.append(f"nan_or_inf field: {field}")
+                            if field in same_shape_fields:
+                                shapes.append(tuple(value.shape))
+                        if shapes and any(shape != shapes[0] for shape in shapes[1:]):
+                            schema_warnings.append("required fields have inconsistent shapes")
             except Exception:
                 schema_warnings.append(f"unreadable artifact: {relative_path}")
                 continue
@@ -2950,7 +3144,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "If `python work/main.py` succeeds and the required outputs exist, do not keep researching or refining before calling `check_ready()`.",
                 f"workspace_root={workspace_root}",
                 f"cwd={workspace_root}",
-                "README_public.md is the authoritative task specification.",
+                "README_public.md is the authoritative task specification narrative, and task_contract.public.json is the authoritative interface contract.",
                 "Use relative paths first from the current workspace root.",
                 "Explore the workspace with the provided tools instead of assuming file contents.",
                 f"Active skills: {', '.join(active_skills) if active_skills else '(none)'}",
@@ -2992,7 +3186,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "If `python work/main.py` succeeds and the required outputs exist, your next action must be to return the final structured summary, not more analysis or optimization.",
                 f"workspace_root={workspace_root}",
                 f"cwd={workspace_root}",
-                "README_public.md is the authoritative task specification.",
+                "README_public.md is the authoritative task specification narrative, and task_contract.public.json is the authoritative interface contract.",
                 "Use relative paths first from the current workspace root.",
                 "Explore the workspace with the provided tools instead of assuming file contents.",
                 f"Active skills: {', '.join(active_skills) if active_skills else '(none)'}",
@@ -3036,7 +3230,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "If `python work/main.py` succeeds, your next action must be `python evaluation/self_eval.py`, not more analysis or optimization.",
                 f"workspace_root={workspace_root}",
                 f"cwd={workspace_root}",
-                "README_public.md is the authoritative task specification.",
+                "README_public.md is the authoritative task specification narrative, and task_contract.public.json is the authoritative interface contract.",
                 "Use relative paths first from the current workspace root.",
                 "Explore the workspace with the provided tools instead of assuming file contents.",
                 f"Active skills: {', '.join(active_skills) if active_skills else '(none)'}",
@@ -3072,7 +3266,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                         "Read first: "
                         + ", ".join(execution_conventions["read_first"])
                         if execution_conventions.get("read_first")
-                        else "Read first: README_public.md"
+                        else "Read first: README_public.md, task_contract.public.json"
                     ),
                     (
                         "Readable paths: "
@@ -3141,7 +3335,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         return "\n".join(
             [
                 "You are a Claude-style workspace coding agent for scientific tasks.",
-                "README_public.md is the authoritative task specification. Read it first before writing code.",
+                "README_public.md is the authoritative task specification narrative, and task_contract.public.json is the authoritative interface contract. Read both before writing code.",
                 "Return a single JSON object with top-level keys files, entrypoint, declared_outputs, assumptions, solver_summary.",
                 "All file writes must stay under work/.",
                 f"Active skills: {', '.join(active_skills) if active_skills else '(none)'}",
@@ -3718,7 +3912,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "You are an execution agent inside a harness, not an open-ended research assistant.",
                 "Work only inside the provided runtime workspace.",
                 "Your primary objective is to complete the public workspace contract and stop cleanly.",
-                "README_public.md is the authoritative task specification and must be read first.",
+                "README_public.md is the authoritative task specification narrative, and task_contract.public.json is the authoritative interface contract. Read both first.",
                 "Prefer relative paths from the current working directory instead of guessed absolute paths.",
                 "Use the preconfigured `python` from the workspace environment; do not switch interpreters.",
                 "Allowed write roots: " + ", ".join(tool_policy["write_roots"]),
@@ -3743,7 +3937,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "You are an execution agent inside a harness, not an open-ended research assistant.",
                 "Work only inside the provided runtime workspace.",
                 "Your primary objective is to complete the public workspace contract and stop cleanly.",
-                "README_public.md is the authoritative task specification and must be read first.",
+                "README_public.md is the authoritative task specification narrative, and task_contract.public.json is the authoritative interface contract. Read both first.",
                 "Prefer relative paths from the current working directory instead of guessed absolute paths.",
                 "Use the preconfigured `python` from the workspace environment; do not switch interpreters.",
                 "Allowed write roots: " + ", ".join(tool_policy["write_roots"]),

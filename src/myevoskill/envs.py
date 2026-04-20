@@ -9,7 +9,6 @@ import shutil
 import subprocess
 import sys
 import time
-import venv
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Mapping, Sequence
@@ -25,6 +24,7 @@ class EnvSpec:
 
     python_version: str
     requirements: List[str]
+    python_executable: str = ""
     backend: str = "venv_pip"
     task_id: str = ""
     task_family: str = ""
@@ -65,25 +65,95 @@ def load_requirements_lines(requirements_path: Path) -> list[str]:
     return normalize_requirements_lines(path.read_text(encoding="utf-8"))
 
 
+def _python_major_minor(python_executable: Path | str) -> str:
+    executable = Path(python_executable)
+    completed = subprocess.run(
+        [str(executable), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"failed to query python version for interpreter {executable}: "
+            f"{completed.stderr.strip() or '<empty>'}"
+        )
+    return (completed.stdout or "").strip()
+
+
+def resolve_python_executable(
+    *,
+    project_root: Path | None = None,
+    python_executable: Path | str | None = None,
+) -> Path:
+    """Resolve the preferred builder interpreter for task environments."""
+
+    candidates: list[Path] = []
+    if python_executable is not None:
+        candidates.append(Path(python_executable))
+
+    env_override = str(os.environ.get("MYEVOSKILL_ENV_PYTHON", "") or "").strip()
+    if env_override:
+        candidates.append(Path(env_override))
+
+    if project_root is not None:
+        root = Path(project_root).resolve()
+        if os.name == "nt":
+            candidates.extend(
+                [
+                    root / ".conda_env" / "python.exe",
+                    root / ".conda_env" / "Scripts" / "python.exe",
+                    root / ".venv" / "Scripts" / "python.exe",
+                    root / "venv" / "Scripts" / "python.exe",
+                ]
+            )
+        else:
+            candidates.extend(
+                [
+                    root / ".conda_env" / "bin" / "python",
+                    root / ".venv" / "bin" / "python",
+                    root / "venv" / "bin" / "python",
+                ]
+            )
+
+    candidates.append(Path(sys.executable))
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = os.path.normcase(os.path.normpath(str(candidate)))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if candidate.exists() and candidate.is_file():
+            return candidate.resolve()
+    return Path(sys.executable).resolve()
+
+
 def build_task_env_spec(
     *,
     task_id: str,
     family: str,
     requirements_path: Path,
+    project_root: Path | None = None,
     python_version: str | None = None,
+    python_executable: Path | str | None = None,
 ) -> EnvSpec:
     """Construct one task runtime environment specification."""
 
+    resolved_python_executable = resolve_python_executable(
+        project_root=project_root,
+        python_executable=python_executable,
+    )
     normalized_python_version = (
         str(python_version).strip()
         if python_version is not None
-        else f"{sys.version_info.major}.{sys.version_info.minor}"
+        else _python_major_minor(resolved_python_executable)
     )
     if not normalized_python_version:
-        normalized_python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        normalized_python_version = _python_major_minor(resolved_python_executable)
     return EnvSpec(
         python_version=normalized_python_version,
         requirements=load_requirements_lines(requirements_path),
+        python_executable=str(resolved_python_executable),
         task_id=str(task_id or "").strip(),
         task_family=str(family or "").strip(),
     )
@@ -215,7 +285,7 @@ class EnvManager:
         build_log_path.write_text("", encoding="utf-8")
 
         commands_run = [
-            f"{sys.executable} -m venv {materialized_venv_dir}",
+            f"{spec.python_executable or sys.executable} -m venv {materialized_venv_dir}",
             f"{python_executable} -m pip install --upgrade pip setuptools wheel",
         ]
         if spec.requirements:
@@ -226,9 +296,12 @@ class EnvManager:
         try:
             self._append_build_log(
                 build_log_path,
-                f"[create_venv] {sys.executable} -m venv {materialized_venv_dir}\n",
+                f"[create_venv] {spec.python_executable or sys.executable} -m venv {materialized_venv_dir}\n",
             )
-            self._create_venv(materialized_venv_dir)
+            self._create_venv(
+                materialized_venv_dir,
+                python_executable=spec.python_executable or sys.executable,
+            )
             self._ensure_venv_link(venv_dir=venv_dir, materialized_venv_dir=materialized_venv_dir)
             self._run_logged_command(
                 [str(python_executable), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"],
@@ -360,9 +433,18 @@ class EnvManager:
             checkpoint_cache_dir=checkpoint_dir,
         )
 
-    def _create_venv(self, venv_dir: Path) -> None:
-        builder = venv.EnvBuilder(with_pip=True, clear=True)
-        builder.create(str(venv_dir))
+    def _create_venv(self, venv_dir: Path, *, python_executable: Path | str) -> None:
+        completed = subprocess.run(
+            [str(python_executable), "-m", "venv", str(venv_dir)],
+            capture_output=True,
+            text=True,
+            timeout=self.build_timeout_seconds,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"failed to create venv with interpreter {python_executable}: "
+                f"{completed.stderr.strip() or '<empty>'}"
+            )
 
     def _default_venv_storage_root(self) -> Path:
         if os.name != "nt":

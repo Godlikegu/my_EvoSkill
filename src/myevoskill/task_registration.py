@@ -1,4 +1,4 @@
-"""User-facing contract draft and task registration APIs."""
+"""User-facing task registration APIs."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def register_task(
     *,
     output_root: Path,
 ) -> TaskRegistrationResult:
-    """Register one confirmed contract into the manifest-driven control plane."""
+    """Register one canonical task contract into the manifest-driven control plane."""
 
     return register_confirmed_task(task_root, output_root=output_root)
 
@@ -95,8 +95,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Register a confirmed tasks/<task_id>/evaluation/registration_contract.json "
-            "into registry/tasks/ and generate a ready judge adapter."
+            "Register tasks/<task_id>/evaluation/task_contract.json into "
+            "registry/tasks/ and generate derived runtime artifacts."
         )
     )
     parser.add_argument("--task-root", required=True, help="Path to the raw task directory")

@@ -11,11 +11,13 @@ import numpy as np
 
 from .judging import HiddenJudge, MetricRequirement
 from .models import JudgeResult, PublicExposurePolicy, READMEPolicy, RunRecord
+from .task_contract import load_task_contract
 from .task_runtime import (
     coerce_runtime_layout,
     primary_output_relative_path,
     resolve_primary_output_path,
 )
+from .task_contract import output_field_map
 
 
 def cars_spectroscopy_public_policy() -> PublicExposurePolicy:
@@ -75,8 +77,30 @@ def cars_spectroscopy_proxy_spec(run_record: RunRecord) -> Dict[str, object]:
 def manifest_proxy_spec(
     run_record: RunRecord,
     manifest: Mapping[str, Any],
+    task_root: Path | None = None,
 ) -> Dict[str, object]:
     """Resolve proxy spec from a manifest without task-name branching."""
+
+    task_contract: dict[str, object] = {}
+    if task_root is not None:
+        try:
+            task_contract = load_task_contract(task_root, public=True)
+        except FileNotFoundError:
+            task_contract = {}
+    else:
+        task_contract = dict(manifest.get("task_contract") or {})
+    if task_contract:
+        output_path = resolve_primary_output_path(run_record.workspace_root, manifest)
+        output = dict(task_contract.get("output") or {})
+        fields = output_field_map(task_contract)
+        return {
+            "output_path": output_path,
+            "output_dtype": str(output.get("format", "") or ""),
+            "field_specs": [dict(value) for value in fields.values()],
+            "runtime_seconds": run_record.runtime_seconds,
+            "physical_checks": {"non_negative_runtime": run_record.runtime_seconds >= 0},
+            "public_baseline_delta": {},
+        }
 
     spec = dict(manifest.get("proxy_spec") or {})
     output_path = resolve_primary_output_path(run_record.workspace_root, manifest)

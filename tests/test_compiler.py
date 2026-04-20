@@ -100,6 +100,7 @@ def test_task_compiler_preserves_user_readme_notes_but_blocks_private_assets(tmp
     assert report["runtime_policy"]["execution_budget_seconds"] == 900
     assert task_spec["runtime_policy"]["model_timeout_seconds"] == 240
     assert task_spec["runtime_policy"]["execution_budget_seconds"] == 900
+    assert "task_contract_public" not in task_spec
     assert report["preserved_sections"]
 
 

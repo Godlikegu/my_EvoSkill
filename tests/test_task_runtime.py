@@ -4,6 +4,7 @@ from myevoskill.models import ExecutorSessionConfig, ModelConfig
 from myevoskill.task_runtime import (
     DEFAULT_RUNTIME_POLICY,
     ensure_clean_run_directory,
+    primary_output_relative_path,
     resolve_run_paths,
     resolve_runtime_policy,
 )
@@ -71,4 +72,11 @@ def test_resolve_runtime_policy_uses_global_defaults_when_missing():
     assert (
         policy.execution_budget_seconds
         == DEFAULT_RUNTIME_POLICY["execution_budget_seconds"]
+    )
+
+
+def test_primary_output_relative_path_prefers_primary_output_path():
+    assert (
+        primary_output_relative_path({"primary_output_path": "output/custom_result.npz"})
+        == "output/custom_result.npz"
     )

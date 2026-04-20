@@ -15,6 +15,7 @@ from .models import (
     RunPaths,
     TaskBundle,
 )
+from .task_contract import task_contract_primary_output_path
 
 
 DEFAULT_RUNTIME_LAYOUT: Dict[str, str] = {
@@ -161,10 +162,18 @@ def primary_output_relative_path(task_spec: Mapping[str, Any] | None = None) -> 
     """Resolve the primary output path from a manifest-derived task spec."""
 
     spec = dict(task_spec or {})
-    proxy_spec = dict(spec.get("proxy_spec") or {})
-    primary_output = proxy_spec.get("primary_output")
+    primary_output = str(spec.get("primary_output_path", "") or "").strip()
     if primary_output:
-        return str(primary_output)
+        return primary_output
+
+    task_contract = dict(spec.get("task_contract") or {})
+    if task_contract:
+        return task_contract_primary_output_path(task_contract)
+
+    proxy_spec = dict(spec.get("proxy_spec") or {})
+    proxy_primary_output = proxy_spec.get("primary_output")
+    if proxy_primary_output:
+        return str(proxy_primary_output)
 
     output_contract = dict(spec.get("output_contract") or {})
     required_outputs = list(output_contract.get("required_outputs") or [])

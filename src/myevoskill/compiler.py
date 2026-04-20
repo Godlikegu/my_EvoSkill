@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from .compile_audit import CompileAuditAdapter, NullCompileAuditAdapter
 from .models import PublicExposurePolicy, READMEPolicy, TaskBundle
 from .task_runtime import coerce_runtime_layout, coerce_runtime_policy
+from .task_contract import PUBLIC_TASK_CONTRACT_FILENAME, load_task_contract
 
 
 class TaskBundleCompiler:
@@ -91,12 +92,34 @@ class TaskBundleCompiler:
 
         self._copy_hidden_bundle(source_task_dir, hidden_root)
 
+        public_contract_payload: Dict[str, Any] = {}
+        try:
+            public_contract_payload = load_task_contract(source_task_dir, public=True)
+        except FileNotFoundError:
+            public_contract_payload = {}
+        if public_contract_payload:
+            (public_root / PUBLIC_TASK_CONTRACT_FILENAME).write_text(
+                json.dumps(public_contract_payload, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            copied_public.append(PUBLIC_TASK_CONTRACT_FILENAME)
+        declared_public_paths = {
+            str(item.get("path", "") or "").replace("\\", "/").strip()
+            for item in public_contract_payload.get("files", []) or []
+            if isinstance(item, Mapping) and str(item.get("path", "") or "").strip()
+        }
+
         for path in source_task_dir.rglob("*"):
             if not path.is_file():
                 continue
             rel = path.relative_to(source_task_dir)
             rel_str = rel.as_posix()
-            if self._is_forbidden_public(rel):
+            if rel.parts[:2] == ("evaluation", PUBLIC_TASK_CONTRACT_FILENAME):
+                continue
+            if public_contract_payload and rel_str not in declared_public_paths:
+                blocked_paths.append(rel_str)
+                continue
+            if not public_contract_payload and self._is_forbidden_public(rel):
                 blocked_paths.append(rel_str)
                 continue
             if rel.parts[:1] == ("data",) and rel.name in public_denylist:
@@ -134,15 +157,12 @@ class TaskBundleCompiler:
             "runtime_layout": coerce_runtime_layout(manifest.get("runtime_layout")),
             "runtime_policy": coerce_runtime_policy(manifest.get("runtime_policy")),
             "runtime_env": dict(manifest.get("runtime_env") or {}),
-            "output_contract": dict(manifest.get("output_contract") or {}),
             "public_eval_spec": dict(manifest.get("public_eval_spec") or {}),
-            "proxy_spec": dict(manifest.get("proxy_spec") or {}),
-            "judge_spec": dict(manifest.get("judge_spec") or {}),
-            "execution_conventions": dict(manifest.get("execution_conventions") or {}),
-            "registration_contract_path": str(
-                manifest.get("registration_contract_path") or ""
-            ),
-            "registration_contract": dict(manifest.get("registration_contract") or {}),
+            "primary_output_path": str(manifest.get("primary_output_path") or ""),
+            "task_contract_public_path": PUBLIC_TASK_CONTRACT_FILENAME,
+            "task_contract_path": str(manifest.get("task_contract_path") or ""),
+            "judge_adapter_path": str(manifest.get("judge_adapter_path") or ""),
+            "ready": bool(manifest.get("ready", False)),
         }
         task_spec_path = bundle_root / "task.yaml"
         task_spec_path.write_text(
@@ -151,6 +171,7 @@ class TaskBundleCompiler:
 
         final_public_contract, contract_warnings = self._finalize_public_contract(
             manifest=manifest,
+            public_contract=public_contract_payload,
             audit_result=audit_result,
         )
         llm_audit_warnings.extend(contract_warnings)
@@ -170,12 +191,12 @@ class TaskBundleCompiler:
             "runtime_layout": task_spec["runtime_layout"],
             "runtime_policy": task_spec["runtime_policy"],
             "runtime_env": task_spec["runtime_env"],
-            "output_contract": task_spec["output_contract"],
             "public_eval_spec": task_spec["public_eval_spec"],
-            "proxy_spec": task_spec["proxy_spec"],
-            "judge_spec": task_spec["judge_spec"],
-            "execution_conventions": task_spec["execution_conventions"],
-            "registration_contract_path": task_spec["registration_contract_path"],
+            "primary_output_path": task_spec["primary_output_path"],
+            "task_contract_public_path": task_spec["task_contract_public_path"],
+            "task_contract_path": task_spec["task_contract_path"],
+            "judge_adapter_path": task_spec["judge_adapter_path"],
+            "ready": task_spec["ready"],
         }
         compile_report_path = bundle_root / "compile_report.json"
         compile_report_path.write_text(
@@ -328,28 +349,45 @@ class TaskBundleCompiler:
     def _finalize_public_contract(
         self,
         manifest: Mapping[str, Any],
+        public_contract: Mapping[str, Any],
         audit_result: Mapping[str, Any],
     ) -> Tuple[Dict[str, Any], List[str]]:
         warnings: List[str] = []
         final_contract: Dict[str, Any] = {}
-        output_contract = dict(manifest.get("output_contract") or {})
-        if output_contract:
-            final_contract["required_outputs"] = list(
-                output_contract.get("required_outputs") or []
-            )
+        output = dict(public_contract.get("output") or {})
+        if output:
+            final_contract["required_outputs"] = [
+                {
+                    "path": str(output.get("path", "") or ""),
+                    "format": str(output.get("format", "") or ""),
+                    "fields": [dict(item or {}) for item in output.get("fields", []) or []],
+                }
+            ]
         else:
-            output_name = manifest.get("proxy_output_name")
-            if output_name:
-                final_contract["required_outputs"] = [
-                    {
-                        "path": f"output/{output_name}",
-                        "format": str(output_name).split(".")[-1],
-                    }
-                ]
-        judge_spec = dict(manifest.get("judge_spec") or {})
-        judge_metrics = judge_spec.get("metrics") or manifest.get("judge_metrics")
-        if judge_metrics:
-            final_contract["judge_metrics"] = list(judge_metrics)
+            output_contract = dict(manifest.get("output_contract") or {})
+            required_outputs = [dict(item or {}) for item in output_contract.get("required_outputs", []) or []]
+            if required_outputs:
+                final_contract["required_outputs"] = required_outputs
+            else:
+                proxy_output_name = str(manifest.get("proxy_output_name", "") or "").strip()
+                if proxy_output_name:
+                    final_contract["required_outputs"] = [
+                        {
+                            "path": proxy_output_name
+                            if "/" in proxy_output_name
+                            else f"output/{proxy_output_name}",
+                            "format": "npz",
+                        }
+                    ]
+        metrics = [
+            str(item.get("name", "") or "")
+            for item in public_contract.get("metrics", []) or []
+            if isinstance(item, Mapping) and str(item.get("name", "") or "")
+        ]
+        if not metrics:
+            metrics = [str(item) for item in manifest.get("judge_metrics", []) or [] if str(item)]
+        if metrics:
+            final_contract["judge_metrics"] = metrics
 
         suggested_contract = dict(audit_result.get("suggested_public_contract", {}))
         suggested_method_hints = list(audit_result.get("suggested_method_hints", []))

@@ -96,7 +96,11 @@ def run_registered_task_live(
     started_at = time.time()
     record = ClaudeWorkspaceAdapter().run(bundle, session, list(skills))
     elapsed = time.time() - started_at
-    proxy = ProxyVerifier().evaluate(record, manifest_proxy_spec(record, manifest))
+    try:
+        proxy_spec = manifest_proxy_spec(record, manifest, task_root=task_root)
+    except TypeError:
+        proxy_spec = manifest_proxy_spec(record, manifest)
+    proxy = ProxyVerifier().evaluate(record, proxy_spec)
     judge = evaluate_manifest_run(task_root, record, manifest)
     log_dir = write_live_run_logs(
         run_paths.log_root,
@@ -160,9 +164,13 @@ def evaluate_manifest_run(
 
     judge_spec = dict(manifest.get("judge_spec") or {})
     runtime_env = dict(manifest.get("runtime_env") or {})
-    adapter_path = str(judge_spec.get("adapter_path") or "").strip()
+    adapter_path = str(
+        manifest.get("judge_adapter_path")
+        or judge_spec.get("adapter_path")
+        or ""
+    ).strip()
     if not adapter_path:
-        raise RuntimeError("manifest judge_spec.adapter_path is required for live task evaluation")
+        raise RuntimeError("manifest judge adapter path is required for live task evaluation")
     python_executable = str(runtime_env.get("python_executable", "") or "").strip()
     if not python_executable:
         raise RuntimeError("manifest runtime_env.python_executable is required for live task evaluation")

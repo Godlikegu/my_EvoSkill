@@ -161,3 +161,50 @@ def test_manifest_proxy_spec_uses_manifest_output_contract(tmp_path):
     spec = manifest_proxy_spec(run, manifest)
     assert Path(spec["output_path"]).name == "custom_result.npz"
     assert spec["output_dtype"] == "npz"
+
+
+def test_manifest_proxy_spec_reads_public_task_contract_from_task_root(tmp_path):
+    task_root = tmp_path / "task_a"
+    (task_root / "evaluation").mkdir(parents=True)
+    (task_root / "evaluation" / "task_contract.public.json").write_text(
+        json.dumps(
+            {
+                "task_id": "task-a",
+                "family": "optics",
+                "files": [],
+                "execution": {"entrypoint": "work/main.py"},
+                "output": {
+                    "path": "output/custom_result.npz",
+                    "format": "npz",
+                    "fields": [
+                        {
+                            "name": "reconstruction",
+                            "dtype": "float32",
+                            "shape": [1, 16, 16],
+                            "semantics": "Prediction.",
+                        }
+                    ],
+                },
+                "metrics": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    run = RunRecord(
+        run_id="run-2",
+        task_id="task-a",
+        provider="local_runner",
+        env_hash="env-1",
+        skills_active=[],
+        workspace_root=tmp_path / "workspace",
+    )
+    manifest = {
+        "primary_output_path": "output/custom_result.npz",
+        "task_contract_public_path": "evaluation/task_contract.public.json",
+    }
+
+    spec = manifest_proxy_spec(run, manifest, task_root=task_root)
+
+    assert Path(spec["output_path"]).name == "custom_result.npz"
+    assert spec["output_dtype"] == "npz"
+    assert spec["field_specs"][0]["name"] == "reconstruction"
