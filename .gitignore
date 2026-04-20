@@ -10,7 +10,8 @@ dist/
 .DS_Store
 runtime_logs/*
 !runtime_logs/.gitkeep
-artifacts/workspaces/*
-artifacts/logs/*
+artifacts/*
 !artifacts/.gitkeep
 .conda_env/
+.pytest_tmp/
+.v/

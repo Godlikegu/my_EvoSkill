@@ -41,20 +41,32 @@ validates outputs from external executors.
 
 Task onboarding is contract-driven. Before a task can be compiled or scheduled
 by batch runners, it should first produce a draft registration contract and
-then register the confirmed contract:
+then register the confirmed contract.
+
+Draft stage entrypoints:
 
 - installed CLI: `myevoskill-task-contract-draft`
+- Python API: `draft_task_contract(...)`
+
+Confirmed registration entrypoints:
+
 - installed CLI: `myevoskill-task-register`
 - module CLI: `python -m myevoskill.task_registration`
-- Python APIs: `draft_task_contract(...)`, `register_task(...)`
+- Python API: `register_task(...)`
 
-The registration step is responsible for:
+The draft stage is responsible for:
 
 - reading `tasks/<task_id>/evaluation/registration_input.json`
 - running the mandatory Claude registration agent to draft the contract
 - retrying once with validation feedback when the first draft is structurally invalid
 - generating `tasks/<task_id>/evaluation/registration_contract.draft.json`
 - generating `tasks/<task_id>/evaluation/contract_generation.notes.json`
+
+The confirmed registration stage is responsible for:
+
+- validating `tasks/<task_id>/evaluation/registration_contract.json`
+- validating task-local file references used by resources and judge metrics
+- building or reusing one task runtime environment from `requirements.txt`
 - generating `registry/tasks/<task_id>.json`
 - generating `registry/tasks/<task_id>.notes.json`
 - generating `tasks/<task_id>/evaluation/judge_adapter.py`
@@ -63,7 +75,7 @@ The confirmed
 `tasks/<task_id>/evaluation/registration_contract.json` is the frozen
 task-local source of truth. Metric pass/fail conditions are normalized into
 `judge_contract.metrics[*].pass_condition = { operator, threshold }`. The
-manifest and ready judge are derived artifacts.
+manifest, runtime-env metadata, and ready judge are derived artifacts.
 
 ## Execution Plane
 
@@ -148,6 +160,16 @@ task-name-driven. Task-specific differences should stay confined to:
 The executor main loop, workspace layout, logging format, and transfer
 validation logic should remain shared across tasks.
 
+Live execution is gated by manifest readiness:
+
+- `judge_spec.ready == true`
+- `runtime_env.ready == true`
+- the confirmed registration contract exists and validates
+
+The live runner may rebuild the registered task runtime environment when the
+local cache is missing, but it must verify that the rebuilt `env_hash` matches
+the manifest before execution continues.
+
 Each run uses a standardized runtime workspace rooted at `workspace_root/`:
 
 - `data/`
@@ -170,6 +192,11 @@ For live and manual runs, the default persistent project-local layout is:
 
 This keeps generated solvers, staged data, outputs, checkpoints, and logs
 inside the repository tree without mixing different task/run instances.
+
+Task-related subprocesses use the manifest-declared task runtime Python rather
+than the control-plane interpreter. That shared task runtime is used for
+workspace execution, public self-eval, post-run checks, and the task-local
+judge subprocess.
 
 The Claude SDK live path also depends on host tooling:
 

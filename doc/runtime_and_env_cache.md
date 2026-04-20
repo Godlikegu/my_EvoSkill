@@ -2,44 +2,72 @@
 
 ## Goal
 
-Avoid rebuilding execution environments on every iteration while supporting
-both classical scientific solvers and ML training workloads.
+Avoid rebuilding task execution environments on every iteration while keeping
+registration, live execution, post-run checks, and judging on the same task
+runtime Python.
 
 ## Two Environment Layers
 
 - `dev environment`
   A dedicated conda environment for MyEvoSkill itself.
 - `task runtime environment`
-  Derived from `EnvSpec -> env_hash` for each task.
+  Derived from `EnvSpec -> env_hash` for each task and built with
+  `venv + pip`.
 
 The dev environment is separate from task environments and should not absorb
 task-specific dependencies by default.
 
-## Cache Layers
+## Current Backend
 
-- `base image cache`
-  Reused across families or identical runtime images.
-- `task env cache`
-  Reused for the exact `EnvSpec`.
-- `dataset cache`
-  Shared public input cache.
-- `artifact cache`
-  Shared non-secret output artifacts.
-- `checkpoint cache`
-  Persisted training checkpoints for long jobs.
+The current runtime backend is `venv_pip`.
 
-## Hashing
+For each task, MyEvoSkill builds or reuses a cached runtime environment by:
 
-`EnvSpec` is hashed into `env_hash` using the full serialized environment
-description:
+1. running the control-plane Python with `-m venv`
+2. running task-env Python with `-m pip install --upgrade pip setuptools wheel`
+3. running task-env Python with `-m pip install -r requirements.txt`
+4. recording `pip freeze`
 
-- Python version
-- requirements
-- system packages
-- CUDA / GPU profile
-- container image
-- task family
-- extra runtime metadata
+The environment is considered ready only when:
+
+- the task-env Python executable exists
+- `install_report.json.success == true`
+
+## EnvSpec And Hashing
+
+`EnvSpec` is hashed into `env_hash` using a stable serialized description.
+
+The task-facing fields that currently drive the hash are:
+
+- `backend = "venv_pip"`
+- host Python major/minor version
+- normalized `requirements.txt` lines
+- `task_id`
+- `task_family`
+
+Requirement normalization removes blank lines and comments while preserving the
+remaining requirement order.
+
+## Cache Layout
+
+Shared runtime environment caches live under:
+
+- `artifacts/env_cache/task_envs/<env_hash>/`
+
+Each task environment cache writes:
+
+- `env_spec.json`
+- `requirements.txt`
+- `install_report.json`
+- `pip_freeze.txt`
+- `build.log`
+- `venv/`
+
+`install_report.json` records whether the build succeeded, the commands run,
+the resolved Python executable, and the paths to the log and freeze outputs.
+
+Additional cache directories are still maintained for dataset, artifact, and
+checkpoint reuse, but task runtime reuse is keyed by `env_hash`.
 
 ## Workspace Policy
 
@@ -71,6 +99,48 @@ On rerun:
 - checkpoint caches may be restored into the run workspace
 
 This ensures iteration does not reconfigure the environment from scratch.
+
+## Register And Live Integration
+
+Confirmed registration eagerly builds or reuses the task runtime environment
+from `tasks/<task_id>/requirements.txt`.
+
+Registration embeds the resulting metadata into the manifest as `runtime_env`,
+including:
+
+- `backend`
+- `env_hash`
+- `requirements_path`
+- `python_executable`
+- `ready`
+- `build_log_path`
+- `install_report_path`
+
+Live execution refuses to start unless:
+
+- `judge_spec.ready == true`
+- `runtime_env.ready == true`
+- the confirmed registration contract is present and valid
+
+If the registered environment is missing locally, the live runner may rebuild
+it from the task root and then verify that the rebuilt `env_hash` matches the
+manifest.
+
+## Runtime Consistency
+
+Task-related subprocesses use the manifest-declared task Python, not the
+control-plane `sys.executable`.
+
+That shared task runtime Python is used for:
+
+- `python work/main.py`
+- `python evaluation/self_eval.py`
+- post-run audit and replay
+- task-local judge subprocess execution
+
+The executor also places the task environment Python directory at the front of
+`PATH` and records the resolved `task_python_executable` in run metadata and
+transcripts.
 
 ## Runtime Policy
 

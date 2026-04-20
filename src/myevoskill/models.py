@@ -83,6 +83,10 @@ class EnvCacheRecord:
 
     env_hash: str
     env_dir: Path
+    python_executable: Path
+    install_report_path: Path
+    build_log_path: Path
+    ready: bool
     base_image_cache_dir: Path
     task_env_cache_dir: Path
     dataset_cache_dir: Path

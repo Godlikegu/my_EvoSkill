@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from .envs import EnvManager, build_task_env_spec, resolve_env_cache_root
+from .judge_runner import invoke_judge_runner
 from .manifest_bootstrap import (
     DEFAULT_JUDGE_ADAPTER_PATH,
     DEFAULT_METRICS_CONFIG_PATH,
@@ -29,7 +30,7 @@ from .registration_agent import (
     run_registration_agent,
     validate_registration_input,
 )
-from .models import ContractDraftResult, TaskRegistrationResult
+from .models import ContractDraftResult, EnvCacheRecord, TaskRegistrationResult
 from .task_runtime import (
     coerce_runtime_layout,
     coerce_runtime_policy,
@@ -66,6 +67,81 @@ def registration_contract_paths(task_root: Path) -> dict[str, Path]:
         "notes_path": evaluation_dir / CONTRACT_NOTES_FILENAME,
         "judge_path": Path(task_root).resolve() / DEFAULT_JUDGE_ADAPTER_PATH,
     }
+
+
+def task_requirements_path(task_root: Path) -> Path:
+    """Resolve one task-local requirements.txt path."""
+
+    return Path(task_root).resolve() / "requirements.txt"
+
+
+def ensure_task_runtime_env(
+    task_root: Path,
+    *,
+    output_root: Path,
+    task_id: str,
+    family: str,
+) -> EnvCacheRecord:
+    """Build or reuse the cached task runtime environment from requirements.txt."""
+
+    requirements_path = task_requirements_path(task_root)
+    if not requirements_path.exists():
+        raise FileNotFoundError(f"requirements.txt not found: {requirements_path}")
+    manager = EnvManager(resolve_env_cache_root(output_root))
+    spec = build_task_env_spec(
+        task_id=task_id,
+        family=family,
+        requirements_path=requirements_path,
+    )
+    return manager.ensure_env(spec)
+
+
+def runtime_env_manifest_payload(
+    cache_record: EnvCacheRecord,
+    *,
+    output_root: Path,
+    task_root: Path,
+) -> dict[str, Any]:
+    """Serialize cached runtime environment metadata into the task manifest."""
+
+    return {
+        "backend": "venv_pip",
+        "env_hash": cache_record.env_hash,
+        "requirements_path": str(task_requirements_path(task_root)),
+        "python_executable": str(cache_record.python_executable),
+        "ready": bool(cache_record.ready),
+        "build_log_path": str(cache_record.build_log_path),
+        "install_report_path": str(cache_record.install_report_path),
+    }
+
+
+def ensure_manifest_runtime_env(
+    manifest: Mapping[str, Any],
+    *,
+    task_root: Path,
+    output_root: Path,
+) -> dict[str, Any]:
+    """Ensure the runtime environment declared in a ready manifest exists locally."""
+
+    task_id = str(manifest.get("task_id", "") or Path(task_root).name)
+    family = str(manifest.get("family", "") or "")
+    cache_record = ensure_task_runtime_env(
+        task_root,
+        output_root=output_root,
+        task_id=task_id,
+        family=family,
+    )
+    runtime_env = runtime_env_manifest_payload(
+        cache_record,
+        output_root=output_root,
+        task_root=task_root,
+    )
+    expected_hash = str((manifest.get("runtime_env") or {}).get("env_hash", "") or "").strip()
+    if expected_hash and expected_hash != runtime_env["env_hash"]:
+        raise RuntimeError(
+            "live run refused: manifest runtime_env.env_hash does not match rebuilt environment"
+        )
+    return runtime_env
 
 
 def create_registration_contract_draft(
@@ -561,6 +637,17 @@ def register_confirmed_task(
     data_summary = _build_data_summary(task_root / "data")
     evaluation_summary = _build_evaluation_summary(task_root / "evaluation")
     output_detection = _build_output_detection(task_root, data_summary, readme_info, task_id)
+    cache_record = ensure_task_runtime_env(
+        task_root,
+        output_root=output_root,
+        task_id=task_id,
+        family=str(contract.get("family", "") or ""),
+    )
+    runtime_env = runtime_env_manifest_payload(
+        cache_record,
+        output_root=output_root,
+        task_root=task_root,
+    )
     manifest = _build_manifest_from_contract(
         task_root=task_root,
         output_root=output_root,
@@ -571,6 +658,7 @@ def register_confirmed_task(
         output_detection=output_detection,
         ready=False,
         validation_checks=[],
+        runtime_env=runtime_env,
     )
     judge_source = render_ready_judge(contract)
     paths["judge_path"].parent.mkdir(parents=True, exist_ok=True)
@@ -580,6 +668,7 @@ def register_confirmed_task(
         task_root=task_root,
         judge_path=paths["judge_path"],
         manifest=manifest,
+        python_executable=cache_record.python_executable,
     )
     manifest = _build_manifest_from_contract(
         task_root=task_root,
@@ -591,6 +680,7 @@ def register_confirmed_task(
         output_detection=output_detection,
         ready=True,
         validation_checks=validation_checks,
+        runtime_env=runtime_env,
     )
     registry_root = _registry_tasks_root(output_root)
     manifest_path = registry_root / f"{task_id}.json"
@@ -623,6 +713,13 @@ def register_confirmed_task(
         judge_validation_checks=validation_checks,
         contract_status="confirmed_registered",
         judge_status="ready",
+        runtime_env={
+            "status": "ready",
+            "env_hash": cache_record.env_hash,
+            "python_executable": str(cache_record.python_executable),
+            "install_report_path": str(cache_record.install_report_path),
+            "build_log_path": str(cache_record.build_log_path),
+        },
     )
     paths["notes_path"].write_text(
         json.dumps(notes_payload, indent=2, sort_keys=True, ensure_ascii=False),
@@ -644,6 +741,7 @@ def validate_generated_judge(
     task_root: Path,
     judge_path: Path,
     manifest: Mapping[str, Any],
+    python_executable: Path,
 ) -> list[str]:
     """Validate that a generated judge is importable and marked ready."""
 
@@ -656,21 +754,19 @@ def validate_generated_judge(
     if "judge_not_implemented" in source:
         raise ValueError("judge_adapter.py still contains a stub marker")
 
-    spec = importlib.util.spec_from_file_location(
-        f"myevoskill_registration_judge_{manifest['task_id']}",
-        judge_path,
+    validation_result = invoke_judge_runner(
+        python_executable,
+        mode="validate",
+        payload={"judge_path": str(Path(judge_path).resolve())},
     )
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot import generated judge: {judge_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    evaluate = getattr(module, "evaluate_run", None)
-    if not callable(evaluate):
+    if not bool(validation_result.get("callable_present", False)):
         raise AttributeError("generated judge is missing evaluate_run(task_root, run_record, manifest)")
     checks.append("judge_importable")
     checks.append("judge_callable_present")
+    if not bool(validation_result.get("generated_ready", False)):
+        raise ValueError("judge_adapter.py is not marked as ready")
 
-    generated_metrics = list(getattr(module, "GENERATED_METRIC_NAMES", []))
+    generated_metrics = list(validation_result.get("generated_metric_names", []) or [])
     manifest_metrics = list((manifest.get("judge_spec") or {}).get("metrics") or [])
     if generated_metrics != manifest_metrics:
         raise ValueError(
@@ -678,9 +774,7 @@ def validate_generated_judge(
         )
     checks.append("judge_metrics_match_manifest")
 
-    generated_contract_path = str(
-        getattr(module, "GENERATED_REGISTRATION_CONTRACT_PATH", "") or ""
-    )
+    generated_contract_path = str(validation_result.get("generated_contract_path", "") or "")
     manifest_contract_path = str(
         (manifest.get("judge_spec") or {}).get("registration_contract_path", "") or ""
     )
@@ -1013,6 +1107,15 @@ def ensure_live_ready_manifest(
     if not bool(judge_spec.get("ready", False)):
         raise RuntimeError(
             "live run refused: manifest judge_spec.ready is false; run task registration first"
+        )
+    runtime_env = dict(manifest.get("runtime_env") or {})
+    if not runtime_env:
+        raise RuntimeError(
+            "live run refused: manifest runtime_env is missing; rerun task registration"
+        )
+    if not bool(runtime_env.get("ready", False)):
+        raise RuntimeError(
+            "live run refused: manifest runtime_env.ready is false; rerun task registration"
         )
     contract_rel = str(
         judge_spec.get("registration_contract_path")
@@ -1441,6 +1544,7 @@ def _build_manifest_from_contract(
     output_detection: Mapping[str, Any],
     ready: bool,
     validation_checks: Sequence[str],
+    runtime_env: Mapping[str, Any],
 ) -> dict[str, Any]:
     public_policy = _build_public_policy(task_root, readme_info, data_summary, evaluation_summary)
     output_contract = dict(contract.get("output_contract") or {})
@@ -1460,6 +1564,7 @@ def _build_manifest_from_contract(
         "public_policy": public_policy,
         "runtime_layout": runtime_layout,
         "runtime_policy": runtime_policy,
+        "runtime_env": dict(runtime_env or {}),
         "output_contract": {
             "required_outputs": [
                 {
@@ -1547,6 +1652,7 @@ def _build_notes_payload(
     judge_validation_checks: Sequence[str],
     contract_status: str,
     judge_status: str,
+    runtime_env: Optional[Mapping[str, Any]] = None,
     attempt_summaries: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     normalized_notes = (
@@ -1615,6 +1721,7 @@ def _build_notes_payload(
             "status": judge_status,
             "validation_checks": list(judge_validation_checks),
         },
+        "runtime_env": dict(runtime_env or {}),
         "registry_notes_path": str(_registry_tasks_root(output_root) / f"{task_id}.notes.json"),
     }
 

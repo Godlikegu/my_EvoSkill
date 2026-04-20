@@ -105,6 +105,8 @@ Required behavior:
 - the adapter stages public inputs read-only and preserves a read-only
   `public_bundle/` mirror
 - only `work/`, `output/`, and `checkpoints/` are writable during execution
+- task-related subprocesses use the manifest-declared
+  `runtime_env.python_executable`, not the control-plane `sys.executable`
 - the adapter runs `python work/main.py` from the runtime root
 - the adapter generates a read-only public evaluator at:
   - `evaluation/self_eval.py`
@@ -153,9 +155,12 @@ Default Claude SDK option requirements:
 
 - `allowed_tools = [Read, Write, Bash, Glob, Grep]`
 - `disallowed_tools` includes `WebFetch`, `WebSearch`, `TodoWrite`
-- `max_turns = 50` unless explicitly overridden
-- `ResultMessage` remains the SDK-native completion boundary
-- if `python evaluation/self_eval.py` passes but no `ResultMessage` arrives, the adapter still records a protocol failure
+- `max_turns = 50` unless explicitly overridden or disabled with `null`
+- the primary completion source is `ResultMessage`
+- the adapter may also record
+  `sdk_completion_source = "external_output_contract"` when the public output
+  contract is satisfied and a valid structured completion is captured without a
+  final `ResultMessage`
 
 Optional compatibility behavior:
 
@@ -195,6 +200,13 @@ Default persistent run roots for live or manual execution are:
 
 - `artifacts/workspaces/<task_id>/<run_id>/`
 - `artifacts/logs/<task_id>/<run_id>/`
+
+The runtime environment seen by the workspace agent should be derived from the
+registered task environment:
+
+- `MYEVOSKILL_TASK_PYTHON` points to the task runtime Python
+- `PATH` is prefixed so `python` resolves to that task environment
+- `VIRTUAL_ENV` is set when the task runtime is a venv-backed environment
 
 ## Runtime Policy
 

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import urllib.error
@@ -15,6 +16,7 @@ from myevoskill.executor import (
     LocalRunnerAdapter,
     OpenHandsAdapter,
     _prepare_runtime_workspace,
+    _run_subprocess,
     _runtime_environment,
 )
 from myevoskill.models import ExecutorSessionConfig, ModelConfig, TaskBundle
@@ -97,6 +99,71 @@ def test_runtime_environment_forces_utf8_encoding(tmp_path):
     env = _runtime_environment(session, bundle, runtime_paths)
     assert env["PYTHONIOENCODING"] == "utf-8"
     assert env["PYTHONUTF8"] == "1"
+
+
+def test_runtime_environment_uses_task_runtime_python_and_path(tmp_path):
+    fake_env_root = tmp_path / "task_env" / "venv"
+    task_python = fake_env_root / "Scripts" / "python.exe"
+    for relative in (
+        "Scripts/python.exe",
+        "Library/bin/python.dll",
+        "Library/usr/bin/libopenblas.dll",
+        "DLLs/_ctypes.pyd",
+    ):
+        path = fake_env_root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+    bundle = make_bundle(
+        tmp_path,
+        task_spec={
+            "runtime_env": {
+                "backend": "venv_pip",
+                "env_hash": "env-task",
+                "python_executable": str(task_python.resolve()),
+                "ready": True,
+            }
+        },
+    )
+    session = ExecutorSessionConfig(run_id="run-1", env_hash="env-session")
+    _, runtime_paths = _prepare_runtime_workspace(bundle, tmp_path / "workspace")
+
+    env = _runtime_environment(session, bundle, runtime_paths)
+
+    path_entries = env["PATH"].split(os.pathsep)
+    assert env["MYEVOSKILL_TASK_PYTHON"] == str(task_python.resolve())
+    assert env["MYEVOSKILL_TASK_ENV_HASH"] == "env-task"
+    assert env["MYEVOSKILL_TASK_ENV_BACKEND"] == "venv_pip"
+    assert env["VIRTUAL_ENV"] == str(fake_env_root.resolve())
+    assert path_entries[:5] == [
+        str((fake_env_root / "Scripts").resolve()),
+        str(fake_env_root.resolve()),
+        str((fake_env_root / "Library" / "bin").resolve()),
+        str((fake_env_root / "Library" / "usr" / "bin").resolve()),
+        str((fake_env_root / "DLLs").resolve()),
+    ]
+
+
+def test_run_subprocess_uses_task_python_launcher(tmp_path):
+    env = {
+        **os.environ,
+        "MYEVOSKILL_TASK_PYTHON": str(os.path.abspath(sys.executable)),
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
+    }
+
+    completed, timed_out = _run_subprocess(
+        ("python", "-c", "import sys; print(sys.executable)"),
+        cwd=tmp_path,
+        env=env,
+        timeout_seconds=30,
+    )
+
+    assert timed_out is False
+    assert completed.returncode == 0
+    assert os.path.normcase(completed.args[0]) == os.path.normcase(os.path.abspath(sys.executable))
+    assert os.path.normcase(completed.stdout.strip()) == os.path.normcase(
+        os.path.abspath(sys.executable)
+    )
 
 
 def test_inspect_bridge_adapter_falls_back_when_dependency_forced_missing(tmp_path):
@@ -679,6 +746,11 @@ def test_claude_workspace_adapter_prompt_marks_readme_as_authoritative(tmp_path)
     assert "immediately return the final structured summary and stop all further tool use." in prompt
     assert "metrics.json threshold" not in prompt
     assert "forcibly interrupt" not in prompt
+    assert "Prefer the `Write` tool to create or modify `work/` source files" in prompt
+    assert "Use Bash mainly to run programs, inspect files, debug, and perform workspace-local" in prompt
+    assert "Any Bash command is acceptable if it stays inside the workspace" in prompt
+    assert "Absolute or relative paths are both acceptable when they resolve inside the workspace" in prompt
+    assert "preferably with the `Write` tool" in prompt
 
 
 def test_claude_workspace_prompt_requires_manifest_output_contract(tmp_path):
@@ -837,6 +909,81 @@ def test_claude_workspace_adapter_builds_sdk_options_with_default_max_turns(tmp_
     assert options["disallowed_tools"] == ["WebFetch", "WebSearch", "TodoWrite"]
     assert options["mcp_servers"] == {}
     assert options["env"] == {}
+
+
+def test_claude_workspace_adapter_omits_sdk_max_turns_when_unbounded(tmp_path):
+    adapter = ClaudeWorkspaceAdapter()
+    options = adapter._build_claude_sdk_options_kwargs(
+        session_config=ExecutorSessionConfig(
+            run_id="run-1",
+            env_hash="env-1",
+            provider_extras={"claude_max_turns": 0},
+        ),
+        workspace=tmp_path / "workspace",
+        system_prompt=adapter._build_workspace_system_prompt(
+            adapter._coerce_tool_policy(ExecutorSessionConfig(run_id="run-1", env_hash="env-1"))
+        ),
+        stop_oracle="public_self_eval",
+    )
+    assert options["max_turns"] is None
+
+
+def test_claude_workspace_adapter_builds_sdk_env_with_task_python_first(
+    tmp_path, monkeypatch
+):
+    adapter = ClaudeWorkspaceAdapter()
+    control_env_root = tmp_path / "control_env"
+    control_python = control_env_root / "python.exe"
+    control_python.parent.mkdir(parents=True, exist_ok=True)
+    control_python.write_text("", encoding="utf-8")
+    fake_env_root = tmp_path / "task_env"
+    for relative in (
+        "python.exe",
+        "Scripts/python.exe",
+        "Library/bin/python.dll",
+        "Library/usr/bin/libopenblas.dll",
+        "DLLs/_ctypes.pyd",
+        "conda-meta/history",
+    ):
+        path = fake_env_root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(control_python.resolve()))
+    monkeypatch.setattr(sys, "prefix", str(control_env_root.resolve()))
+
+    sdk_env = adapter._build_workspace_sdk_env(
+        {
+            "PATH": os.pathsep.join(["C:\\existing\\bin", "D:\\tools"]),
+            "MYEVOSKILL_RUNTIME_ROOT": "D:\\workspace",
+            "MYEVOSKILL_PUBLIC_BUNDLE": "D:\\workspace\\public_bundle",
+            "MYEVOSKILL_WORK_DIR": "D:\\workspace\\work",
+            "MYEVOSKILL_OUTPUT_DIR": "D:\\workspace\\output",
+            "MYEVOSKILL_CHECKPOINT_DIR": "D:\\workspace\\checkpoints",
+            "MYEVOSKILL_WORKSPACE": "D:\\workspace",
+            "MYEVOSKILL_TASK_ID": "demo-task",
+            "MYEVOSKILL_TASK_PYTHON": str((fake_env_root / "python.exe").resolve()),
+            "MYEVOSKILL_TASK_ENV_HASH": "env-demo-task",
+            "MYEVOSKILL_TASK_ENV_BACKEND": "venv_pip",
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUTF8": "1",
+            "VIRTUAL_ENV": str(fake_env_root.resolve()),
+        },
+        {"ANTHROPIC_API_KEY": "sdk-secret"},
+    )
+
+    path_entries = sdk_env["PATH"].split(os.pathsep)
+    assert path_entries[:5] == [
+        str(fake_env_root.resolve()),
+        str((fake_env_root / "Scripts").resolve()),
+        str((fake_env_root / "Library" / "bin").resolve()),
+        str((fake_env_root / "Library" / "usr" / "bin").resolve()),
+        str((fake_env_root / "DLLs").resolve()),
+    ]
+    assert sdk_env["MYEVOSKILL_PYTHON_EXE"] == str((fake_env_root / "python.exe").resolve())
+    assert sdk_env["CONDA_PREFIX"] == str(fake_env_root.resolve())
+    assert sdk_env["ANTHROPIC_API_KEY"] == "sdk-secret"
+    assert sdk_env["MYEVOSKILL_TASK_ID"] == "demo-task"
+    assert sdk_env["MYEVOSKILL_TASK_PYTHON"] == str((fake_env_root / "python.exe").resolve())
 
 
 def test_claude_workspace_adapter_resolves_model_name_from_env_for_logging(
@@ -1227,6 +1374,115 @@ def test_claude_workspace_adapter_requires_complete_output_contract_for_external
     assert record.metadata["output_contract_satisfied_post_run"] is False
 
 
+def test_claude_workspace_adapter_stops_after_first_sdk_result_message(tmp_path, monkeypatch):
+    bundle = make_bundle(
+        tmp_path,
+        {
+            "output_contract": {
+                "required_outputs": [
+                    {
+                        "path": "output/reconstruction.npz",
+                        "format": "npz",
+                        "required_fields": [
+                            "estimated_temperature_K",
+                            "reconstructed_spectrum",
+                            "nu_axis",
+                        ],
+                    }
+                ]
+            },
+            "proxy_spec": {
+                "primary_output": "output/reconstruction.npz",
+                "output_dtype": "npz",
+                "required_fields": [
+                    "estimated_temperature_K",
+                    "reconstructed_spectrum",
+                    "nu_axis",
+                ],
+                "numeric_fields": [
+                    "estimated_temperature_K",
+                    "reconstructed_spectrum",
+                    "nu_axis",
+                ],
+                "same_shape_fields": [
+                    "reconstructed_spectrum",
+                    "nu_axis",
+                ],
+            },
+        },
+    )
+    model = ModelConfig(
+        provider_name="claude-sdk",
+        model_name="claude-test",
+        api_key_env="TEST_CLAUDE_API_KEY",
+    )
+    config = ExecutorSessionConfig(
+        run_id="run-multi-sdk-round",
+        env_hash="env-1",
+        workspace_root=tmp_path / "workspace",
+        model_config=model,
+        provider_extras={
+            "max_workspace_iterations": 2,
+            "mock_claude_sdk_response": [
+                {
+                    "files": {
+                        "work/main.py": "\n".join(
+                            [
+                                "import numpy as np",
+                                "from pathlib import Path",
+                                "Path('output').mkdir(parents=True, exist_ok=True)",
+                                "np.savez(",
+                                "    'output/reconstruction.npz',",
+                                "    estimated_temperature_K=np.asarray([1200.0]),",
+                                "    reconstructed_spectrum=np.zeros((1, 200), dtype=float),",
+                                ")",
+                                "print('round-1')",
+                            ]
+                        )
+                        + "\n",
+                    },
+                    "solver_summary": "round-1",
+                    "declared_outputs": ["output/reconstruction.npz"],
+                    "assumptions": [],
+                    "files_written": ["work/main.py"],
+                    "commands_run": ["python work/main.py"],
+                },
+                {
+                    "files": {
+                        "work/main.py": "\n".join(
+                            [
+                                "import numpy as np",
+                                "from pathlib import Path",
+                                "Path('output').mkdir(parents=True, exist_ok=True)",
+                                "np.savez(",
+                                "    'output/reconstruction.npz',",
+                                "    estimated_temperature_K=np.asarray([1200.0]),",
+                                "    reconstructed_spectrum=np.zeros((1, 200), dtype=float),",
+                                "    nu_axis=np.linspace(2280.0, 2330.0, 200, dtype=float).reshape(1, 200),",
+                                ")",
+                                "print('round-2')",
+                            ]
+                        )
+                        + "\n",
+                    },
+                    "solver_summary": "round-2",
+                    "declared_outputs": ["output/reconstruction.npz"],
+                    "assumptions": [],
+                    "files_written": ["work/main.py"],
+                    "commands_run": ["python work/main.py"],
+                },
+            ],
+        },
+    )
+    monkeypatch.setenv("TEST_CLAUDE_API_KEY", "sdk-secret")
+    record = ClaudeWorkspaceAdapter().run(bundle, config, [])
+    assert record.metadata["iteration_count"] == 1
+    assert record.metadata["run_status"] == "failed"
+    assert record.metadata["output_contract_satisfied_post_run"] is False
+    assert not (tmp_path / "workspace" / "agent_summary_round_2.json").exists()
+    assert not (tmp_path / "workspace" / "public_self_eval_round_2.json").exists()
+
+
 def test_claude_workspace_adapter_returns_specific_failure_when_submission_accepted_but_no_result_message(
     tmp_path, monkeypatch
 ):
@@ -1453,6 +1709,136 @@ def test_claude_workspace_adapter_allows_low_risk_workspace_bash_commands(tmp_pa
         policy,
     )
     assert violations == []
+
+
+def test_claude_workspace_adapter_allows_empty_file_creation_inside_write_roots(tmp_path):
+    adapter = ClaudeWorkspaceAdapter()
+    policy = adapter._coerce_tool_policy(ExecutorSessionConfig(run_id="run-1", env_hash="env-1"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    violations = adapter._validate_bash_commands(
+        [
+            "touch work/src/__init__.py",
+            f"cd \"{workspace.resolve()}\" && touch work/src/__init__.py",
+            f"touch \"{(workspace / 'work' / 'src' / '__init__.py').resolve()}\"",
+            r"type nul > work\src\__init__.py",
+            'powershell -Command "New-Item -ItemType File -Force work/src/__init__.py | Out-Null"',
+            'pwsh -Command "New-Item -ItemType File -Force work/src/__init__.py | Out-Null"',
+        ],
+        workspace,
+        policy,
+    )
+    assert violations == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "touch ../outside.txt",
+        r"touch C:\abs\path.txt",
+        "touch data/raw_data.npz",
+        'pwsh -Command "New-Item -ItemType File -Force data/raw_data.npz | Out-Null"',
+        "mkdir data/cache",
+        r"copy C:\external.txt work\x.txt",
+    ],
+)
+def test_claude_workspace_adapter_rejects_out_of_policy_file_creation_commands(
+    tmp_path,
+    command,
+):
+    adapter = ClaudeWorkspaceAdapter()
+    policy = adapter._coerce_tool_policy(ExecutorSessionConfig(run_id="run-1", env_hash="env-1"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    violations = adapter._validate_bash_commands([command], workspace, policy)
+
+    assert len(violations) == 1
+    assert violations[0]["command"] == command
+    assert violations[0]["category"] in {"outside_workspace_path", "outside_write_roots"}
+
+
+def test_claude_workspace_adapter_allows_workspace_absolute_paths_timeout_and_readonly_diagnostics(
+    tmp_path,
+):
+    adapter = ClaudeWorkspaceAdapter()
+    policy = adapter._coerce_tool_policy(ExecutorSessionConfig(run_id="run-1", env_hash="env-1"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    work_src = workspace / "work" / "src"
+    output_dir = workspace / "output"
+    violations = adapter._validate_bash_commands(
+        [
+            f'mkdir -p "{work_src.resolve()}" "{output_dir.resolve()}"',
+            f'cd "{workspace.resolve()}" && timeout 60 python work/main.py',
+            f'cd "{workspace.resolve()}" && timeout 10 python -c "print(1)"',
+            'ps aux | grep -i "python work/main.py" | grep -v grep',
+            'powershell -Command "Get-ChildItem work"',
+            'tasklist | findstr python',
+        ],
+        workspace,
+        policy,
+    )
+    assert violations == []
+
+
+def test_claude_workspace_adapter_allows_workspace_heredoc_file_creation(tmp_path):
+    adapter = ClaudeWorkspaceAdapter()
+    policy = adapter._coerce_tool_policy(ExecutorSessionConfig(run_id="run-1", env_hash="env-1"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    command = "\n".join(
+        [
+            f'cd "{workspace.resolve()}" && cat > work/src/example.py << \'EOFPYTHON\'',
+            "if value > 10:",
+            "    print(value)",
+            "EOFPYTHON",
+        ]
+    )
+
+    violations = adapter._validate_bash_commands([command], workspace, policy)
+
+    assert violations == []
+
+
+@pytest.mark.parametrize(
+    ("command", "expected_detail"),
+    [
+        ("curl https://example.invalid", "network access"),
+        ('Invoke-WebRequest https://example.invalid', "network access"),
+        ("pip install numpy", "package or environment installation"),
+        ("conda install numpy", "package or environment installation"),
+        ("git push", "version control"),
+        ("taskkill /F /IM python.exe", "killing processes"),
+        ("Remove-Service demo", "system or service control"),
+    ],
+)
+def test_claude_workspace_adapter_rejects_denied_categories(tmp_path, command, expected_detail):
+    adapter = ClaudeWorkspaceAdapter()
+    policy = adapter._coerce_tool_policy(ExecutorSessionConfig(run_id="run-1", env_hash="env-1"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    violations = adapter._validate_bash_commands([command], workspace, policy)
+
+    assert len(violations) == 1
+    assert violations[0]["command"] == command
+    assert violations[0]["category"] == "denied_category"
+    assert expected_detail in violations[0]["detail"]
+
+
+def test_claude_workspace_system_prompt_describes_boundary_policy():
+    adapter = ClaudeWorkspaceAdapter()
+    prompt = adapter._build_workspace_system_prompt(
+        adapter._coerce_tool_policy(ExecutorSessionConfig(run_id="run-1", env_hash="env-1"))
+    )
+
+    assert prompt["type"] == "preset"
+    assert "Allowed Bash prefixes" not in prompt["append"]
+    assert "Denied Bash tokens" not in prompt["append"]
+    assert "Any Bash command that stays inside the workspace" in prompt["append"]
+    assert "Prohibited external side effects include network access" in prompt["append"]
 
 
 def test_claude_workspace_adapter_rejects_disallowed_bash_commands(tmp_path, monkeypatch):

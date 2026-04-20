@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -29,7 +30,7 @@ from myevoskill.task_registration import (
     main as register_main,
     register_task,
 )
-from myevoskill.models import ContractDraftResult, RunRecord, TaskRegistrationResult
+from myevoskill.models import ContractDraftResult, EnvCacheRecord, RunRecord, TaskRegistrationResult
 
 MYEVOSKILL_ROOT = Path(__file__).resolve().parents[1]
 AUTOSKILL_ROOT = MYEVOSKILL_ROOT.parent
@@ -38,6 +39,50 @@ TASKS_ROOT = AUTOSKILL_ROOT / "tasks"
 
 def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+@pytest.fixture(autouse=True)
+def _stub_registered_task_runtime_env(monkeypatch, tmp_path):
+    def _fake_ensure_task_runtime_env(task_root, *, output_root, task_id, family):
+        requirements_path = Path(task_root) / "requirements.txt"
+        if not requirements_path.exists():
+            raise FileNotFoundError(f"requirements.txt not found: {requirements_path}")
+        env_root = tmp_path / "env_cache" / task_id
+        env_root.mkdir(parents=True, exist_ok=True)
+        install_report_path = env_root / "install_report.json"
+        build_log_path = env_root / "build.log"
+        install_report_path.write_text(
+            json.dumps(
+                {
+                    "success": True,
+                    "env_hash": f"env-{task_id}",
+                    "python_executable": str(Path(sys.executable).resolve()),
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        build_log_path.write_text("stubbed task runtime env\n", encoding="utf-8")
+        return EnvCacheRecord(
+            env_hash=f"env-{task_id}",
+            env_dir=env_root,
+            python_executable=Path(sys.executable).resolve(),
+            install_report_path=install_report_path,
+            build_log_path=build_log_path,
+            ready=True,
+            base_image_cache_dir=env_root / "base",
+            task_env_cache_dir=env_root,
+            dataset_cache_dir=env_root / "datasets",
+            artifact_cache_dir=env_root / "artifacts",
+            checkpoint_cache_dir=env_root / "checkpoints",
+        )
+
+    monkeypatch.setattr(
+        registration_contract_mod,
+        "ensure_task_runtime_env",
+        _fake_ensure_task_runtime_env,
+    )
 
 
 def _write_minimal_task(task_root: Path, *, include_metrics: bool = True) -> Path:
@@ -664,6 +709,7 @@ def test_task_register_cli_requires_confirmed_contract_and_generates_manifest(tm
     _write_confirmed_minimal_contract(task_root)
 
     result = register_task(task_root, output_root=project_root)
+    manifest = _load_json(result.manifest_path)
     notes = load_task_registration_notes("confirmed_task", output_root=project_root)
     exit_code = register_main(
         [
@@ -678,7 +724,10 @@ def test_task_register_cli_requires_confirmed_contract_and_generates_manifest(tm
     assert isinstance(result, TaskRegistrationResult)
     assert result.manifest_path.exists()
     assert result.judge_path.exists()
+    assert manifest["runtime_env"]["ready"] is True
+    assert manifest["runtime_env"]["python_executable"] == str(Path(sys.executable).resolve())
     assert notes["judge_generation"]["status"] == "ready"
+    assert notes["runtime_env"]["status"] == "ready"
     assert exit_code == 0
     assert '"task_id": "confirmed_task"' in captured.out
 
@@ -689,6 +738,16 @@ def test_task_contract_draft_requires_registration_input(tmp_path):
 
     with pytest.raises(FileNotFoundError, match="registration input not found"):
         draft_task_contract(task_root, output_root=project_root)
+
+
+def test_register_task_requires_requirements_txt(tmp_path):
+    project_root = tmp_path / "project"
+    task_root = _write_minimal_task(project_root / "tasks" / "missing_requirements")
+    (task_root / "requirements.txt").unlink()
+    _write_confirmed_minimal_contract(task_root)
+
+    with pytest.raises(FileNotFoundError, match="requirements.txt not found"):
+        register_task(task_root, output_root=project_root)
 
 
 def test_registration_input_validation_and_prompt_are_user_driven(tmp_path):

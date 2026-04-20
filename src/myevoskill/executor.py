@@ -9,6 +9,7 @@ import json
 import numpy as np
 import os
 import re
+import shlex
 import socket
 import signal
 import shutil
@@ -21,6 +22,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, Mapping, Optional, Sequence
 
+from .envs import python_executable_path_entries
 from .model_provider import (
     ClaudeSDKAdapter,
     CustomHTTPAdapter,
@@ -169,6 +171,26 @@ def _is_timeout_error(exc: BaseException) -> bool:
     return False
 
 
+def _task_runtime_env_spec(task_bundle: TaskBundle) -> dict[str, Any]:
+    task_spec = load_task_spec(task_bundle)
+    runtime_env = task_spec.get("runtime_env")
+    return dict(runtime_env or {}) if isinstance(runtime_env, Mapping) else {}
+
+
+def _task_python_executable(task_bundle: TaskBundle) -> str:
+    runtime_env = _task_runtime_env_spec(task_bundle)
+    value = str(runtime_env.get("python_executable", "") or "").strip()
+    return value or sys.executable
+
+
+def _venv_root_from_python_executable(python_executable: Path) -> Path:
+    executable = Path(python_executable).resolve()
+    parent = executable.parent
+    if parent.name.lower() in {"scripts", "bin"}:
+        return parent.parent
+    return parent
+
+
 def _run_subprocess(
     command: Sequence[str],
     *,
@@ -178,7 +200,7 @@ def _run_subprocess(
 ) -> tuple[subprocess.CompletedProcess[str], bool]:
     normalized_command = list(command)
     if normalized_command and normalized_command[0] in {"python", "python3"}:
-        normalized_command[0] = sys.executable
+        normalized_command[0] = str(env.get("MYEVOSKILL_TASK_PYTHON", "") or sys.executable)
     process = subprocess.Popen(
         normalized_command,
         cwd=str(cwd),
@@ -224,7 +246,10 @@ def _runtime_environment(
 ) -> dict[str, str]:
     """Build common environment variables for staged runtime execution."""
 
-    return {
+    task_spec = load_task_spec(task_bundle)
+    runtime_env = dict(task_spec.get("runtime_env") or {})
+    task_python = str(runtime_env.get("python_executable", "") or sys.executable).strip() or sys.executable
+    env = {
         **os.environ,
         **dict(session_config.env),
         "MYEVOSKILL_RUNTIME_ROOT": str(runtime_paths["runtime_root"]),
@@ -234,9 +259,27 @@ def _runtime_environment(
         "MYEVOSKILL_CHECKPOINT_DIR": str(runtime_paths["checkpoints_dir"]),
         "MYEVOSKILL_WORKSPACE": str(runtime_paths["runtime_root"]),
         "MYEVOSKILL_TASK_ID": task_bundle.task_id,
+        "MYEVOSKILL_TASK_PYTHON": task_python,
+        "MYEVOSKILL_TASK_ENV_HASH": str(runtime_env.get("env_hash", "") or session_config.env_hash),
+        "MYEVOSKILL_TASK_ENV_BACKEND": str(runtime_env.get("backend", "") or ""),
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
     }
+    task_python_path = Path(task_python)
+    if task_python_path.exists():
+        task_path_entries = python_executable_path_entries(task_python_path)
+        existing_path = str(env.get("PATH", "") or "")
+        merged_entries: list[str] = []
+        seen: set[str] = set()
+        for item in [*task_path_entries, *[segment for segment in existing_path.split(os.pathsep) if segment]]:
+            normalized = os.path.normcase(os.path.normpath(item))
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            merged_entries.append(item)
+        env["PATH"] = os.pathsep.join(merged_entries)
+        env["VIRTUAL_ENV"] = str(_venv_root_from_python_executable(task_python_path))
+    return env
 
 
 def _set_path_mode(path: Path, dir_mode: int, file_mode: int) -> None:
@@ -1088,11 +1131,6 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         safe_model_config = provider_adapter.safe_log_config()
         resolved_model_name = self._resolved_model_name(session_config, provider_adapter)
         provider_adapter.resolve_api_key()
-        sdk_env = (
-            provider_adapter.build_sdk_env()
-            if hasattr(provider_adapter, "build_sdk_env")
-            else {}
-        )
         task_spec, runtime_paths = _prepare_runtime_workspace(
             task_bundle, _resolve_workspace_root(task_bundle, session_config)
         )
@@ -1125,14 +1163,22 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             prompt_mode=prompt_mode,
             completion_policy=completion_policy,
         )
-        configured_max_iterations = int(
-            session_config.provider_extras.get(
-                "max_workspace_iterations", self.DEFAULT_MAX_ITERATIONS
-            )
-            or self.DEFAULT_MAX_ITERATIONS
+        configured_max_iterations = self._resolve_workspace_max_iterations(
+            session_config,
+            default_limit=1,
         )
-        max_iterations = 1
         env = _runtime_environment(session_config, task_bundle, runtime_paths)
+        sdk_provider_env = (
+            provider_adapter.build_sdk_env(env)
+            if hasattr(provider_adapter, "build_sdk_env")
+            else {}
+        )
+        sdk_env = self._build_workspace_sdk_env(env, sdk_provider_env)
+        configured_iterations_label = (
+            "unbounded"
+            if configured_max_iterations is None
+            else str(configured_max_iterations)
+        )
         transcript_lines = [
             f"provider={self.provider_name}",
             "sdk_backend=claude_sdk",
@@ -1151,8 +1197,11 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             f"runtime_layout={json.dumps(task_spec.get('runtime_layout') or {}, sort_keys=True)}",
             f"effective_model_timeout_seconds={policy.model_timeout_seconds}",
             f"effective_execution_budget_seconds={policy.execution_budget_seconds}",
-            f"configured_max_workspace_iterations={configured_max_iterations}",
-            "workspace_query_count=1",
+            f"configured_max_workspace_iterations={configured_iterations_label}",
+            f"workspace_query_limit={configured_iterations_label}",
+            f"task_python_executable={env.get('MYEVOSKILL_TASK_PYTHON', sys.executable)}",
+            f"task_env_hash={env.get('MYEVOSKILL_TASK_ENV_HASH', session_config.env_hash)}",
+            f"workspace_python_executable={sdk_env.get('MYEVOSKILL_PYTHON_EXE', sys.executable)}",
             "",
         ]
 
@@ -1166,13 +1215,40 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         }
         final_files_written: list[str] = []
         commands_run: list[str] = []
-        workspace_write_violations: list[str] = []
+        workspace_write_violations: list[dict[str, Any]] = []
         iteration_count = 0
         trajectory_rounds: list[dict[str, Any]] = []
         final_error_info: dict[str, Any] = {}
         final_submission_state = self._empty_submission_state()
+        run_failure_reason = ""
+        output_contract_satisfied_post_run = False
+        entrypoint_run_seen_in_trace = False
+        public_self_eval_seen_in_trace = False
+        final_provider_session_id = session_config.run_id
+        execution_deadline = time.monotonic() + max(1, int(policy.execution_budget_seconds))
+        round_index = 1
 
-        for round_index in range(1, max_iterations + 1):
+        while configured_max_iterations is None or round_index <= configured_max_iterations:
+            remaining_budget_seconds = max(
+                0,
+                int(execution_deadline - time.monotonic()),
+            )
+            if remaining_budget_seconds <= 0:
+                final_timed_out = True
+                final_runtime = float(policy.execution_budget_seconds)
+                run_failure_reason = "execution_budget_exhausted"
+                final_error_info = {
+                    "error_type": "execution_budget_exhausted",
+                    "message": (
+                        "workspace execution exceeded the total execution budget before "
+                        "producing a successful run"
+                    ),
+                }
+                break
+            round_model_timeout_seconds = max(
+                1,
+                min(int(policy.model_timeout_seconds), remaining_budget_seconds),
+            )
             iteration_count = round_index
             round_prompt = base_prompt
             (workspace / f"agent_prompt_round_{round_index}.txt").write_text(
@@ -1192,7 +1268,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             trajectory_rounds.append(round_trace)
 
             read_snapshot = self._snapshot_roots(workspace, tool_policy["read_roots"])
-            ensure_clean_run_directory(work_dir)
+            work_dir.mkdir(parents=True, exist_ok=True)
             writable_before = self._snapshot_roots(workspace, tool_policy["write_roots"])
 
             response_payload: Optional[dict[str, Any]] = None
@@ -1205,7 +1281,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     runtime_paths=runtime_paths,
                     workspace=workspace,
                     prompt=round_prompt,
-                    model_timeout_seconds=policy.model_timeout_seconds,
+                    model_timeout_seconds=round_model_timeout_seconds,
                     round_index=round_index,
                     tool_policy=tool_policy,
                     readonly_before=read_snapshot,
@@ -1272,17 +1348,27 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 )
 
             if readonly_mutations:
-                workspace_write_violations.extend(readonly_mutations)
+                readonly_violations = [
+                    self._make_workspace_violation(
+                        "<post-run-audit>",
+                        "readonly_mutation",
+                        path=item,
+                        detail="read-only path modified",
+                    )
+                    for item in readonly_mutations
+                ]
+                workspace_write_violations.extend(readonly_violations)
                 (workspace / f"workspace_write_violations_round_{round_index}.json").write_text(
-                    json.dumps({"violations": readonly_mutations}, indent=2, sort_keys=True),
+                    json.dumps({"violations": readonly_violations}, indent=2, sort_keys=True),
                     encoding="utf-8",
                 )
                 round_trace["error_type"] = "permission_violation"
                 round_trace["error_message"] = "workspace agent modified read-only paths"
-                round_trace["readonly_mutations"] = list(readonly_mutations)
+                round_trace["readonly_mutations"] = list(readonly_violations)
                 final_error_info = {
                     "error_type": "permission_violation",
-                    "message": "workspace agent modified read-only paths: " + ", ".join(readonly_mutations),
+                    "message": "workspace agent modified read-only paths: "
+                    + self._format_workspace_violations(readonly_violations),
                 }
                 self._write_workspace_trajectory_artifacts(
                     workspace=workspace,
@@ -1294,7 +1380,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     final_error_info=final_error_info,
                 )
                 raise RuntimeError(
-                    "workspace agent modified read-only paths: " + ", ".join(readonly_mutations)
+                    "workspace agent modified read-only paths: "
+                    + self._format_workspace_violations(readonly_violations)
                 )
 
             round_commands = self._extract_sdk_commands(sdk_messages)
@@ -1312,7 +1399,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 round_trace["invalid_commands"] = list(invalid_commands)
                 final_error_info = {
                     "error_type": "bash_policy_violation",
-                    "message": "workspace agent attempted disallowed bash commands: " + ", ".join(invalid_commands),
+                    "message": "workspace agent attempted disallowed bash commands: "
+                    + self._format_workspace_violations(invalid_commands),
                 }
                 self._write_workspace_trajectory_artifacts(
                     workspace=workspace,
@@ -1325,7 +1413,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 )
                 raise RuntimeError(
                     "workspace agent attempted disallowed bash commands: "
-                    + ", ".join(invalid_commands)
+                    + self._format_workspace_violations(invalid_commands)
                 )
 
             final_files_written = self._collect_changed_paths(writable_before, writable_after)
@@ -1376,7 +1464,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     timed_out=False,
                     entrypoint="work/main.py",
                     env=env,
-                    timeout_seconds=policy.execution_budget_seconds,
+                    timeout_seconds=remaining_budget_seconds,
                     completion_policy=completion_policy,
                 )
                 if trace_completion_check.get("self_check_passed", False):
@@ -1503,7 +1591,9 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                         "stop_oracle": stop_oracle,
                         "workspace_prompt_mode": prompt_mode,
                         "workspace_completion_policy": completion_policy,
-                        "configured_max_workspace_iterations": configured_max_iterations,
+                        "configured_max_workspace_iterations": (
+                            0 if configured_max_iterations is None else configured_max_iterations
+                        ),
                         "iteration_count": iteration_count,
                         "files_written": final_files_written,
                         "commands_run": list(dict.fromkeys(commands_run)),
@@ -1579,7 +1669,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     timed_out=final_timed_out,
                     entrypoint="work/main.py",
                     env=env,
-                    timeout_seconds=policy.execution_budget_seconds,
+                    timeout_seconds=remaining_budget_seconds,
                     completion_policy=completion_policy,
                 )
             else:
@@ -1590,7 +1680,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     ["python", "work/main.py"],
                     cwd=workspace,
                     env=env,
-                    timeout_seconds=policy.execution_budget_seconds,
+                    timeout_seconds=remaining_budget_seconds,
                 )
                 final_runtime = time.time() - start
                 _configure_workspace_permissions(runtime_paths, lock_runtime_root=False)
@@ -1601,7 +1691,10 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     timed_out=final_timed_out,
                     entrypoint="work/main.py",
                     env=env,
-                    timeout_seconds=policy.execution_budget_seconds,
+                    timeout_seconds=max(
+                        1,
+                        max(0, int(execution_deadline - time.monotonic())),
+                    ),
                     completion_policy=completion_policy,
                 )
 
@@ -1670,8 +1763,12 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 or str(vendor_session_ref.get("session_id", "") or "")
                 or session_config.run_id
             )
-            if output_contract_satisfied_post_run:
+            sdk_signaled_completion = (
+                str(response_metadata.get("sdk_completion_source", "") or "") == "result_message"
+            )
+            if sdk_signaled_completion or output_contract_satisfied_post_run:
                 break
+            round_index += 1
 
         if not final_self_check.get("self_check_passed") and not final_error_info:
             final_error_info = {
@@ -1720,6 +1817,21 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "work_dir": str(work_dir),
                 "output_dir": str(output_dir),
                 "checkpoints_dir": str(checkpoints_dir),
+                "task_python_executable": str(
+                    env.get("MYEVOSKILL_TASK_PYTHON")
+                    or sdk_env.get("MYEVOSKILL_PYTHON_EXE")
+                    or sys.executable
+                ),
+                "task_env_hash": str(
+                    env.get("MYEVOSKILL_TASK_ENV_HASH") or session_config.env_hash
+                ),
+                "task_env_backend": str(env.get("MYEVOSKILL_TASK_ENV_BACKEND") or ""),
+                "task_env_ready": bool(
+                    ((task_spec.get("runtime_env") or {}) if isinstance(task_spec, Mapping) else {}).get(
+                        "ready",
+                        False,
+                    )
+                ),
                 "agent_mode": "workspace_edit",
                 "sdk_backend": "claude_sdk",
                 "allowed_tools": list(self._all_allowed_tools(stop_oracle)),
@@ -1730,7 +1842,9 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "stop_oracle": stop_oracle,
                 "workspace_prompt_mode": prompt_mode,
                 "workspace_completion_policy": completion_policy,
-                "configured_max_workspace_iterations": configured_max_iterations,
+                "configured_max_workspace_iterations": (
+                    0 if configured_max_iterations is None else configured_max_iterations
+                ),
                 "iteration_count": iteration_count,
                 "files_written": final_files_written,
                 "commands_run": list(dict.fromkeys(commands_run)),
@@ -2023,6 +2137,17 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "work_dir": str(work_dir),
                 "output_dir": str(output_dir),
                 "checkpoints_dir": str(checkpoints_dir),
+                "task_python_executable": str(env.get("MYEVOSKILL_TASK_PYTHON") or sys.executable),
+                "task_env_hash": str(
+                    env.get("MYEVOSKILL_TASK_ENV_HASH") or session_config.env_hash
+                ),
+                "task_env_backend": str(env.get("MYEVOSKILL_TASK_ENV_BACKEND") or ""),
+                "task_env_ready": bool(
+                    ((task_spec.get("runtime_env") or {}) if isinstance(task_spec, Mapping) else {}).get(
+                        "ready",
+                        False,
+                    )
+                ),
                 "agent_mode": "workspace_edit",
                 "iteration_count": len(commands_run),
                 "files_written": final_files_written,
@@ -2106,6 +2231,26 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "sdk_result_message, main_success_output_contract"
             )
         return aliases[normalized]
+
+    def _resolve_workspace_max_iterations(
+        self,
+        session_config: ExecutorSessionConfig,
+        *,
+        default_limit: int,
+    ) -> Optional[int]:
+        raw_value = session_config.provider_extras.get(
+            "max_workspace_iterations",
+            default_limit,
+        )
+        if raw_value is None:
+            return None
+        try:
+            numeric = int(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("max_workspace_iterations must be an integer") from exc
+        if numeric <= 0:
+            return None
+        return numeric
 
     def _workspace_visible_contract_path(self, relative_path: str) -> str:
         normalized = str(relative_path or "").replace("\\", "/").strip()
@@ -2723,6 +2868,28 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             if inline_public_content
             else ""
         )
+        write_tool_rule = (
+            "Prefer the `Write` tool to create or modify `work/` source files such as "
+            "`work/src/*.py` and `work/main.py`; do not rely on Bash for routine source edits."
+        )
+        bash_usage_rule = (
+            "Use Bash mainly to run programs, inspect files, debug, and perform workspace-local "
+            "file operations that stay inside writable roots."
+        )
+        bash_boundary_rule = (
+            "Any Bash command is acceptable if it stays inside the workspace, avoids read-only "
+            "roots, and does not trigger prohibited external side effects such as network access, "
+            "package installation, version control, privilege escalation, system control, or "
+            "killing processes."
+        )
+        path_boundary_rule = (
+            "Absolute or relative paths are both acceptable when they resolve inside the "
+            "workspace; write targets must stay under `work/`, `output/`, or `checkpoints/`."
+        )
+        write_tool_workflow = (
+            "2. Create and update the solver under `work/src/*.py` plus `work/main.py`, "
+            "preferably with the `Write` tool."
+        )
         meta_data = (
             self._safe_read_text(task_bundle.public_bundle_dir / "data" / "meta_data.json")
             if inline_public_content
@@ -2737,19 +2904,23 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "3. Use only packages already available in `requirements.txt`.",
                 "4. Explore public inputs with tools instead of assuming file contents.",
                 "5. You may write only under `work/`, `output/`, and `checkpoints/`.",
-                "6. Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
-                "7. Run the solver from the workspace root with `python work/main.py`.",
-                "8. If `python work/main.py` fails, debug locally within the same session and rerun it as needed.",
-                "9. Use `check_ready()` as the authoritative public completion oracle. Completion is defined by the harness contract, not by your subjective confidence or by hidden metrics.",
-                "10. If the run succeeded and required outputs exist, call `check_ready()` immediately even if you think the model could still be improved.",
-                "11. Do not spend extra turns on scientific interpretation, parameter sweeps, scaling analysis, plotting, or physics refinement after the public contract is already satisfied.",
-                "12. Use `submit_result(...)` to submit the final summary with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
-                "13. After `submit_result(...)` is accepted, return the same structured summary and stop immediately.",
-                "14. Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
+                "6. " + write_tool_rule,
+                "7. " + bash_usage_rule,
+                "8. " + bash_boundary_rule,
+                "9. " + path_boundary_rule,
+                "10. Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
+                "11. Run the solver from the workspace root with `python work/main.py`.",
+                "12. If `python work/main.py` fails, debug locally within the same session and rerun it as needed.",
+                "13. Use `check_ready()` as the authoritative public completion oracle. Completion is defined by the harness contract, not by your subjective confidence or by hidden metrics.",
+                "14. If the run succeeded and required outputs exist, call `check_ready()` immediately even if you think the model could still be improved.",
+                "15. Do not spend extra turns on scientific interpretation, parameter sweeps, scaling analysis, plotting, or physics refinement after the public contract is already satisfied.",
+                "16. Use `submit_result(...)` to submit the final summary with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
+                "17. After `submit_result(...)` is accepted, return the same structured summary and stop immediately.",
+                "18. Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
             ]
             workflow_lines = [
                 "1. Read `README_public.md`, then inspect the public data and metadata you need.",
-                "2. Write the solver under `work/src/*.py` and `work/main.py`.",
+                write_tool_workflow,
                 "3. Run `python work/main.py` from the workspace root.",
                 "4. If the run fails, debug locally in this same session and rerun `python work/main.py`.",
                 "5. Once the run succeeds and required outputs exist, call `check_ready()` immediately.",
@@ -2781,16 +2952,20 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "3. Use only packages already available in `requirements.txt`.",
                 "4. Explore public inputs with tools instead of assuming file contents.",
                 "5. You may write only under `work/`, `output/`, and `checkpoints/`.",
-                "6. Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
-                "7. Run the solver from the workspace root with `python work/main.py`.",
-                "8. If `python work/main.py` fails, debug locally within the same session and rerun it as needed.",
-                "9. If `python work/main.py` succeeds and the required outputs exist, immediately return the structured summary with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
-                "10. Do not spend extra turns on scientific interpretation, parameter sweeps, plotting, or physics refinement after the output contract is already satisfied.",
-                "11. Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
+                "6. " + write_tool_rule,
+                "7. " + bash_usage_rule,
+                "8. " + bash_boundary_rule,
+                "9. " + path_boundary_rule,
+                "10. Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
+                "11. Run the solver from the workspace root with `python work/main.py`.",
+                "12. If `python work/main.py` fails, debug locally within the same session and rerun it as needed.",
+                "13. If `python work/main.py` succeeds and the required outputs exist, immediately return the structured summary with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
+                "14. Do not spend extra turns on scientific interpretation, parameter sweeps, plotting, or physics refinement after the output contract is already satisfied.",
+                "15. Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
             ]
             workflow_lines = [
                 "1. Read `README_public.md`, then inspect the public data and metadata you need.",
-                "2. Write the solver under `work/src/*.py` and `work/main.py`.",
+                write_tool_workflow,
                 "3. Run `python work/main.py` from the workspace root.",
                 "4. If the run fails, debug locally in this same session and rerun `python work/main.py`.",
                 "5. When `python work/main.py` succeeds and the required outputs exist, immediately return the structured summary and stop.",
@@ -2818,17 +2993,21 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "3. Use only packages already available in `requirements.txt`.",
                 "4. Explore public inputs with tools instead of assuming file contents.",
                 "5. You may write only under `work/`, `output/`, and `checkpoints/`.",
-                "6. Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
-                "7. Run the solver from the workspace root with `python work/main.py`.",
-                "8. After the solver run, use `python evaluation/self_eval.py` as the public completion oracle.",
-                "9. If `python evaluation/self_eval.py` fails, debug locally within the same session and rerun the solver and self-eval as needed.",
-                "10. If `python evaluation/self_eval.py` passes, immediately return the structured summary with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
-                "11. Do not spend extra turns on scientific interpretation, parameter sweeps, plotting, or physics refinement after `python evaluation/self_eval.py` passes.",
-                "12. Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
+                "6. " + write_tool_rule,
+                "7. " + bash_usage_rule,
+                "8. " + bash_boundary_rule,
+                "9. " + path_boundary_rule,
+                "10. Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
+                "11. Run the solver from the workspace root with `python work/main.py`.",
+                "12. After the solver run, use `python evaluation/self_eval.py` as the public completion oracle.",
+                "13. If `python evaluation/self_eval.py` fails, debug locally within the same session and rerun the solver and self-eval as needed.",
+                "14. If `python evaluation/self_eval.py` passes, immediately return the structured summary with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
+                "15. Do not spend extra turns on scientific interpretation, parameter sweeps, plotting, or physics refinement after `python evaluation/self_eval.py` passes.",
+                "16. Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
             ]
             workflow_lines = [
                 "1. Read `README_public.md`, then inspect the public data and metadata you need.",
-                "2. Write the solver under `work/src/*.py` and `work/main.py`.",
+                write_tool_workflow,
                 "3. Run `python work/main.py` from the workspace root.",
                 "4. If the run fails, debug locally in this same session and rerun `python work/main.py`.",
                 "5. When `python work/main.py` succeeds, run `python evaluation/self_eval.py` immediately.",
@@ -3477,6 +3656,11 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         stop_oracle: Optional[str] = None,
     ) -> dict[str, Any]:
         stop_oracle = str(stop_oracle or self.DEFAULT_STOP_ORACLE)
+        network_line = (
+            "Network access is disabled by the harness."
+            if not bool(tool_policy.get("network_access", False))
+            else "Network access is enabled only because the harness allowed it; other prohibited external side effects remain forbidden."
+        )
         if stop_oracle == "submit_tool":
             append_lines = [
                 "You are an execution agent inside a harness, not an open-ended research assistant.",
@@ -3484,11 +3668,16 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "Your primary objective is to complete the public workspace contract and stop cleanly.",
                 "README_public.md is the authoritative task specification and must be read first.",
                 "Prefer relative paths from the current working directory instead of guessed absolute paths.",
+                "Use the preconfigured `python` from the workspace environment; do not switch interpreters.",
                 "Allowed write roots: " + ", ".join(tool_policy["write_roots"]),
+                "Prefer the `Write` tool for creating or editing source files under work/; use Bash mainly for running programs, inspection, debugging, and workspace-local file operations.",
                 "Read-only roots: " + ", ".join(tool_policy["read_roots"]),
-                "Allowed Bash prefixes: " + ", ".join(tool_policy["bash_allowed_prefixes"]),
-                "Denied Bash tokens: " + ", ".join(tool_policy["bash_denied_tokens"]),
-                "Network access is disabled by the harness.",
+                "Any Bash command that stays inside the workspace, respects read-only roots, and avoids prohibited external side effects is allowed.",
+                "Absolute or relative paths are acceptable when they resolve inside the workspace; writes must stay under "
+                + ", ".join(tool_policy["write_roots"])
+                + ".",
+                "Prohibited external side effects include network access, package or environment installation, version control operations, privilege escalation, system or service control, and killing processes.",
+                network_line,
                 "Hidden judge signals are not available.",
                 "Use the workspace tools to debug locally within this same session if `python work/main.py` fails.",
                 "Use `check_ready()` as the authoritative public completion oracle before stopping.",
@@ -3504,11 +3693,16 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "Your primary objective is to complete the public workspace contract and stop cleanly.",
                 "README_public.md is the authoritative task specification and must be read first.",
                 "Prefer relative paths from the current working directory instead of guessed absolute paths.",
+                "Use the preconfigured `python` from the workspace environment; do not switch interpreters.",
                 "Allowed write roots: " + ", ".join(tool_policy["write_roots"]),
+                "Prefer the `Write` tool for creating or editing source files under work/; use Bash mainly for running programs, inspection, debugging, and workspace-local file operations.",
                 "Read-only roots: " + ", ".join(tool_policy["read_roots"]),
-                "Allowed Bash prefixes: " + ", ".join(tool_policy["bash_allowed_prefixes"]),
-                "Denied Bash tokens: " + ", ".join(tool_policy["bash_denied_tokens"]),
-                "Network access is disabled by the harness.",
+                "Any Bash command that stays inside the workspace, respects read-only roots, and avoids prohibited external side effects is allowed.",
+                "Absolute or relative paths are acceptable when they resolve inside the workspace; writes must stay under "
+                + ", ".join(tool_policy["write_roots"])
+                + ".",
+                "Prohibited external side effects include network access, package or environment installation, version control operations, privilege escalation, system or service control, and killing processes.",
+                network_line,
                 "Hidden judge signals are not available.",
                 "Use the workspace tools to debug locally within this same session if `python work/main.py` fails.",
                 "Use `python evaluation/self_eval.py` as the authoritative public completion oracle before stopping.",
@@ -4007,6 +4201,74 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             ),
         }
 
+    def _workspace_python_path_entries(self, python_executable: str | Path) -> list[str]:
+        value = str(python_executable or "").strip()
+        if not value:
+            return []
+        return python_executable_path_entries(Path(value))
+
+    def _prepend_env_path_entries(self, existing_path: str, entries: Sequence[str]) -> str:
+        merged_entries: list[str] = []
+        seen: set[str] = set()
+        incoming = list(entries)
+        if existing_path:
+            incoming.extend(segment for segment in existing_path.split(os.pathsep) if segment)
+        for item in incoming:
+            normalized = os.path.normcase(os.path.normpath(str(item)))
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            merged_entries.append(str(item))
+        return os.pathsep.join(merged_entries)
+
+    def _build_workspace_sdk_env(
+        self,
+        runtime_env: Mapping[str, str],
+        provider_env: Optional[Mapping[str, str]] = None,
+    ) -> dict[str, str]:
+        sdk_env = dict(provider_env or {})
+        task_python_executable = str(
+            runtime_env.get("MYEVOSKILL_TASK_PYTHON")
+            or runtime_env.get("MYEVOSKILL_PYTHON_EXE")
+            or sys.executable
+        ).strip() or sys.executable
+        sdk_env["PATH"] = self._prepend_env_path_entries(
+            str(runtime_env.get("PATH", "") or ""),
+            self._workspace_python_path_entries(task_python_executable),
+        )
+        for key in (
+            "MYEVOSKILL_RUNTIME_ROOT",
+            "MYEVOSKILL_PUBLIC_BUNDLE",
+            "MYEVOSKILL_WORK_DIR",
+            "MYEVOSKILL_OUTPUT_DIR",
+            "MYEVOSKILL_CHECKPOINT_DIR",
+            "MYEVOSKILL_WORKSPACE",
+            "MYEVOSKILL_TASK_ID",
+            "MYEVOSKILL_TASK_PYTHON",
+            "MYEVOSKILL_TASK_ENV_HASH",
+            "MYEVOSKILL_TASK_ENV_BACKEND",
+            "PYTHONIOENCODING",
+            "PYTHONUTF8",
+            "PYTHONPATH",
+            "VIRTUAL_ENV",
+        ):
+            value = runtime_env.get(key)
+            if value:
+                sdk_env[key] = str(value)
+        sdk_env["MYEVOSKILL_PYTHON_EXE"] = str(Path(task_python_executable).resolve())
+        conda_prefix = str(runtime_env.get("CONDA_PREFIX", "") or "")
+        if not conda_prefix:
+            task_prefix = str(runtime_env.get("VIRTUAL_ENV", "") or "").strip()
+            if task_prefix:
+                prefix = Path(task_prefix).resolve()
+            else:
+                prefix = _venv_root_from_python_executable(Path(task_python_executable))
+            if prefix.exists() and (prefix / "conda-meta").exists():
+                conda_prefix = str(prefix)
+        if conda_prefix:
+            sdk_env["CONDA_PREFIX"] = conda_prefix
+        return sdk_env
+
     def _build_claude_sdk_options_kwargs(
         self,
         *,
@@ -4018,6 +4280,15 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         sdk_env: Optional[dict[str, str]] = None,
     ) -> dict[str, Any]:
         allowed_tools = self._all_allowed_tools(stop_oracle)
+        raw_max_turns = session_config.provider_extras.get("claude_max_turns", 50)
+        if raw_max_turns is None:
+            max_turns = None
+        else:
+            try:
+                parsed_max_turns = int(raw_max_turns)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError("claude_max_turns must be an integer or null") from exc
+            max_turns = parsed_max_turns if parsed_max_turns > 0 else None
         return {
             "tools": list(allowed_tools),
             "allowed_tools": list(allowed_tools),
@@ -4029,7 +4300,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "add_dirs": [str(workspace)],
             "cwd": str(workspace),
             "effort": str(session_config.provider_extras.get("claude_effort", "low") or "low"),
-            "max_turns": int(session_config.provider_extras.get("claude_max_turns", 50) or 50),
+            "max_turns": max_turns,
             "mcp_servers": dict(mcp_servers or {}),
             "env": dict(sdk_env or {}),
         }
@@ -4492,6 +4763,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
 
     def _coerce_tool_policy(self, session_config: ExecutorSessionConfig) -> dict[str, Any]:
         incoming = dict(session_config.tool_policy)
+        # Keep the workspace policy provider-agnostic so the harness remains the
+        # source of truth across Claude SDK, OpenHands, and future integrations.
         return {
             "read_roots": [str(item) for item in incoming.get("read_roots", ["data", "public_bundle", "evaluation", "README_public.md", "requirements.txt"])],
             "write_roots": [str(item) for item in incoming.get("write_roots", ["work", "output", "checkpoints"])],
@@ -4569,45 +4842,600 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         commands: Sequence[str],
         workspace_root: Path,
         tool_policy: dict[str, Any],
-    ) -> list[str]:
-        violations: list[str] = []
-        allowed_prefixes = tuple(tool_policy["bash_allowed_prefixes"])
-        denied_tokens = [token.lower() for token in tool_policy["bash_denied_tokens"]]
+    ) -> list[dict[str, Any]]:
         workspace_root_resolved = workspace_root.resolve()
+        violations: list[dict[str, Any]] = []
         for command in commands:
-            normalized = command.strip()
-            lower = normalized.lower()
-            if any(token in lower for token in denied_tokens):
-                violations.append(normalized)
+            normalized = str(command or "").strip()
+            if not normalized:
                 continue
-            segments = [segment.strip() for segment in normalized.split("&&") if segment.strip()]
-            if not segments:
+            command_violations, _ = self._validate_bash_expression(
+                normalized,
+                original_command=normalized,
+                current_dir=workspace_root_resolved,
+                workspace_root=workspace_root_resolved,
+                tool_policy=tool_policy,
+            )
+            violations.extend(command_violations)
+        return self._dedupe_workspace_violations(violations)
+
+    def _validate_bash_expression(
+        self,
+        expression: str,
+        *,
+        original_command: str,
+        current_dir: Path,
+        workspace_root: Path,
+        tool_policy: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], Path]:
+        violations: list[dict[str, Any]] = []
+        active_dir = current_dir
+        for segment in self._split_shell_segments(expression):
+            segment_violations, active_dir = self._validate_bash_segment(
+                segment,
+                original_command=original_command,
+                current_dir=active_dir,
+                workspace_root=workspace_root,
+                tool_policy=tool_policy,
+            )
+            violations.extend(segment_violations)
+        return violations, active_dir
+
+    def _validate_bash_segment(
+        self,
+        segment: str,
+        *,
+        original_command: str,
+        current_dir: Path,
+        workspace_root: Path,
+        tool_policy: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], Path]:
+        normalized = str(segment or "").strip()
+        if not normalized:
+            return [], current_dir
+        policy_segment = self._strip_heredoc_body(normalized)
+
+        cd_target = self._parse_cd_target(policy_segment)
+        if cd_target is not None:
+            if not cd_target:
+                return [], current_dir
+            path_ref = self._resolve_workspace_path_reference(
+                cd_target,
+                current_dir=current_dir,
+                workspace_root=workspace_root,
+            )
+            if not path_ref.get("inside_workspace", False):
+                return [
+                    self._make_workspace_violation(
+                        original_command,
+                        "outside_workspace_path",
+                        segment=policy_segment,
+                        path=str(path_ref.get("raw", cd_target)),
+                        detail="cd target resolves outside the workspace",
+                    )
+                ], current_dir
+            return [], Path(path_ref["resolved"])
+
+        wrapped_expression = self._unwrap_shell_wrapper(policy_segment)
+        if wrapped_expression is not None:
+            return self._validate_bash_expression(
+                wrapped_expression,
+                original_command=original_command,
+                current_dir=current_dir,
+                workspace_root=workspace_root,
+                tool_policy=tool_policy,
+            )
+
+        denied = self._match_denied_bash_category(policy_segment, tool_policy=tool_policy)
+        if denied is not None:
+            category, detail = denied
+            return [
+                self._make_workspace_violation(
+                    original_command,
+                    category,
+                    segment=policy_segment,
+                    detail=detail,
+                )
+            ], current_dir
+
+        return (
+            self._validate_segment_path_effects(
+                policy_segment,
+                original_command=original_command,
+                current_dir=current_dir,
+                workspace_root=workspace_root,
+                write_roots=tool_policy["write_roots"],
+            ),
+            current_dir,
+        )
+
+    def _make_workspace_violation(
+        self,
+        command: str,
+        category: str,
+        *,
+        segment: str = "",
+        path: str = "",
+        detail: str = "",
+    ) -> dict[str, Any]:
+        violation = {
+            "command": str(command or "").strip(),
+            "category": str(category or "").strip(),
+            "segment": str(segment or "").strip(),
+            "detail": str(detail or "").strip(),
+        }
+        if path:
+            violation["path"] = str(path).strip()
+        return violation
+
+    def _dedupe_workspace_violations(
+        self,
+        violations: Sequence[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        unique: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str, str, str]] = set()
+        for item in violations:
+            key = (
+                str(item.get("command", "") or ""),
+                str(item.get("segment", "") or ""),
+                str(item.get("category", "") or ""),
+                str(item.get("path", "") or ""),
+                str(item.get("detail", "") or ""),
+            )
+            if key in seen:
                 continue
-            command_invalid = False
-            for segment in segments:
-                if segment.startswith("cd "):
-                    target = segment[3:].strip().strip("\"'")
-                    if target:
-                        target_path = Path(target)
-                        if target_path.is_absolute():
-                            try:
-                                target_resolved = target_path.resolve()
-                            except OSError:
-                                command_invalid = True
-                                break
-                            if workspace_root_resolved not in (target_resolved, *target_resolved.parents):
-                                command_invalid = True
-                                break
+            seen.add(key)
+            unique.append(dict(item))
+        return unique
+
+    def _format_workspace_violations(
+        self,
+        violations: Sequence[dict[str, Any]],
+    ) -> str:
+        parts: list[str] = []
+        for item in violations:
+            command = str(item.get("command", "") or item.get("segment", "") or "<unknown>").strip()
+            category = str(item.get("category", "violation") or "violation").strip()
+            details: list[str] = []
+            if item.get("path"):
+                details.append(f"path={item['path']}")
+            if item.get("detail"):
+                details.append(str(item["detail"]))
+            if details:
+                parts.append(f"{command} [{category}: {'; '.join(details)}]")
+            else:
+                parts.append(f"{command} [{category}]")
+        return ", ".join(parts)
+
+    def _split_shell_segments(self, expression: str) -> list[str]:
+        segments: list[str] = []
+        buffer: list[str] = []
+        in_single = False
+        in_double = False
+        index = 0
+        while index < len(expression):
+            char = expression[index]
+            if char == "'" and not in_double:
+                in_single = not in_single
+                buffer.append(char)
+                index += 1
+                continue
+            if char == '"' and not in_single:
+                in_double = not in_double
+                buffer.append(char)
+                index += 1
+                continue
+            if not in_single and not in_double:
+                operator = None
+                if expression.startswith("&&", index):
+                    operator = "&&"
+                elif expression.startswith("||", index):
+                    operator = "||"
+                elif char in {";", "|"}:
+                    operator = char
+                if operator is not None:
+                    segment = "".join(buffer).strip()
+                    if segment:
+                        segments.append(segment)
+                    buffer = []
+                    index += len(operator)
                     continue
-                if not segment.startswith(allowed_prefixes):
-                    command_invalid = True
-                    break
-                if "../" in segment and str(workspace_root_resolved) not in segment:
-                    command_invalid = True
-                    break
-            if command_invalid:
-                violations.append(normalized)
+            buffer.append(char)
+            index += 1
+        trailing = "".join(buffer).strip()
+        if trailing:
+            segments.append(trailing)
+        return segments
+
+    def _parse_cd_target(self, segment: str) -> str | None:
+        try:
+            parts = shlex.split(segment, posix=False)
+        except ValueError:
+            return None
+        if not parts or parts[0].lower() != "cd":
+            return None
+        candidates = [part for part in parts[1:] if part.lower() != "/d"]
+        if not candidates:
+            return ""
+        return candidates[-1]
+
+    def _unwrap_shell_wrapper(self, segment: str) -> str | None:
+        timeout_match = re.match(
+            r"^timeout\s+(?:/t\s+)?\d+\s+(?P<inner>.+)$",
+            segment,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if timeout_match:
+            return self._strip_matching_quotes(timeout_match.group("inner").strip())
+
+        cmd_match = re.match(
+            r"^cmd(?:\.exe)?\s+/c\s+(?P<inner>.+)$",
+            segment,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if cmd_match:
+            return self._strip_matching_quotes(cmd_match.group("inner").strip())
+
+        powershell_match = re.match(
+            r"^(?:powershell|pwsh)(?:\.exe)?\s+-Command\s+(?P<inner>.+)$",
+            segment,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if powershell_match:
+            return self._strip_matching_quotes(powershell_match.group("inner").strip())
+        return None
+
+    def _strip_matching_quotes(self, value: str) -> str:
+        stripped = str(value or "").strip()
+        if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {"'", '"'}:
+            return stripped[1:-1]
+        return stripped
+
+    def _strip_heredoc_body(self, segment: str) -> str:
+        in_single = False
+        in_double = False
+        index = 0
+        while index < len(segment) - 1:
+            char = segment[index]
+            if char == "'" and not in_double:
+                in_single = not in_single
+                index += 1
+                continue
+            if char == '"' and not in_single:
+                in_double = not in_double
+                index += 1
+                continue
+            if not in_single and not in_double and segment.startswith("<<", index):
+                return segment[:index].strip()
+            index += 1
+        return segment
+
+    def _match_denied_bash_category(
+        self,
+        segment: str,
+        *,
+        tool_policy: dict[str, Any],
+    ) -> tuple[str, str] | None:
+        normalized = str(segment or "").strip()
+        lowered = normalized.lower()
+
+        if (
+            not bool(tool_policy.get("network_access", False))
+            and re.match(
+                r"^(?:curl|wget|invoke-webrequest|iwr|irm|ftp|sftp|ssh|scp)\b",
+                normalized,
+                flags=re.IGNORECASE,
+            )
+        ):
+            return "denied_category", "network access is disabled by the harness"
+
+        if re.match(r"^git\b", normalized, flags=re.IGNORECASE):
+            return "denied_category", "version control operations are prohibited"
+
+        if re.match(
+            r"^(?:pip|pip3)\s+(?:install|uninstall|download|wheel)\b",
+            normalized,
+            flags=re.IGNORECASE,
+        ) or re.match(
+            r"^(?:python|python3|py)\s+-m\s+pip\s+(?:install|uninstall|download|wheel)\b",
+            normalized,
+            flags=re.IGNORECASE,
+        ) or re.match(
+            r"^(?:conda|mamba|micromamba)\s+(?:install|update|upgrade|remove|create|env)\b",
+            normalized,
+            flags=re.IGNORECASE,
+        ):
+            return "denied_category", "package or environment installation is prohibited"
+
+        if re.match(r"^(?:sudo|runas)\b", normalized, flags=re.IGNORECASE) or re.search(
+            r"-verb\s+runas\b",
+            lowered,
+        ):
+            return "denied_category", "privilege escalation is prohibited"
+
+        if re.match(
+            r"^(?:taskkill|pkill|kill|stop-process)\b",
+            normalized,
+            flags=re.IGNORECASE,
+        ):
+            return "denied_category", "killing processes is prohibited"
+
+        if re.match(
+            r"^(?:remove-service|start-service|restart-service|stop-service|sc(?:\.exe)?|netsh|set-executionpolicy)\b",
+            normalized,
+            flags=re.IGNORECASE,
+        ) or re.match(
+            r"^net\s+(?:start|stop)\b",
+            normalized,
+            flags=re.IGNORECASE,
+        ):
+            return "denied_category", "system or service control is prohibited"
+
+        for token in tool_policy.get("bash_denied_tokens", []):
+            denied = str(token or "").strip().lower()
+            if denied and lowered.startswith(denied):
+                return "denied_category", f"matched denied token: {token}"
+
+        return None
+
+    def _resolve_workspace_path_reference(
+        self,
+        raw_path: str,
+        *,
+        current_dir: Path,
+        workspace_root: Path,
+    ) -> dict[str, Any]:
+        raw_value = self._strip_matching_quotes(str(raw_path or "").strip())
+        if not raw_value:
+            return {
+                "raw": "",
+                "resolved": None,
+                "relative_path": None,
+                "inside_workspace": False,
+                "special_sink": False,
+            }
+        if self._is_special_shell_sink(raw_value):
+            return {
+                "raw": raw_value,
+                "resolved": None,
+                "relative_path": None,
+                "inside_workspace": True,
+                "special_sink": True,
+            }
+        path_value = Path(raw_value)
+        candidate = path_value if path_value.is_absolute() else current_dir / path_value
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            resolved = candidate
+        try:
+            relative_path = resolved.relative_to(workspace_root)
+            inside_workspace = True
+        except ValueError:
+            relative_path = None
+            inside_workspace = False
+        return {
+            "raw": raw_value,
+            "resolved": resolved,
+            "relative_path": relative_path,
+            "inside_workspace": inside_workspace,
+            "special_sink": False,
+        }
+
+    def _is_special_shell_sink(self, value: str) -> bool:
+        normalized = self._strip_matching_quotes(str(value or "").strip()).lower()
+        return normalized in {"nul", "nul:", "/dev/null"}
+
+    def _path_is_within_declared_roots(
+        self,
+        relative_path: Path,
+        roots: Sequence[str],
+    ) -> bool:
+        relative_parts = relative_path.parts
+        for root in roots:
+            root_parts = Path(str(root)).parts
+            if root_parts and relative_parts[: len(root_parts)] == root_parts:
+                return True
+        return False
+
+    def _validate_segment_path_effects(
+        self,
+        segment: str,
+        *,
+        original_command: str,
+        current_dir: Path,
+        workspace_root: Path,
+        write_roots: Sequence[str],
+    ) -> list[dict[str, Any]]:
+        effects = self._extract_segment_path_effects(segment)
+        violations: list[dict[str, Any]] = []
+        for effect in effects:
+            path_ref = self._resolve_workspace_path_reference(
+                str(effect.get("path", "") or ""),
+                current_dir=current_dir,
+                workspace_root=workspace_root,
+            )
+            if path_ref.get("special_sink", False):
+                continue
+            if not path_ref.get("inside_workspace", False):
+                violations.append(
+                    self._make_workspace_violation(
+                        original_command,
+                        "outside_workspace_path",
+                        segment=segment,
+                        path=str(path_ref.get("raw", effect.get("path", ""))),
+                        detail="referenced path resolves outside the workspace",
+                    )
+                )
+                continue
+            if effect.get("mode") == "write" and not self._path_is_within_declared_roots(
+                Path(path_ref["relative_path"]),
+                write_roots,
+            ):
+                violations.append(
+                    self._make_workspace_violation(
+                        original_command,
+                        "outside_write_roots",
+                        segment=segment,
+                        path=Path(path_ref["relative_path"]).as_posix(),
+                        detail="write target is outside writable roots",
+                    )
+                )
         return violations
+
+    def _extract_segment_path_effects(self, segment: str) -> list[dict[str, str]]:
+        effects: list[dict[str, str]] = list(self._extract_shell_redirection_effects(segment))
+        try:
+            tokens = shlex.split(segment, posix=False)
+        except ValueError:
+            return effects
+        if not tokens:
+            return effects
+
+        command = tokens[0].lower()
+        args = tokens[1:]
+
+        if command == "touch":
+            for target in self._collect_cli_path_arguments(args):
+                effects.append({"mode": "write", "path": target})
+        elif command == "mkdir":
+            for target in self._collect_cli_path_arguments(args):
+                effects.append({"mode": "write", "path": target})
+        elif command in {"cp", "copy", "mv", "move"}:
+            path_args = self._collect_cli_path_arguments(args)
+            if len(path_args) >= 2:
+                for source in path_args[:-1]:
+                    effects.append({"mode": "read", "path": source})
+                effects.append({"mode": "write", "path": path_args[-1]})
+        elif command in {"rm", "del"}:
+            for target in self._collect_cli_path_arguments(args):
+                effects.append({"mode": "write", "path": target})
+        elif command == "ren":
+            path_args = self._collect_cli_path_arguments(args)
+            if len(path_args) >= 2:
+                source = path_args[0]
+                target = path_args[1]
+                effects.append({"mode": "write", "path": source})
+                if not re.search(r"[\\/]", target):
+                    source_parent = Path(self._strip_matching_quotes(source)).parent
+                    target = str(source_parent / target)
+                effects.append({"mode": "write", "path": target})
+        elif command == "new-item":
+            target = self._powershell_argument_value(tokens, "-Path", "-LiteralPath")
+            if not target:
+                positional = self._collect_cli_path_arguments(args)
+                target = positional[-1] if positional else ""
+            if target:
+                effects.append({"mode": "write", "path": target})
+        elif command in {"set-content", "add-content", "out-file"}:
+            target = self._powershell_argument_value(
+                tokens,
+                "-Path",
+                "-LiteralPath",
+                "-FilePath",
+            )
+            if target:
+                effects.append({"mode": "write", "path": target})
+        elif command in {"copy-item", "move-item"}:
+            source = self._powershell_argument_value(tokens, "-Path", "-LiteralPath")
+            target = self._powershell_argument_value(tokens, "-Destination")
+            if source:
+                effects.append({"mode": "read", "path": source})
+            if target:
+                effects.append({"mode": "write", "path": target})
+        elif command == "remove-item":
+            target = self._powershell_argument_value(tokens, "-Path", "-LiteralPath")
+            if target:
+                effects.append({"mode": "write", "path": target})
+
+        return effects
+
+    def _collect_cli_path_arguments(self, tokens: Sequence[str]) -> list[str]:
+        paths: list[str] = []
+        for token in tokens:
+            normalized = self._strip_matching_quotes(str(token or "").strip())
+            if not normalized or self._looks_like_shell_flag(normalized):
+                continue
+            paths.append(normalized)
+        return paths
+
+    def _looks_like_shell_flag(self, token: str) -> bool:
+        normalized = str(token or "").strip()
+        if not normalized:
+            return False
+        if normalized.startswith("-"):
+            return True
+        return bool(re.match(r"^/[A-Za-z?]+$", normalized))
+
+    def _powershell_argument_value(self, tokens: Sequence[str], *names: str) -> str:
+        lowered_names = {name.lower() for name in names}
+        for index, token in enumerate(tokens[:-1]):
+            if token.lower() in lowered_names:
+                return self._strip_matching_quotes(str(tokens[index + 1] or "").strip())
+        return ""
+
+    def _extract_shell_redirection_effects(self, segment: str) -> list[dict[str, str]]:
+        effects: list[dict[str, str]] = []
+        in_single = False
+        in_double = False
+        index = 0
+        while index < len(segment):
+            char = segment[index]
+            if char == "'" and not in_double:
+                in_single = not in_single
+                index += 1
+                continue
+            if char == '"' and not in_single:
+                in_double = not in_double
+                index += 1
+                continue
+            if in_single or in_double or char not in {">", "<"}:
+                index += 1
+                continue
+
+            operator = char
+            if index + 1 < len(segment) and segment[index + 1] == char:
+                operator += char
+                index += 1
+
+            cursor = index + 1
+            while cursor < len(segment) and segment[cursor].isspace():
+                cursor += 1
+
+            target, cursor = self._read_shell_token(segment, cursor)
+            target = self._strip_matching_quotes(target)
+            if target and not target.startswith("&") and not self._is_special_shell_sink(target):
+                effects.append(
+                    {
+                        "mode": "write" if operator.startswith(">") else "read",
+                        "path": target,
+                    }
+                )
+            index = cursor
+        return effects
+
+    def _read_shell_token(self, segment: str, start_index: int) -> tuple[str, int]:
+        if start_index >= len(segment):
+            return "", start_index
+        quote = segment[start_index] if segment[start_index] in {"'", '"'} else ""
+        buffer: list[str] = []
+        index = start_index
+        if quote:
+            index += 1
+            while index < len(segment) and segment[index] != quote:
+                buffer.append(segment[index])
+                index += 1
+            if index < len(segment) and segment[index] == quote:
+                index += 1
+            return "".join(buffer), index
+
+        while index < len(segment):
+            char = segment[index]
+            if char.isspace() or char in {"&", "|", ";"}:
+                break
+            buffer.append(char)
+            index += 1
+        return "".join(buffer), index
 
     def _generate_legacy_workspace_response(
         self,

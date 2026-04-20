@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
 import time
@@ -13,13 +12,19 @@ from typing import Any, Mapping, Sequence
 from .compile_audit import HeuristicCompileAuditAdapter
 from .compiler import TaskBundleCompiler
 from .executor import ClaudeWorkspaceAdapter
+from .judge_runner import invoke_judge_runner
 from .logging_utils import RunLogger
 from .model_provider import ClaudeSDKAdapter
 from .models import ExecutorSessionConfig, JudgeResult, ModelConfig, ProxyFeedback, RunRecord
 from .proxy import ProxyVerifier
-from .registration_contract import ensure_live_ready_manifest
+from .registration_contract import ensure_live_ready_manifest, ensure_manifest_runtime_env
 from .task_adapters import manifest_proxy_spec
 from .task_runtime import ensure_clean_run_directory, resolve_run_paths
+
+LIVE_RUN_TIMEOUT_SECONDS = 30 * 60
+LIVE_RUN_WORKSPACE_COMPLETION_POLICY = "sdk_result_message"
+LIVE_RUN_MAX_WORKSPACE_ITERATIONS = 0
+LIVE_RUN_CLAUDE_MAX_TURNS = 0
 
 
 def run_registered_task_live(
@@ -34,6 +39,12 @@ def run_registered_task_live(
     manifest = load_registered_manifest(task_id, project_root=project_root)
     task_root = resolve_registered_task_root(manifest, project_root=project_root)
     ensure_live_ready_manifest(manifest, task_root=task_root)
+    runtime_env = ensure_manifest_runtime_env(
+        manifest,
+        task_root=task_root,
+        output_root=project_root,
+    )
+    manifest = {**dict(manifest), "runtime_env": dict(runtime_env)}
 
     compiled_root = project_root / "artifacts" / "compiled"
     bundle = TaskBundleCompiler(compiled_root).compile(
@@ -59,6 +70,7 @@ def run_registered_task_live(
         model_name="",
         api_key_env="ANTHROPIC_API_KEY",
         temperature=0.0,
+        timeout=LIVE_RUN_TIMEOUT_SECONDS,
     )
     resolved_model_name = ClaudeSDKAdapter(model).resolve_model_name()
     run_id = f"run-live-{int(time.time())}"
@@ -68,13 +80,16 @@ def run_registered_task_live(
 
     session = ExecutorSessionConfig(
         run_id=run_id,
-        env_hash="env-live",
+        env_hash=str(runtime_env.get("env_hash", "") or "env-live"),
         workspace_root=run_paths.workspace_root,
+        budget_seconds=LIVE_RUN_TIMEOUT_SECONDS,
         model_config=model,
         provider_extras={
             "repo_root": str(project_root),
             "workspace_prompt_mode": "semantic_only",
-            "workspace_completion_policy": "main_success_output_contract",
+            "workspace_completion_policy": LIVE_RUN_WORKSPACE_COMPLETION_POLICY,
+            "max_workspace_iterations": LIVE_RUN_MAX_WORKSPACE_ITERATIONS,
+            "claude_max_turns": LIVE_RUN_CLAUDE_MAX_TURNS,
         },
     )
 
@@ -144,28 +159,50 @@ def evaluate_manifest_run(
     """Load and call the task-local judge adapter declared in the manifest."""
 
     judge_spec = dict(manifest.get("judge_spec") or {})
+    runtime_env = dict(manifest.get("runtime_env") or {})
     adapter_path = str(judge_spec.get("adapter_path") or "").strip()
-    callable_name = str(judge_spec.get("callable") or "evaluate_run").strip()
     if not adapter_path:
         raise RuntimeError("manifest judge_spec.adapter_path is required for live task evaluation")
-    module_path = Path(task_root) / adapter_path
-    if not module_path.exists():
-        raise FileNotFoundError(f"judge adapter not found: {module_path}")
-    spec = importlib.util.spec_from_file_location(
-        f"myevoskill_live_judge_{manifest['task_id']}",
-        module_path,
+    python_executable = str(runtime_env.get("python_executable", "") or "").strip()
+    if not python_executable:
+        raise RuntimeError("manifest runtime_env.python_executable is required for live task evaluation")
+    judge_path = Path(task_root) / adapter_path
+    if not judge_path.exists():
+        raise FileNotFoundError(f"judge adapter not found: {judge_path}")
+    payload = invoke_judge_runner(
+        python_executable,
+        mode="evaluate",
+        payload={
+            "judge_path": str(judge_path.resolve()),
+            "task_root": str(Path(task_root).resolve()),
+            "manifest": dict(manifest),
+            "run_record": {
+                "run_id": run_record.run_id,
+                "task_id": run_record.task_id,
+                "provider": run_record.provider,
+                "env_hash": run_record.env_hash,
+                "skills_active": list(run_record.skills_active),
+                "workspace_root": str(run_record.workspace_root),
+                "provider_session_id": run_record.provider_session_id,
+                "model_provider": run_record.model_provider,
+                "model_name": run_record.model_name,
+                "artifacts_uri": run_record.artifacts_uri,
+                "transcript_uri": run_record.transcript_uri,
+                "stdout": run_record.stdout,
+                "stderr": run_record.stderr,
+                "runtime_seconds": run_record.runtime_seconds,
+                "metadata": dict(run_record.metadata),
+            },
+        },
     )
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load judge adapter: {module_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    evaluate = getattr(module, callable_name, None)
-    if not callable(evaluate):
-        raise AttributeError(f"judge callable '{callable_name}' not found in {module_path}")
-    result = evaluate(Path(task_root), run_record, manifest)
-    if not isinstance(result, JudgeResult):
-        raise TypeError(f"judge callable returned unexpected type: {type(result)!r}")
-    return result
+    result_payload = dict(payload.get("judge_result") or {})
+    return JudgeResult(
+        task_id=str(result_payload.get("task_id", run_record.task_id) or run_record.task_id),
+        all_metrics_passed=bool(result_payload.get("all_metrics_passed", False)),
+        metrics_actual=dict(result_payload.get("metrics_actual") or {}),
+        failed_metrics=list(result_payload.get("failed_metrics") or []),
+        failure_tags=list(result_payload.get("failure_tags") or []),
+    )
 
 
 def write_live_run_logs(
@@ -208,16 +245,17 @@ def write_live_run_logs(
         "trajectory_normalized.json",
         "trajectory_summary.json",
         "vendor_session_ref.json",
-        "agent_prompt_round_1.txt",
-        "claude_sdk_error_round_1.txt",
-        "claude_sdk_diagnostics_round_1.json",
-        "files_written_round_1.json",
         "post_run_audit.json",
-        "public_self_eval_round_1.json",
     ):
         path = Path(record.workspace_root) / extra
         if path.exists():
             logger.append_text_log(run_dir, extra, path.read_text(encoding="utf-8"))
+    for round_file in sorted(Path(record.workspace_root).glob("*_round_*")):
+        if not round_file.is_file():
+            continue
+        if round_file.suffix not in {".json", ".txt", ".log"}:
+            continue
+        logger.append_text_log(run_dir, round_file.name, round_file.read_text(encoding="utf-8"))
     return run_dir
 
 
@@ -285,3 +323,7 @@ __all__ = [
     "run_registered_task_live",
     "write_live_run_logs",
 ]
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
