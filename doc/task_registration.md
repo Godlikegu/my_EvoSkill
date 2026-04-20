@@ -10,8 +10,10 @@ contract.
 The task-registration surface is exposed through:
 
 - installed CLI: `myevoskill-task-contract-draft`
+- module CLI for draft generation: `python -m myevoskill.task_registration_draft`
 - installed CLI: `myevoskill-task-register`
-- module CLI for confirmed registration: `python -m myevoskill.task_registration`
+- module CLI for confirmed registration: `python -m myevoskill.task_register`
+- module CLI for live runs: `python -m myevoskill.task_live`
 - Python APIs: `draft_task_contract(...)`, `register_task(...)`
 
 ## CLI Usage
@@ -25,6 +27,13 @@ Step 1. Generate the draft contract:
 
 ```bash
 myevoskill-task-contract-draft --task-root ../tasks/conventional_ptychography --output-root .
+```
+
+Equivalent module forms:
+
+```bash
+python -m myevoskill.task_registration_draft --task-root ../tasks/conventional_ptychography --output-root .
+PYTHONPATH=src python -m myevoskill.task_registration_draft --task-root ../tasks/conventional_ptychography --output-root .
 ```
 
 This command writes:
@@ -62,13 +71,13 @@ This installed CLI is available after `pip install -e .`.
 Equivalent module form after editable install:
 
 ```bash
-python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
+python -m myevoskill.task_register --task-root ../tasks/conventional_ptychography --output-root .
 ```
 
 Repo-local module form without installation:
 
 ```bash
-PYTHONPATH=src python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
+PYTHONPATH=src python -m myevoskill.task_register --task-root ../tasks/conventional_ptychography --output-root .
 ```
 
 Optional arguments:

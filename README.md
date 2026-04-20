@@ -26,6 +26,14 @@ generate the draft contract with the mandatory Claude registration agent:
 myevoskill-task-contract-draft --task-root ../tasks/conventional_ptychography --output-root .
 ```
 
+Alternative module forms:
+鍙€夋ā鍧楀舰寮忥細
+
+```bash
+python -m myevoskill.task_registration_draft --task-root ../tasks/conventional_ptychography --output-root .
+PYTHONPATH=src python -m myevoskill.task_registration_draft --task-root ../tasks/conventional_ptychography --output-root .
+```
+
 If the first draft is structurally invalid, the harness feeds the validation
 errors back to the registration agent and performs one automatic repair round.
 
@@ -39,13 +47,13 @@ myevoskill-task-register --task-root ../tasks/conventional_ptychography --output
 Module form for confirmed registration after editable install:
 
 ```bash
-python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
+python -m myevoskill.task_register --task-root ../tasks/conventional_ptychography --output-root .
 ```
 
 Repo-local module form for confirmed registration without installation:
 
 ```bash
-PYTHONPATH=src python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
+PYTHONPATH=src python -m myevoskill.task_register --task-root ../tasks/conventional_ptychography --output-root .
 ```
 
 The draft step reads:
@@ -149,8 +157,8 @@ Alternative module forms:
 可选模块形式：
 
 ```bash
-python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
-PYTHONPATH=src python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
+python -m myevoskill.task_register --task-root ../tasks/conventional_ptychography --output-root .
+PYTHONPATH=src python -m myevoskill.task_register --task-root ../tasks/conventional_ptychography --output-root .
 ```
 
 Register does all of the following:
@@ -184,8 +192,8 @@ Alternative module forms:
 可选模块形式：
 
 ```bash
-python -m myevoskill.live_runner --task-id conventional_ptychography --project-root .
-PYTHONPATH=src python -m myevoskill.live_runner --task-id conventional_ptychography --project-root .
+python -m myevoskill.task_live --task-id conventional_ptychography --project-root .
+PYTHONPATH=src python -m myevoskill.task_live --task-id conventional_ptychography --project-root .
 ```
 
 Live execution is gated by all of the following:
@@ -221,13 +229,13 @@ myevoskill-task-live --task-id conventional_ptychography --project-root .
 Module form after editable install:
 
 ```bash
-python -m myevoskill.live_runner --task-id conventional_ptychography --project-root .
+python -m myevoskill.task_live --task-id conventional_ptychography --project-root .
 ```
 
 Repo-local module form without installation:
 
 ```bash
-PYTHONPATH=src python -m myevoskill.live_runner --task-id conventional_ptychography --project-root .
+PYTHONPATH=src python -m myevoskill.task_live --task-id conventional_ptychography --project-root .
 ```
 
 This interface is manifest-driven and now also gated by a confirmed contract

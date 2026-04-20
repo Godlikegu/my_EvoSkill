@@ -46,13 +46,19 @@ then register the confirmed contract.
 Draft stage entrypoints:
 
 - installed CLI: `myevoskill-task-contract-draft`
+- module CLI: `python -m myevoskill.task_registration_draft`
 - Python API: `draft_task_contract(...)`
 
 Confirmed registration entrypoints:
 
 - installed CLI: `myevoskill-task-register`
-- module CLI: `python -m myevoskill.task_registration`
+- module CLI: `python -m myevoskill.task_register`
 - Python API: `register_task(...)`
+
+Live-run entrypoints:
+
+- installed CLI: `myevoskill-task-live`
+- module CLI: `python -m myevoskill.task_live`
 
 The draft stage is responsible for:
 
@@ -109,7 +115,7 @@ Available executors:
 The preferred manual/live entrypoint is manifest-driven:
 
 - installed CLI: `myevoskill-task-live`
-- module CLI: `python -m myevoskill.live_runner`
+- module CLI: `python -m myevoskill.task_live`
 
 This keeps live execution task-agnostic. Adding a new task should not require a
 new task-specific live script inside the framework.

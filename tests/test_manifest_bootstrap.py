@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import asyncio
 import json
 import shutil
 import sys
@@ -17,12 +18,17 @@ from myevoskill import (
 )
 from myevoskill.manifest_bootstrap import main as bootstrap_main
 from myevoskill.registration_agent import (
+    REGISTRATION_PROBE_SCRIPT_PATH,
+    _consume_registration_agent_response,
     build_registration_agent_prompt,
     build_registration_agent_system_prompt,
     normalize_registration_input,
+    validate_registration_agent_bash_commands,
     validate_registration_input,
 )
+from myevoskill.registration_agent import _RegistrationClaudeAdapter
 import myevoskill.registration_contract as registration_contract_mod
+from myevoskill.resource_probe import describe_task_resource
 from myevoskill.task_registration import (
     contract_draft_main,
     draft_task_contract,
@@ -189,6 +195,18 @@ def _write_registration_input(task_root: Path) -> Path:
     return path
 
 
+def _write_script_metric_helper(task_root: Path) -> Path:
+    helper_path = task_root / "src" / "metric_helper.py"
+    helper_path.write_text(
+        "import numpy as np\n\n"
+        "def compute_score(signal):\n"
+        "    arr = np.asarray(signal, dtype=float)\n"
+        "    return {'score': float(arr.mean())}\n",
+        encoding="utf-8",
+    )
+    return helper_path
+
+
 def _mock_registration_agent_result(task_root: Path) -> dict:
     return {
         "summary": {
@@ -231,6 +249,13 @@ def _mock_registration_agent_result(task_root: Path) -> dict:
                     "required_fields": ["signal"],
                     "numeric_fields": ["signal"],
                     "same_shape_fields": ["signal"],
+                    "fields": [
+                        {
+                            "name": "signal",
+                            "dtype": "float64",
+                            "shape": [4],
+                        }
+                    ],
                 },
                 "judge_contract": {
                     "metrics": [
@@ -265,8 +290,24 @@ def _mock_registration_agent_result(task_root: Path) -> dict:
                 "open_questions": [],
                 "declared_inputs_used": ["README.md", "main.py", "data/raw_data.npz"],
                 "resource_validation": [
-                    {"path": "README.md", "status": "read"},
-                    {"path": "main.py", "status": "read"},
+                    {
+                        "path": "data/raw_data.npz",
+                        "field": "signal",
+                        "observed_dtype": "float64",
+                        "observed_shape": [4],
+                        "used_for": ["resource_semantics", "output_contract"],
+                        "status": "observed",
+                        "message": "Verified public input signal shape from the real npz file.",
+                    },
+                    {
+                        "path": "README.md",
+                        "field": "",
+                        "observed_dtype": "",
+                        "observed_shape": [],
+                        "used_for": ["resource_semantics"],
+                        "status": "read",
+                        "message": "Read task description for semantic context only.",
+                    },
                 ],
             },
             "judge_recommendations": {
@@ -330,6 +371,13 @@ def _write_confirmed_minimal_contract(task_root: Path) -> Path:
             "required_fields": ["signal"],
             "numeric_fields": ["signal"],
             "same_shape_fields": ["signal"],
+            "fields": [
+                {
+                    "name": "signal",
+                    "dtype": "float64",
+                    "shape": [4],
+                }
+            ],
         },
         "judge_contract": {
             "metrics": [
@@ -767,8 +815,174 @@ def test_registration_input_validation_and_prompt_are_user_driven(tmp_path):
     assert "Do not restate README or source file contents verbatim." in system_prompt["append"]
     assert "network" not in system_prompt["append"].lower()
     assert "Recover a small array from synthetic data." not in system_prompt["append"]
+    assert REGISTRATION_PROBE_SCRIPT_PATH in system_prompt["append"]
+    assert "Shape and dtype facts must come from probing real task-local files" in system_prompt["append"]
     assert "Inspect the task directory and return ONLY a JSON object" in prompt
     assert "Do not use threshold_key" in prompt
+    assert "output_contract must include path, format" in prompt
+    assert "resource_validation" in prompt
+
+
+def test_registration_agent_probe_policy_allows_only_read_only_probe_commands(tmp_path):
+    task_root = _write_minimal_task(tmp_path / "probe_task")
+
+    allowed = validate_registration_agent_bash_commands(
+        task_root,
+        [
+            f'python "{REGISTRATION_PROBE_SCRIPT_PATH}" probe "{task_root}" data/raw_data.npz --field signal'
+        ],
+    )
+    denied_touch = validate_registration_agent_bash_commands(
+        task_root,
+        [f'python "{REGISTRATION_PROBE_SCRIPT_PATH}" probe "{task_root}" data/raw_data.npz --field signal && touch out.txt'],
+    )
+    denied_python_c = validate_registration_agent_bash_commands(
+        task_root,
+        ['python -c "print(123)"'],
+    )
+
+    assert allowed == []
+    assert any(item["category"] == "denied_category" for item in denied_touch)
+    assert any(item["category"] == "denied_category" for item in denied_python_c)
+
+
+def test_registration_agent_pretool_hook_allows_valid_probe_command(tmp_path):
+    task_root = _write_minimal_task(tmp_path / "probe_hook_allow")
+    adapter = _RegistrationClaudeAdapter()
+    hook_events: list[dict[str, object]] = []
+    hooks = adapter.build_registration_sdk_hooks(hook_events, workspace_root=task_root)
+    matcher = hooks["PreToolUse"][0]
+    callback = matcher.hooks[0]
+
+    result = asyncio.run(
+        callback(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": (
+                        f'python "{REGISTRATION_PROBE_SCRIPT_PATH}" probe '
+                        f'"{task_root}" data/raw_data.npz --field signal'
+                    )
+                },
+            },
+            "tool-1",
+            {},
+        )
+    )
+
+    assert result["hookSpecificOutput"]["permissionDecision"] == "allow"
+    assert hook_events and hook_events[0]["hook_event_name"] == "PreToolUse"
+
+
+def test_registration_agent_pretool_hook_denies_non_probe_bash_command(tmp_path):
+    task_root = _write_minimal_task(tmp_path / "probe_hook_deny")
+    adapter = _RegistrationClaudeAdapter()
+    hook_events: list[dict[str, object]] = []
+    hooks = adapter.build_registration_sdk_hooks(hook_events, workspace_root=task_root)
+    matcher = hooks["PreToolUse"][0]
+    callback = matcher.hooks[0]
+
+    result = asyncio.run(
+        callback(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": 'python -c "print(123)"'
+                },
+            },
+            "tool-2",
+            {},
+        )
+    )
+
+    assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "resource probe" in result["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_registration_agent_response_prefers_result_message_after_external_candidate(tmp_path):
+    task_root = _write_minimal_task(tmp_path / "result_after_candidate")
+    adapter = _RegistrationClaudeAdapter()
+    summary = _mock_registration_agent_result(task_root)["summary"]
+
+    class AssistantMessage:
+        def __init__(self, structured_output):
+            self.role = "assistant"
+            self.structured_output = structured_output
+
+    class ResultMessage:
+        def __init__(self, structured_output):
+            self.structured_output = structured_output
+            self.result = json.dumps(structured_output)
+            self.is_error = False
+            self.subtype = ""
+
+    async def _stream():
+        yield AssistantMessage(summary)
+        yield ResultMessage(summary)
+
+    result = asyncio.run(
+        _consume_registration_agent_response(
+            adapter,
+            _stream(),
+            total_timeout_seconds=5,
+            hook_events=[],
+            result_message_type=ResultMessage,
+        )
+    )
+
+    assert result["completion_source"] == "result_message"
+    assert result["summary"]["registration_contract_draft"]["task_id"] == task_root.name
+
+
+def test_registration_agent_response_falls_back_only_after_stream_end(tmp_path):
+    task_root = _write_minimal_task(tmp_path / "candidate_stream_end")
+    adapter = _RegistrationClaudeAdapter()
+    summary = _mock_registration_agent_result(task_root)["summary"]
+
+    class AssistantMessage:
+        def __init__(self, structured_output):
+            self.role = "assistant"
+            self.structured_output = structured_output
+
+    async def _stream():
+        yield AssistantMessage(summary)
+
+    result = asyncio.run(
+        _consume_registration_agent_response(
+            adapter,
+            _stream(),
+            total_timeout_seconds=5,
+            hook_events=[],
+            result_message_type=type("ResultMessage", (), {}),
+        )
+    )
+
+    assert result["completion_source"] == "external_registration_schema"
+    assert (
+        result["sdk_diagnostics"]["external_completion"]["fallback_reason"]
+        == "stream_end_after_external_candidate"
+    )
+
+
+def test_resource_probe_describes_npz_json_and_hdf5_shapes(tmp_path):
+    task_root = _write_minimal_task(tmp_path / "probe_shapes")
+    hdf5_path = task_root / "data" / "extra.h5"
+    import h5py
+
+    with h5py.File(hdf5_path, "w") as handle:
+        handle.create_dataset("group/image", data=np.ones((2, 3), dtype=np.float32))
+
+    npz_info = describe_task_resource(task_root, "data/raw_data.npz", field="signal")
+    json_info = describe_task_resource(task_root, "data/meta_data.json")
+    hdf5_info = describe_task_resource(task_root, "data/extra.h5", field="group/image")
+
+    assert npz_info["observed_shape"] == [4]
+    assert npz_info["observed_dtype"] == "float64"
+    assert any(entry["field"] == "grid_size" for entry in json_info["entries"])
+    assert hdf5_info["observed_shape"] == [2, 3]
+    assert hdf5_info["observed_dtype"] == "float32"
 
 
 def test_register_task_rejects_missing_script_metric_source_path_file(tmp_path):
@@ -788,6 +1002,7 @@ def test_register_task_rejects_missing_script_metric_source_path_file(tmp_path):
                 "signal": {
                     "resource_path": "data/raw_data.npz",
                     "field": "signal",
+                    "shape": [4],
                 }
             },
             "pass_condition": {"operator": ">=", "threshold": 0.9},
@@ -833,6 +1048,10 @@ def test_generated_judge_reports_invalid_output_shape_before_metric_runtime_erro
     contract["output_contract"]["required_fields"] = ["signal", "axis"]
     contract["output_contract"]["numeric_fields"] = ["signal", "axis"]
     contract["output_contract"]["same_shape_fields"] = ["signal", "axis"]
+    contract["output_contract"]["fields"] = [
+        {"name": "signal", "dtype": "float64", "shape": [4]},
+        {"name": "axis", "dtype": "float64", "shape": [4]},
+    ]
     confirmed_path.write_text(json.dumps(contract, indent=2, sort_keys=True), encoding="utf-8")
     result = register_task(task_root, output_root=project_root)
     manifest = _load_json(result.manifest_path)
@@ -860,3 +1079,161 @@ def test_generated_judge_reports_invalid_output_shape_before_metric_runtime_erro
 
     assert not judge_result.all_metrics_passed
     assert "invalid_output_shape" in judge_result.failure_tags
+
+
+def test_task_contract_draft_rejects_missing_output_field_shape(tmp_path):
+    project_root = tmp_path / "project"
+    task_root = _write_minimal_task(project_root / "tasks" / "missing_shape_draft")
+    registration_input_path = _write_registration_input(task_root)
+
+    def _fake_run_registration_agent(task_root_arg, **_kwargs):
+        result = _mock_registration_agent_result(task_root_arg)
+        result["summary"]["registration_contract_draft"]["output_contract"]["fields"][0].pop(
+            "shape",
+            None,
+        )
+        return result
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        registration_contract_mod,
+        "run_registration_agent",
+        _fake_run_registration_agent,
+    )
+    try:
+        with pytest.raises(ValueError, match="output_contract.fields\\[0\\]\\.shape"):
+            draft_task_contract(
+                task_root,
+                output_root=project_root,
+                registration_input_path=registration_input_path,
+            )
+    finally:
+        monkeypatch.undo()
+
+
+def test_task_contract_draft_allows_empty_same_shape_fields_without_missing_output_contract(tmp_path):
+    project_root = tmp_path / "project"
+    task_root = _write_minimal_task(project_root / "tasks" / "empty_same_shape_fields")
+    registration_input_path = _write_registration_input(task_root)
+
+    def _fake_run_registration_agent(task_root_arg, **_kwargs):
+        result = _mock_registration_agent_result(task_root_arg)
+        result["summary"]["registration_contract_draft"]["output_contract"]["same_shape_fields"] = []
+        return result
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        registration_contract_mod,
+        "run_registration_agent",
+        _fake_run_registration_agent,
+    )
+    try:
+        result = draft_task_contract(
+            task_root,
+            output_root=project_root,
+            registration_input_path=registration_input_path,
+        )
+    finally:
+        monkeypatch.undo()
+
+    assert result.missing_items == []
+
+
+def test_register_task_rejects_missing_output_contract_fields_shape(tmp_path):
+    project_root = tmp_path / "project"
+    task_root = _write_minimal_task(project_root / "tasks" / "missing_output_shape")
+    confirmed_path = _write_confirmed_minimal_contract(task_root)
+    contract = _load_json(confirmed_path)
+    contract["output_contract"]["fields"][0].pop("shape", None)
+    confirmed_path.write_text(json.dumps(contract, indent=2, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="output_contract.fields\\[0\\]\\.shape"):
+        register_task(task_root, output_root=project_root)
+
+
+def test_register_task_rejects_script_metric_declared_shape_mismatch(tmp_path):
+    project_root = tmp_path / "project"
+    task_root = _write_minimal_task(project_root / "tasks" / "shape_mismatch_task")
+    _write_script_metric_helper(task_root)
+    confirmed_path = _write_confirmed_minimal_contract(task_root)
+    contract = _load_json(confirmed_path)
+    contract["judge_contract"]["metrics"] = [
+        {
+            "name": "script_score",
+            "kind": "script",
+            "description": "Mean score computed by a helper.",
+            "source_path": "src/metric_helper.py",
+            "callable": "compute_score",
+            "result_key": "score",
+            "inputs": {
+                "signal": {
+                    "resource_path": "data/raw_data.npz",
+                    "field": "signal",
+                    "shape": [8],
+                }
+            },
+            "pass_condition": {"operator": ">=", "threshold": 0.0},
+        }
+    ]
+    confirmed_path.write_text(json.dumps(contract, indent=2, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="shape does not match resolved resource value"):
+        register_task(task_root, output_root=project_root)
+
+
+def test_register_task_rejects_script_metric_missing_input_shape(tmp_path):
+    project_root = tmp_path / "project"
+    task_root = _write_minimal_task(project_root / "tasks" / "missing_input_shape_task")
+    _write_script_metric_helper(task_root)
+    confirmed_path = _write_confirmed_minimal_contract(task_root)
+    contract = _load_json(confirmed_path)
+    contract["judge_contract"]["metrics"] = [
+        {
+            "name": "script_score",
+            "kind": "script",
+            "description": "Mean score computed by a helper.",
+            "source_path": "src/metric_helper.py",
+            "callable": "compute_score",
+            "result_key": "score",
+            "inputs": {
+                "signal": {
+                    "resource_path": "data/raw_data.npz",
+                    "field": "signal",
+                }
+            },
+            "pass_condition": {"operator": ">=", "threshold": 0.0},
+        }
+    ]
+    confirmed_path.write_text(json.dumps(contract, indent=2, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="inputs.signal.shape"):
+        register_task(task_root, output_root=project_root)
+
+
+def test_register_task_rejects_script_metric_output_field_shape_selector_mismatch(tmp_path):
+    project_root = tmp_path / "project"
+    task_root = _write_minimal_task(project_root / "tasks" / "output_selector_mismatch")
+    _write_script_metric_helper(task_root)
+    confirmed_path = _write_confirmed_minimal_contract(task_root)
+    contract = _load_json(confirmed_path)
+    contract["judge_contract"]["metrics"] = [
+        {
+            "name": "script_score",
+            "kind": "script",
+            "description": "Mean score computed by a helper.",
+            "source_path": "src/metric_helper.py",
+            "callable": "compute_score",
+            "result_key": "score",
+            "inputs": {
+                "signal": {
+                    "output_field": "signal",
+                    "shape": [],
+                }
+            },
+            "pass_condition": {"operator": ">=", "threshold": 0.0},
+        }
+    ]
+    confirmed_path.write_text(json.dumps(contract, indent=2, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="does not match output_contract.fields"):
+        register_task(task_root, output_root=project_root)

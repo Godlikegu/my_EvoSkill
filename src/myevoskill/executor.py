@@ -18,8 +18,10 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, AsyncIterator, Callable, Dict, Mapping, Optional, Sequence
 
 from .envs import python_executable_path_entries
@@ -90,6 +92,19 @@ class ExecutorAdapter(ABC):
         active_skills: Sequence[str],
     ) -> RunRecord:
         """Execute a task using only the public bundle."""
+
+
+def _make_sdk_hook_matcher(*, hooks: Sequence[Any], matcher: Optional[str] = None) -> Any:
+    """Build a Claude SDK HookMatcher when available, else a lightweight test fallback."""
+
+    hook_list = list(hooks)
+    try:
+        from claude_agent_sdk.types import HookMatcher
+    except ModuleNotFoundError:
+        return SimpleNamespace(hooks=hook_list, matcher=matcher)
+    if matcher is None:
+        return HookMatcher(hooks=hook_list)
+    return HookMatcher(matcher=matcher, hooks=hook_list)
 
 
 def _remove_path(path: Path) -> None:
@@ -3518,9 +3533,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     }
 
     def _build_claude_sdk_hooks(self, hook_events: list[dict[str, Any]]) -> dict[str, Any]:
-        from claude_agent_sdk.types import HookMatcher
-
-        def _make_hook(event_name: str) -> HookMatcher:
+        def _make_hook(event_name: str) -> Any:
             async def _callback(input_data, tool_use_id, context):
                 hook_events.append(
                     {
@@ -3531,7 +3544,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 )
                 return {"continue_": True}
 
-            return HookMatcher(hooks=[_callback])
+            return _make_sdk_hook_matcher(hooks=[_callback])
 
         return {
             "Stop": [_make_hook("Stop")],
@@ -3577,6 +3590,9 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             mcp_servers=mcp_servers,
             sdk_env=sdk_env,
         )
+        claude_session_id = self._new_claude_session_id()
+        options_kwargs["session_id"] = claude_session_id
+        options_kwargs["continue_conversation"] = False
         options_kwargs["hooks"] = self._build_claude_sdk_hooks(hook_events)
         options = ClaudeAgentOptions(**options_kwargs)
         resolved_model_name = self._resolved_model_name(session_config)
@@ -3591,10 +3607,15 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             completion_policy=completion_policy,
             timeout_seconds=model_timeout_seconds,
         )
-
+        result: Optional[dict[str, Any]] = None
+        pending_error: Optional[ClaudeSDKExecutionError] = None
+        vendor_session_ref: dict[str, Any] = {
+            "sdk_backend": "claude_sdk",
+            "session_id": claude_session_id,
+        }
         async with ClaudeSDKClient(options) as client:
             try:
-                await client.query(prompt)
+                await client.query(prompt, session_id=claude_session_id)
                 result = await self._consume_claude_response(
                     client.receive_response(),
                     total_timeout_seconds=model_timeout_seconds,
@@ -3611,18 +3632,18 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     client, workspace, sdk_messages=exc.sdk_messages
                 )
                 diagnostics["vendor_session_ref"] = vendor_session_ref
-                raise ClaudeSDKExecutionError(
+                pending_error = ClaudeSDKExecutionError(
                     str(exc),
                     error_type=self._normalize_protocol_failure_reason(exc.error_type),
                     sdk_messages=exc.sdk_messages,
                     result_text=exc.result_text,
                     diagnostics=diagnostics,
-                ) from exc
+                )
             except Exception as exc:
                 vendor_session_ref = self._build_vendor_session_ref(
                     client, workspace, sdk_messages=[]
                 )
-                raise ClaudeSDKExecutionError(
+                pending_error = ClaudeSDKExecutionError(
                     f"Claude SDK query failed: {exc}",
                     error_type="sdk_error",
                     sdk_messages=[],
@@ -3634,19 +3655,50 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                         "sdk_result": self._extract_sdk_result_metadata(None),
                         "submission_state": dict(self._merge_submission_state({}, submission_state)),
                     },
-                ) from exc
-            if "vendor_session_ref" not in result:
-                result["vendor_session_ref"] = self._build_vendor_session_ref(
-                    client, workspace, sdk_messages=result.get("messages", [])
                 )
-            result.setdefault("sdk_diagnostics", {})
-            result["sdk_diagnostics"].setdefault(
-                "hook_events", [self._json_safe(item) for item in hook_events]
+            else:
+                if result is not None and "vendor_session_ref" not in result:
+                    vendor_session_ref = self._build_vendor_session_ref(
+                        client, workspace, sdk_messages=result.get("messages", [])
+                    )
+                    result["vendor_session_ref"] = vendor_session_ref
+                elif result is not None:
+                    vendor_session_ref = dict(result.get("vendor_session_ref") or vendor_session_ref)
+                if result is not None:
+                    result.setdefault("sdk_diagnostics", {})
+                    result["sdk_diagnostics"].setdefault(
+                        "hook_events", [self._json_safe(item) for item in hook_events]
+                    )
+                    result["sdk_diagnostics"]["submission_state"] = dict(
+                        self._merge_submission_state({}, submission_state)
+                    )
+                    result["submission_state"] = dict(
+                        self._merge_submission_state({}, submission_state)
+                    )
+
+        session_cleanup = self._delete_claude_session_history(
+            str(vendor_session_ref.get("session_id", "") or ""),
+            workspace,
+        )
+        vendor_session_ref = self._attach_session_cleanup(
+            vendor_session_ref,
+            session_cleanup=session_cleanup,
+        )
+        if pending_error is not None:
+            pending_error.diagnostics = dict(pending_error.diagnostics)
+            pending_error.diagnostics["vendor_session_ref"] = vendor_session_ref
+            raise pending_error
+        if result is None:
+            raise ClaudeSDKExecutionError(
+                "Claude SDK query returned no result payload",
+                error_type="sdk_error",
+                sdk_messages=[],
+                result_text="",
+                diagnostics={"vendor_session_ref": vendor_session_ref},
             )
-            result["sdk_diagnostics"]["submission_state"] = dict(
-                self._merge_submission_state({}, submission_state)
-            )
-            result["submission_state"] = dict(self._merge_submission_state({}, submission_state))
+        result["vendor_session_ref"] = vendor_session_ref
+        result.setdefault("sdk_diagnostics", {})
+        result["sdk_diagnostics"]["vendor_session_ref"] = vendor_session_ref
         return result
 
     def _build_workspace_system_prompt(
@@ -4339,6 +4391,57 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "session_id": session_id,
             **native_ref,
         }
+
+    def _new_claude_session_id(self) -> str:
+        """Allocate a fresh Claude session UUID so each run is conversation-isolated."""
+
+        return str(uuid.uuid4())
+
+    def _delete_claude_session_history(self, session_id: str, workspace: Path) -> dict[str, Any]:
+        """Best-effort hard-delete of the Claude local session transcript for this workspace."""
+
+        resolved_workspace = Path(workspace).resolve()
+        cleanup = {
+            "requested": bool(str(session_id or "").strip()),
+            "deleted": False,
+            "error": "",
+            "directory": str(resolved_workspace),
+        }
+        normalized_session_id = str(session_id or "").strip()
+        if not normalized_session_id:
+            cleanup["error"] = "missing_session_id"
+            return cleanup
+        try:
+            from claude_agent_sdk import delete_session
+        except Exception as exc:  # pragma: no cover - optional SDK import
+            cleanup["error"] = f"sdk_import_failed: {exc}"
+            return cleanup
+        try:
+            delete_session(normalized_session_id, directory=str(resolved_workspace))
+            cleanup["deleted"] = True
+            return cleanup
+        except FileNotFoundError:
+            cleanup["error"] = "session_not_found"
+            return cleanup
+        except Exception as exc:  # pragma: no cover - defensive
+            cleanup["error"] = f"{type(exc).__name__}: {exc}"
+            return cleanup
+
+    def _attach_session_cleanup(
+        self,
+        vendor_session_ref: Optional[Mapping[str, Any]],
+        *,
+        session_cleanup: Optional[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        """Attach cleanup status and strip native trace pointers once the session is deleted."""
+
+        finalized = dict(vendor_session_ref or {})
+        cleanup = dict(session_cleanup or {})
+        finalized["session_cleanup"] = cleanup
+        if bool(cleanup.get("deleted")):
+            finalized["matched_native_path"] = ""
+            finalized["matched_native_exists"] = False
+        return finalized
 
     def _locate_claude_native_trace(self, workspace: Path, *, session_id: str = "") -> dict[str, Any]:
         projects_root = Path.home() / ".claude" / "projects"

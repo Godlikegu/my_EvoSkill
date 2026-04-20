@@ -30,6 +30,13 @@ from .registration_agent import (
     run_registration_agent,
     validate_registration_input,
 )
+from .resource_probe import (
+    ResourceProbeError,
+    apply_shape_selectors,
+    load_task_resource_value,
+    normalize_shape_spec,
+    shape_list_for_value,
+)
 from .models import ContractDraftResult, EnvCacheRecord, TaskRegistrationResult
 from .task_runtime import (
     coerce_runtime_layout,
@@ -357,6 +364,80 @@ def load_registration_contract(
     return json.loads(target.read_text(encoding="utf-8"))
 
 
+def _is_shape_array(value: Any) -> bool:
+    if isinstance(value, (str, bytes, bytearray)):
+        return False
+    if not isinstance(value, Sequence):
+        return False
+    try:
+        normalize_shape_spec(value)
+    except Exception:
+        return False
+    return True
+
+
+def _is_metric_input_leaf_spec(node: Any) -> bool:
+    if not isinstance(node, Mapping):
+        return False
+    return any(
+        key in node
+        for key in (
+            "output_field",
+            "resource_path",
+            "reference_resource_path",
+            "field",
+            "reference_field",
+            "value",
+            "index",
+            "scalar_index",
+            "squeeze",
+            "shape",
+        )
+    )
+
+
+def _iter_metric_input_specs(
+    node: Any,
+    *,
+    prefix: str,
+) -> list[tuple[str, Mapping[str, Any]]]:
+    specs: list[tuple[str, Mapping[str, Any]]] = []
+    if isinstance(node, Mapping):
+        if _is_metric_input_leaf_spec(node):
+            specs.append((prefix, node))
+            return specs
+        for key, value in node.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            specs.extend(_iter_metric_input_specs(value, prefix=child_prefix))
+    elif isinstance(node, list):
+        for index, item in enumerate(node):
+            specs.extend(_iter_metric_input_specs(item, prefix=f"{prefix}[{index}]"))
+    return specs
+
+
+def _output_contract_field_map(output_contract: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    field_map: dict[str, Mapping[str, Any]] = {}
+    for raw_field in output_contract.get("fields", []) or []:
+        if not isinstance(raw_field, Mapping):
+            continue
+        name = str(raw_field.get("name", "") or "").strip()
+        if name:
+            field_map[name] = raw_field
+    return field_map
+
+
+def _validate_shape_array(
+    raw_shape: Any,
+    *,
+    field_name: str,
+) -> list[str]:
+    try:
+        normalize_shape_spec(raw_shape)
+    except Exception as exc:
+        return [f"{field_name} must be a shape array of non-negative integers ({exc})"]
+    return []
+
+
 def validate_registration_contract(
     contract: Mapping[str, Any],
     *,
@@ -411,9 +492,63 @@ def validate_registration_contract(
     if not isinstance(output_contract, Mapping):
         errors.append("output_contract must be an object")
     else:
-        for field_name in ("path", "format", "required_fields", "numeric_fields", "same_shape_fields"):
+        for field_name in (
+            "path",
+            "format",
+            "required_fields",
+            "numeric_fields",
+            "same_shape_fields",
+            "fields",
+        ):
             if field_name not in output_contract:
                 errors.append(f"missing output_contract.{field_name}")
+        required_fields = output_contract.get("required_fields")
+        numeric_fields = output_contract.get("numeric_fields")
+        same_shape_fields = output_contract.get("same_shape_fields")
+        fields = output_contract.get("fields")
+        if not isinstance(required_fields, list) or not required_fields or not all(
+            str(item or "").strip() for item in required_fields
+        ):
+            errors.append("output_contract.required_fields must be a non-empty string list")
+        if not isinstance(numeric_fields, list) or not all(
+            str(item or "").strip() for item in numeric_fields
+        ):
+            errors.append("output_contract.numeric_fields must be a string list")
+        if not isinstance(same_shape_fields, list) or not all(
+            str(item or "").strip() for item in same_shape_fields
+        ):
+            errors.append("output_contract.same_shape_fields must be a string list")
+        if not isinstance(fields, list) or not fields:
+            errors.append("output_contract.fields must be a non-empty list")
+        else:
+            seen_output_fields: set[str] = set()
+            for index, raw_field in enumerate(fields):
+                field = raw_field if isinstance(raw_field, Mapping) else {}
+                prefix = f"output_contract.fields[{index}]"
+                name = str(field.get("name", "") or "").strip()
+                dtype = str(field.get("dtype", "") or "").strip()
+                if not name:
+                    errors.append(f"{prefix}.name is required")
+                elif name in seen_output_fields:
+                    errors.append(f"{prefix}.name must be unique")
+                else:
+                    seen_output_fields.add(name)
+                if not dtype:
+                    errors.append(f"{prefix}.dtype is required")
+                errors.extend(
+                    _validate_shape_array(
+                        field.get("shape"),
+                        field_name=f"{prefix}.shape",
+                    )
+                )
+            required_field_names = {
+                str(item).strip() for item in required_fields or [] if str(item or "").strip()
+            }
+            missing_field_specs = sorted(required_field_names - seen_output_fields)
+            for missing_name in missing_field_specs:
+                errors.append(
+                    f"output_contract.fields is missing a declaration for required field {missing_name!r}"
+                )
         if require_complete:
             for field_name in ("path", "format", "required_fields"):
                 if _contains_placeholder_token(output_contract.get(field_name)):
@@ -470,9 +605,24 @@ def validate_registration_contract(
                         errors.append(f"{prefix}.source_path is required for script metrics")
                     if not str(metric.get("callable", "") or "").strip():
                         errors.append(f"{prefix}.callable is required for script metrics")
+                    if not str(metric.get("result_key", "") or "").strip():
+                        errors.append(f"{prefix}.result_key is required for script metrics")
                     inputs = metric.get("inputs")
-                    if require_complete and not isinstance(inputs, Mapping):
+                    if not isinstance(inputs, Mapping):
                         errors.append(f"{prefix}.inputs must be provided for script metrics")
+                    else:
+                        input_specs = _iter_metric_input_specs(inputs, prefix=f"{prefix}.inputs")
+                        if not input_specs:
+                            errors.append(
+                                f"{prefix}.inputs must contain at least one leaf input spec"
+                            )
+                        for input_prefix, input_spec in input_specs:
+                            errors.extend(
+                                _validate_shape_array(
+                                    input_spec.get("shape"),
+                                    field_name=f"{input_prefix}.shape",
+                                )
+                            )
                     if require_complete and _contains_placeholder_token(metric.get("result_key")):
                         errors.append(f"{prefix}.result_key must be confirmed for script metrics")
                 if kind == "standard" and require_complete:
@@ -602,6 +752,104 @@ def validate_registration_contract_task_paths(
     return sorted(dict.fromkeys(errors))
 
 
+def _validate_metric_input_shape_from_output_contract(
+    *,
+    output_field_map: Mapping[str, Mapping[str, Any]],
+    metric_name: str,
+    input_prefix: str,
+    input_spec: Mapping[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    output_field = str(input_spec.get("output_field", "") or "").strip()
+    if not output_field:
+        return errors
+    output_spec = output_field_map.get(output_field)
+    if output_spec is None:
+        return [f"{input_prefix}.output_field references unknown output field: {output_field}"]
+    try:
+        base_shape = normalize_shape_spec(output_spec.get("shape"))
+        expected_shape = apply_shape_selectors(
+            base_shape,
+            index=input_spec.get("index"),
+            scalar_index=input_spec.get("scalar_index"),
+            squeeze=bool(input_spec.get("squeeze", False)),
+        )
+        declared_shape = normalize_shape_spec(input_spec.get("shape"))
+    except Exception as exc:
+        return [f"{input_prefix} shape validation failed for metric {metric_name!r}: {exc}"]
+    if expected_shape != declared_shape:
+        errors.append(
+            f"{input_prefix}.shape does not match output_contract.fields[{output_field!r}] "
+            f"after selectors: declared {declared_shape}, expected {expected_shape}"
+        )
+    return errors
+
+
+def validate_registration_contract_shapes(
+    task_root: Path,
+    contract: Mapping[str, Any],
+) -> list[str]:
+    """Validate confirmed contract shape declarations against task files and selectors."""
+
+    task_root = Path(task_root).resolve()
+    errors: list[str] = []
+    output_field_map = _output_contract_field_map(contract.get("output_contract") or {})
+    for field_name, output_spec in output_field_map.items():
+        errors.extend(
+            _validate_shape_array(
+                output_spec.get("shape"),
+                field_name=f"output_contract.fields[{field_name!r}].shape",
+            )
+        )
+
+    for metric_index, raw_metric in enumerate((contract.get("judge_contract") or {}).get("metrics", []) or []):
+        if not isinstance(raw_metric, Mapping):
+            continue
+        if str(raw_metric.get("kind", "") or "").strip() != "script":
+            continue
+        metric_name = str(raw_metric.get("name", "") or f"metric_{metric_index}")
+        for input_prefix, input_spec in _iter_metric_input_specs(
+            raw_metric.get("inputs"),
+            prefix=f"judge_contract.metrics[{metric_index}].inputs",
+        ):
+            errors.extend(
+                _validate_shape_array(
+                    input_spec.get("shape"),
+                    field_name=f"{input_prefix}.shape",
+                )
+            )
+            errors.extend(
+                _validate_metric_input_shape_from_output_contract(
+                    output_field_map=output_field_map,
+                    metric_name=metric_name,
+                    input_prefix=input_prefix,
+                    input_spec=input_spec,
+                )
+            )
+            if input_spec.get("output_field"):
+                continue
+            if not any(
+                str(input_spec.get(field_name, "") or "").strip()
+                for field_name in ("resource_path", "reference_resource_path")
+            ):
+                continue
+            try:
+                value = load_task_resource_value(task_root, input_spec)
+                observed_shape = shape_list_for_value(value)
+                declared_shape = normalize_shape_spec(input_spec.get("shape"))
+            except ResourceProbeError as exc:
+                errors.append(
+                    f"{input_prefix} could not be resolved for metric {metric_name!r}: {exc}"
+                )
+                continue
+            if observed_shape != declared_shape:
+                errors.append(
+                    f"{input_prefix}.shape does not match resolved resource value for metric "
+                    f"{metric_name!r}: declared {declared_shape}, observed {observed_shape}"
+                )
+    return sorted(dict.fromkeys(errors))
+
+
 def register_confirmed_task(
     task_root: Path,
     *,
@@ -631,6 +879,12 @@ def register_confirmed_task(
         raise ValueError(
             "registration_contract.json task-local path validation failed:\n- "
             + "\n- ".join(task_path_errors)
+        )
+    shape_validation_errors = validate_registration_contract_shapes(task_root, contract)
+    if shape_validation_errors:
+        raise ValueError(
+            "registration_contract.json shape validation failed:\n- "
+            + "\n- ".join(shape_validation_errors)
         )
 
     readme_info = _read_readme_info(task_root / "README.md")
@@ -815,6 +1069,7 @@ def render_ready_judge(contract: Mapping[str, Any]) -> str:
             "",
             "from myevoskill.judging import HiddenJudge, MetricRequirement",
             "from myevoskill.models import JudgeResult, RunRecord",
+            "from myevoskill.resource_probe import load_task_resource_value, normalize_shape_spec, shape_list_for_value",
             "from myevoskill.task_runtime import resolve_primary_output_path",
             "",
             "GENERATED_JUDGE_READY = True",
@@ -837,37 +1092,18 @@ def render_ready_judge(contract: Mapping[str, Any]) -> str:
             "",
             "",
             "def _load_resource_value(task_root: Path, spec: Mapping[str, Any], *, output_payload=None) -> Any:",
-            "    if 'value' in spec:",
-            "        return spec['value']",
-            "    if output_payload is not None and spec.get('output_field'):",
-            "        field = str(spec['output_field'])",
-            "        if field not in output_payload.files:",
-            "            raise KeyError(f'missing output field: {field}')",
-            "        value = np.asarray(output_payload[field])",
-            "    else:",
-            "        resource_path = str(spec.get('resource_path') or spec.get('reference_resource_path') or '').strip()",
-            "        field = str(spec.get('field') or spec.get('reference_field') or '').strip()",
-            "        path = task_root / resource_path",
-            "        suffix = path.suffix.lower()",
-            "        if suffix == '.npz':",
-            "            with np.load(path, allow_pickle=False) as payload:",
-            "                if field not in payload.files:",
-            "                    raise KeyError(f'missing field {field!r} in {resource_path}')",
-            "                value = np.asarray(payload[field])",
-            "        elif suffix == '.json':",
-            "            payload = _load_json(path)",
-            "            value = payload if not field else payload[field]",
-            "        else:",
-            "            raise RuntimeError(f'unsupported resource type for judge input: {resource_path}')",
-            "    if isinstance(value, np.ndarray):",
-            "        if 'index' in spec:",
-            "            value = value[int(spec['index'])]",
-            "        if 'scalar_index' in spec:",
-            "            flat = np.asarray(value).reshape(-1)",
-            "            value = float(flat[int(spec['scalar_index'])])",
-            "        if bool(spec.get('squeeze', False)):",
-            "            value = np.squeeze(value)",
-            "    return value",
+            "    return load_task_resource_value(task_root, spec, output_payload=output_payload)",
+            "",
+            "",
+            "def _validate_declared_shape(spec: Mapping[str, Any], value: Any, *, context: str) -> None:",
+            "    if 'shape' not in spec:",
+            "        return",
+            "    declared = normalize_shape_spec(spec.get('shape'))",
+            "    observed = shape_list_for_value(value)",
+            "    if declared != observed:",
+            "        raise RuntimeError(",
+            "            f'{context} shape mismatch: declared {declared}, observed {observed}'",
+            "        )",
             "",
             "",
             "def _resolve_inputs(task_root: Path, input_spec: Mapping[str, Any], *, output_payload) -> dict[str, Any]:",
@@ -879,20 +1115,28 @@ def render_ready_judge(contract: Mapping[str, Any]) -> str:
             "            or 'reference_resource_path' in spec",
             "            or 'value' in spec",
             "        ):",
-            "            resolved[str(name)] = _load_resource_value(",
+            "            resolved_value = _load_resource_value(",
             "                task_root,",
             "                spec,",
             "                output_payload=output_payload,",
             "            )",
+            "            _validate_declared_shape(spec, resolved_value, context=f'input {name}')",
+            "            resolved[str(name)] = resolved_value",
             "            continue",
             "        if isinstance(spec, Mapping):",
             "            nested: dict[str, Any] = {}",
             "            for nested_name, nested_spec in dict(spec).items():",
-            "                nested[str(nested_name)] = _load_resource_value(",
+            "                nested_value = _load_resource_value(",
             "                    task_root,",
             "                    nested_spec,",
             "                    output_payload=output_payload,",
             "                )",
+            "                _validate_declared_shape(",
+            "                    nested_spec,",
+            "                    nested_value,",
+            "                    context=f'input {name}.{nested_name}',",
+            "                )",
+            "                nested[str(nested_name)] = nested_value",
             "            resolved[str(name)] = nested",
             "            continue",
             "        resolved[str(name)] = spec",
@@ -957,6 +1201,15 @@ def render_ready_judge(contract: Mapping[str, Any]) -> str:
             "def _validate_output_contract_shapes(contract: Mapping[str, Any], output_payload) -> list[str]:",
             "    failures: list[str] = []",
             "    output_contract = dict(contract.get('output_contract') or {})",
+            "    for field_spec in output_contract.get('fields', []) or []:",
+            "        field_name = str((field_spec or {}).get('name', '') or '')",
+            "        if not field_name or field_name not in output_payload.files:",
+            "            continue",
+            "        declared_shape = normalize_shape_spec((field_spec or {}).get('shape'))",
+            "        observed_shape = shape_list_for_value(np.asarray(output_payload[field_name]))",
+            "        if declared_shape != observed_shape:",
+            "            failures.append('invalid_output_shape')",
+            "            return failures",
             "    same_shape_fields = [str(item) for item in output_contract.get('same_shape_fields', []) or [] if str(item)]",
             "    if same_shape_fields:",
             "        shapes: dict[str, tuple[int, ...]] = {}",
@@ -1866,14 +2119,80 @@ def _contains_placeholder_token(value: Any) -> bool:
     return False
 
 
+def _list_missing_or_placeholder(value: Any, *, allow_empty: bool = False) -> bool:
+    if not isinstance(value, list):
+        return True
+    if not value:
+        return not allow_empty
+    return any(_contains_placeholder_token(item) for item in value)
+
+
+def _mapping_missing_required_fields(value: Any, required_fields: Sequence[str]) -> bool:
+    if not isinstance(value, Mapping):
+        return True
+    for field_name in required_fields:
+        if field_name not in value or _contains_placeholder_token(value.get(field_name)):
+            return True
+    return False
+
+
+def _output_contract_missing(contract: Mapping[str, Any]) -> bool:
+    output_contract = contract.get("output_contract")
+    if _mapping_missing_required_fields(output_contract, ("path", "format", "required_fields", "fields")):
+        return True
+    if _list_missing_or_placeholder(output_contract.get("numeric_fields"), allow_empty=False):
+        return True
+    if _list_missing_or_placeholder(output_contract.get("same_shape_fields"), allow_empty=True):
+        return True
+    return False
+
+
+def _judge_contract_missing(contract: Mapping[str, Any]) -> bool:
+    judge_contract = contract.get("judge_contract")
+    if not isinstance(judge_contract, Mapping):
+        return True
+    metrics = judge_contract.get("metrics")
+    if not isinstance(metrics, list) or not metrics:
+        return True
+    for metric in metrics:
+        if _mapping_missing_required_fields(
+            metric,
+            ("name", "kind", "description", "pass_condition"),
+        ):
+            return True
+        pass_condition = metric.get("pass_condition")
+        if _mapping_missing_required_fields(pass_condition, ("operator", "threshold")):
+            return True
+        if str(metric.get("kind", "") or "").strip() == "script":
+            if _mapping_missing_required_fields(metric, ("source_path", "callable", "result_key")):
+                return True
+            inputs = metric.get("inputs")
+            if not isinstance(inputs, Mapping) or not inputs:
+                return True
+    return False
+
+
+def _execution_conventions_missing(contract: Mapping[str, Any]) -> bool:
+    execution = contract.get("execution_conventions")
+    if _mapping_missing_required_fields(execution, ("entrypoint",)):
+        return True
+    if _list_missing_or_placeholder(execution.get("read_first"), allow_empty=False):
+        return True
+    if _list_missing_or_placeholder(execution.get("readable_paths"), allow_empty=False):
+        return True
+    if _list_missing_or_placeholder(execution.get("writable_paths"), allow_empty=False):
+        return True
+    return False
+
+
 def _contract_missing_items(contract: Mapping[str, Any]) -> list[str]:
     missing: list[str] = []
     if _contains_placeholder_token(contract.get("family")):
         missing.append("family")
-    if _contains_placeholder_token(contract.get("output_contract")):
+    if _output_contract_missing(contract):
         missing.append("output_contract")
-    if _contains_placeholder_token(contract.get("judge_contract")):
+    if _judge_contract_missing(contract):
         missing.append("judge_contract")
-    if _contains_placeholder_token(contract.get("execution_conventions")):
+    if _execution_conventions_missing(contract):
         missing.append("execution_conventions")
     return sorted(dict.fromkeys(missing))

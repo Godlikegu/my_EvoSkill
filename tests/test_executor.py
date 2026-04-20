@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import urllib.error
+import uuid
 
 import numpy as np
 import pytest
@@ -926,6 +927,28 @@ def test_claude_workspace_adapter_omits_sdk_max_turns_when_unbounded(tmp_path):
         stop_oracle="public_self_eval",
     )
     assert options["max_turns"] is None
+
+
+def test_claude_workspace_adapter_generates_ephemeral_session_ids():
+    adapter = ClaudeWorkspaceAdapter()
+    session_id = adapter._new_claude_session_id()
+    assert str(uuid.UUID(session_id)) == session_id
+
+
+def test_claude_workspace_adapter_strips_native_trace_after_session_cleanup():
+    adapter = ClaudeWorkspaceAdapter()
+    finalized = adapter._attach_session_cleanup(
+        {
+            "sdk_backend": "claude_sdk",
+            "session_id": str(uuid.uuid4()),
+            "matched_native_path": "C:/Users/admin/.claude/projects/demo/session.jsonl",
+            "matched_native_exists": True,
+        },
+        session_cleanup={"requested": True, "deleted": True, "error": "", "directory": "C:/demo"},
+    )
+    assert finalized["matched_native_path"] == ""
+    assert finalized["matched_native_exists"] is False
+    assert finalized["session_cleanup"]["deleted"] is True
 
 
 def test_claude_workspace_adapter_builds_sdk_env_with_task_python_first(

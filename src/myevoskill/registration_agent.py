@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
-from .executor import ClaudeSDKExecutionError, ClaudeWorkspaceAdapter
+from .executor import ClaudeSDKExecutionError, ClaudeWorkspaceAdapter, _make_sdk_hook_matcher
 from .model_provider import ClaudeSDKAdapter
 from .models import ExecutorSessionConfig, ModelConfig
+from .resource_probe import normalize_shape_spec
 
 REGISTRATION_INPUT_FILENAME = "registration_input.json"
+REGISTRATION_PROBE_SCRIPT_PATH = (
+    Path(__file__).resolve().with_name("resource_probe.py").as_posix()
+)
 _RESOURCE_DECLARATION_FIELDS = (
     "task_description_resources",
     "public_input_resources",
@@ -211,6 +216,44 @@ def normalize_registration_input(payload: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _normalize_resource_validation_entry(payload: Mapping[str, Any]) -> Optional[dict[str, Any]]:
+    """Normalize one resource_validation record into a stable shape-evidence form."""
+
+    path = str(payload.get("path", "") or "").strip().replace("\\", "/")
+    field = str(payload.get("field", "") or "").strip()
+    observed_dtype = str(payload.get("observed_dtype", "") or "").strip()
+    raw_shape = payload.get("observed_shape")
+    observed_shape: list[int] = []
+    if raw_shape is not None:
+        try:
+            observed_shape = normalize_shape_spec(raw_shape)
+        except Exception:
+            observed_shape = []
+    used_for_value = payload.get("used_for")
+    if isinstance(used_for_value, list):
+        used_for = [
+            str(item).strip()
+            for item in used_for_value
+            if str(item or "").strip()
+        ]
+    else:
+        used_for_text = str(used_for_value or "").strip()
+        used_for = [used_for_text] if used_for_text else []
+    status = str(payload.get("status", "") or "").strip()
+    message = str(payload.get("message", "") or "").strip()
+    if not any([path, field, observed_dtype, observed_shape, used_for, status, message]):
+        return None
+    return {
+        "path": path,
+        "field": field,
+        "observed_dtype": observed_dtype,
+        "observed_shape": observed_shape,
+        "used_for": used_for,
+        "status": status,
+        "message": message,
+    }
+
+
 def registration_agent_output_schema() -> dict[str, Any]:
     """Return the JSON schema expected from the registration agent."""
 
@@ -225,6 +268,22 @@ def registration_agent_output_schema() -> dict[str, Any]:
             "message": {"type": "string"},
         },
         "required": ["message"],
+        "additionalProperties": True,
+    }
+    resource_validation_schema = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "field": {"type": "string"},
+            "observed_dtype": {"type": "string"},
+            "observed_shape": {"type": "array", "items": {"type": "integer"}},
+            "used_for": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "status": {"type": "string"},
+            "message": {"type": "string"},
+        },
         "additionalProperties": True,
     }
     return {
@@ -243,7 +302,7 @@ def registration_agent_output_schema() -> dict[str, Any]:
                     },
                     "resource_validation": {
                         "type": "array",
-                        "items": {"type": "object", "additionalProperties": True},
+                        "items": resource_validation_schema,
                     },
                 },
                 "additionalProperties": True,
@@ -325,6 +384,13 @@ def coerce_registration_agent_output(payload: Any) -> dict[str, Any]:
                 "rationale": str(raw_metric.get("rationale", "") or "").strip(),
             }
         )
+    resource_validation: list[dict[str, Any]] = []
+    for item in notes_payload.get("resource_validation", []) or []:
+        if not isinstance(item, Mapping):
+            continue
+        normalized_item = _normalize_resource_validation_entry(item)
+        if normalized_item is not None:
+            resource_validation.append(normalized_item)
 
     return {
         "registration_contract_draft": dict(draft),
@@ -341,11 +407,7 @@ def coerce_registration_agent_output(payload: Any) -> dict[str, Any]:
                 for item in notes_payload.get("declared_inputs_used", []) or []
                 if str(item or "").strip()
             ],
-            "resource_validation": [
-                dict(item)
-                for item in notes_payload.get("resource_validation", []) or []
-                if isinstance(item, Mapping)
-            ],
+            "resource_validation": resource_validation,
         },
         "judge_recommendations": {
             "metrics": judge_metrics,
@@ -370,10 +432,21 @@ def build_registration_agent_system_prompt(
             "Your job is to inspect the task directory and produce a structured registration contract draft.",
             "Do not restate README or source file contents verbatim.",
             "You may explore files in the task directory using read-only tools.",
+            "Shape and dtype facts must come from probing real task-local files, not from README prose alone.",
+            "README, docstrings, notebooks, and code comments are only supporting clues; real file observations are the source of truth for shape contracts.",
+            (
+                "When Bash is necessary, use it only for the read-only probe command "
+                f"`python \"{REGISTRATION_PROBE_SCRIPT_PATH}\" probe ...`."
+            ),
+            "Probe-supported real file formats are: npz, npy, json, h5, hdf5.",
             "The user-provided registration input is high-priority guidance for resource semantics and evaluation conventions.",
             "If your file-based inference disagrees with a user declaration, do not silently overwrite it.",
             "Report the disagreement in contract_generation_notes.warnings as a structured object with keys: type, field, user_value, agent_value, evidence_paths, message.",
             "contract_generation_notes.warnings must always be an explicit array; return [] when there are no conflicts.",
+            "contract_generation_notes.resource_validation must record the shape evidence you relied on using objects with keys: path, field, observed_dtype, observed_shape, used_for, status, message.",
+            "registration_contract_draft.output_contract must include fields[*] with name, dtype, shape.",
+            "For script metrics, every leaf input mapping must include an explicit shape array and any required index/scalar_index/squeeze selectors.",
+            "If a required output shape, script-metric input shape, or selector cannot be proven from real files plus code usage, fail instead of guessing.",
             "Stop as soon as you can return a schema-valid JSON object.",
             "Return one JSON object whose top-level keys are registration_contract_draft, contract_generation_notes, judge_recommendations.",
             "",
@@ -410,19 +483,28 @@ def build_registration_agent_prompt(
         "1. Produce registration_contract_draft with task_id, family, resources, output_contract, judge_contract, execution_conventions.",
         "2. Use resource roles from the contract vocabulary: task_description, public_input_data, public_metadata, public_eval_script, metric_helper, hidden_reference, hidden_metric_config.",
         "3. Every judge_contract.metrics entry must define pass_condition {operator, threshold}. Do not use threshold_key or a top-level threshold field.",
-        "4. Metric input mappings must preserve shape semantics. Only use index/scalar_index when the referenced output_field or resource is explicitly batched or scalar-like.",
-        "5. contract_generation_notes.warnings must contain structured conflicts when your inference disagrees with the user's declaration, and must be [] when there are no conflicts.",
-        "6. judge_recommendations should explain the metric source file, callable, result_key, and why it is recommended.",
-        "7. Do not emit prose before or after the JSON object.",
+        "4. Probe real files before finalizing shapes. Use README or code comments only as hints, never as the sole shape source of truth.",
+        (
+            "5. Use read-only Bash only for "
+            f"`python \"{REGISTRATION_PROBE_SCRIPT_PATH}\" probe <task_root> <resource_path> ...` "
+            "when you need concrete shape, dtype, or key evidence."
+        ),
+        "6. registration_contract_draft.output_contract must include path, format, required_fields, numeric_fields, same_shape_fields, and fields[*] = {name, dtype, shape}.",
+        "7. For script metrics, every leaf entry under judge_contract.metrics[*].inputs must include the fully resolved interface shape. Infer index/scalar_index/squeeze from real file shapes plus concrete code usage, or fail if you cannot prove them.",
+        "8. contract_generation_notes.resource_validation must record the concrete shape evidence you used with keys: path, field, observed_dtype, observed_shape, used_for, status, message.",
+        "9. contract_generation_notes.warnings must contain structured conflicts when your inference disagrees with the user's declaration, and must be [] when there are no conflicts.",
+        "10. judge_recommendations should explain the metric source file, callable, result_key, and why it is recommended.",
+        "11. Do not emit prose before or after the JSON object.",
     ]
     if repair_feedback:
         lines.extend(
             [
                 "",
                 "Repair round:",
-                "8. The previous attempt failed local registration-contract validation. Fix the returned JSON using the feedback below.",
-                "9. Keep already-correct parts when possible instead of rewriting the contract arbitrarily.",
-                "10. Return a complete replacement JSON object that satisfies the schema and the validation feedback.",
+                "12. The previous attempt failed local registration-contract validation. Fix the returned JSON using the feedback below.",
+                "13. If the failure mentions missing shape evidence or missing selectors, inspect the relevant real files and code paths before retrying.",
+                "14. Keep already-correct parts when possible instead of rewriting the contract arbitrarily.",
+                "15. Return a complete replacement JSON object that satisfies the schema and the validation feedback.",
                 json.dumps(
                     dict(repair_feedback),
                     indent=2,
@@ -438,14 +520,277 @@ class _RegistrationClaudeAdapter(ClaudeWorkspaceAdapter):
     """Thin Claude workspace adapter reused for registration-agent protocols."""
 
     WORKSPACE_PROMPT_VERSION = "v1_registration_agent"
-    DEFAULT_ALLOWED_TOOLS = ["Read", "Glob", "Grep"]
-    DEFAULT_DISALLOWED_TOOLS = ["Write", "Bash", "WebFetch", "WebSearch", "TodoWrite"]
+    DEFAULT_ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Bash"]
+    DEFAULT_DISALLOWED_TOOLS = ["Write", "WebFetch", "WebSearch", "TodoWrite"]
 
     def _workspace_summary_schema(self) -> dict[str, Any]:
         return registration_agent_output_schema()
 
     def _coerce_sdk_summary(self, payload: Any) -> dict[str, Any]:
         return coerce_registration_agent_output(payload)
+
+    def build_registration_sdk_hooks(
+        self,
+        hook_events: list[dict[str, Any]],
+        *,
+        workspace_root: Path,
+    ) -> dict[str, Any]:
+        """Build Claude SDK hooks for registration, including Bash preflight checks."""
+
+        hooks = dict(self._build_claude_sdk_hooks(hook_events))
+
+        async def _pretool_bash_callback(input_data, tool_use_id, _context):
+            event_payload = self._json_safe(input_data)
+            hook_events.append(
+                {
+                    "hook_event_name": "PreToolUse",
+                    "tool_use_id": str(tool_use_id or ""),
+                    "input": event_payload,
+                }
+            )
+            command = str((event_payload or {}).get("tool_input", {}).get("command", "") or "").strip()
+            violations = self.validate_registration_bash_commands(
+                [command],
+                workspace_root=workspace_root,
+            )
+            if not violations:
+                return {
+                    "continue_": True,
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                    },
+                }
+            detail = (
+                "registration agent Bash is read-only and limited to the resource probe "
+                f"`python \"{REGISTRATION_PROBE_SCRIPT_PATH}\" probe ...`; "
+                f"violations: {self._format_workspace_violations(violations)}"
+            )
+            return {
+                "continue_": True,
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": detail,
+                },
+                "systemMessage": detail,
+            }
+
+        pretool_hooks = list(hooks.get("PreToolUse", []))
+        pretool_hooks.append(
+            _make_sdk_hook_matcher(matcher="Bash", hooks=[_pretool_bash_callback])
+        )
+        hooks["PreToolUse"] = pretool_hooks
+        return hooks
+
+    def registration_tool_policy(self) -> dict[str, Any]:
+        """Return the provider-agnostic read-only Bash policy for registration probes."""
+
+        return {
+            "read_roots": ["."],
+            "write_roots": [],
+            "bash_allowed_prefixes": [],
+            "bash_denied_tokens": [],
+            "network_access": False,
+        }
+
+    def validate_registration_bash_commands(
+        self,
+        commands: Sequence[str],
+        *,
+        workspace_root: Path,
+    ) -> list[dict[str, Any]]:
+        """Validate registration-agent Bash commands against the read-only probe policy."""
+
+        workspace_root = Path(workspace_root).resolve()
+        policy = self.registration_tool_policy()
+        violations = self._validate_bash_commands(commands, workspace_root, policy)
+        for command in commands:
+            command_violations, _ = self._validate_registration_probe_expression(
+                str(command or ""),
+                original_command=str(command or ""),
+                current_dir=workspace_root,
+                workspace_root=workspace_root,
+            )
+            violations.extend(command_violations)
+        return self._dedupe_workspace_violations(violations)
+
+    def _validate_registration_probe_expression(
+        self,
+        expression: str,
+        *,
+        original_command: str,
+        current_dir: Path,
+        workspace_root: Path,
+    ) -> tuple[list[dict[str, Any]], Path]:
+        violations: list[dict[str, Any]] = []
+        active_dir = current_dir
+        for segment in self._split_shell_segments(str(expression or "").strip()):
+            segment_violations, active_dir = self._validate_registration_probe_segment(
+                segment,
+                original_command=original_command,
+                current_dir=active_dir,
+                workspace_root=workspace_root,
+            )
+            violations.extend(segment_violations)
+        return violations, active_dir
+
+    def _validate_registration_probe_segment(
+        self,
+        segment: str,
+        *,
+        original_command: str,
+        current_dir: Path,
+        workspace_root: Path,
+    ) -> tuple[list[dict[str, Any]], Path]:
+        normalized = str(segment or "").strip()
+        if not normalized:
+            return [], current_dir
+        policy_segment = self._strip_heredoc_body(normalized)
+
+        cd_target = self._parse_cd_target(policy_segment)
+        if cd_target is not None:
+            if not cd_target:
+                return [], current_dir
+            path_ref = self._resolve_workspace_path_reference(
+                cd_target,
+                current_dir=current_dir,
+                workspace_root=workspace_root,
+            )
+            if not path_ref.get("inside_workspace", False):
+                return [
+                    self._make_workspace_violation(
+                        original_command,
+                        "outside_workspace_path",
+                        segment=policy_segment,
+                        path=str(path_ref.get("raw", cd_target)),
+                        detail="registration probe cd target resolves outside the workspace",
+                    )
+                ], current_dir
+            return [], Path(path_ref["resolved"])
+
+        wrapped_expression = self._unwrap_shell_wrapper(policy_segment)
+        if wrapped_expression is not None:
+            return self._validate_registration_probe_expression(
+                wrapped_expression,
+                original_command=original_command,
+                current_dir=current_dir,
+                workspace_root=workspace_root,
+            )
+
+        if not self._is_registration_probe_command(
+            policy_segment,
+            current_dir=current_dir,
+            workspace_root=workspace_root,
+        ):
+            return [
+                self._make_workspace_violation(
+                    original_command,
+                    "denied_category",
+                    segment=policy_segment,
+                    detail=(
+                        "registration agent Bash only allows the read-only resource probe "
+                        f"`python \"{REGISTRATION_PROBE_SCRIPT_PATH}\" probe ...`"
+                    ),
+                )
+            ], current_dir
+        return [], current_dir
+
+    def _is_registration_probe_command(
+        self,
+        segment: str,
+        *,
+        current_dir: Path,
+        workspace_root: Path,
+    ) -> bool:
+        try:
+            tokens = self._tokenize_registration_command(segment)
+        except ValueError:
+            return False
+        if not tokens:
+            return False
+        command = str(tokens[0] or "").lower()
+        if command not in {"python", "python3", "py"}:
+            return False
+
+        index = 1
+        if command == "py":
+            while index < len(tokens) and str(tokens[index]).startswith("-"):
+                index += 1
+        if index >= len(tokens):
+            return False
+        script_token = str(tokens[index] or "").strip()
+        try:
+            script_path = Path(script_token).resolve()
+        except OSError:
+            return False
+        if script_path != Path(REGISTRATION_PROBE_SCRIPT_PATH).resolve():
+            return False
+        if index + 2 >= len(tokens):
+            return False
+        subcommand = str(tokens[index + 1] or "").strip()
+        task_root_arg = str(tokens[index + 2] or "").strip()
+        if subcommand != "probe":
+            return False
+
+        task_root_ref = self._resolve_workspace_path_reference(
+            task_root_arg,
+            current_dir=current_dir,
+            workspace_root=workspace_root,
+        )
+        if not task_root_ref.get("inside_workspace", False):
+            return False
+        resolved_task_root = Path(task_root_ref["resolved"])
+        if resolved_task_root != workspace_root:
+            return False
+
+        remaining = [str(item) for item in tokens[index + 3 :]]
+        if not remaining:
+            return False
+        resource_path = str(remaining[0] or "").strip()
+        resource_ref = self._resolve_workspace_path_reference(
+            resource_path,
+            current_dir=workspace_root,
+            workspace_root=workspace_root,
+        )
+        if not resource_ref.get("inside_workspace", False):
+            return False
+        relative_path = resource_ref.get("relative_path")
+        if relative_path is None:
+            return False
+        return relative_path.parts[:1] != ("..",)
+
+    def _tokenize_registration_command(self, segment: str) -> list[str]:
+        """Tokenize one Bash segment while stripping matching shell quotes."""
+
+        import shlex
+
+        tokens = shlex.split(segment, posix=False)
+        return [self._strip_matching_quotes(str(token or "").strip()) for token in tokens]
+
+
+def validate_registration_agent_bash_commands(
+    task_root: Path,
+    commands: Sequence[str],
+) -> list[dict[str, Any]]:
+    """Validate one or more read-only registration-agent Bash commands."""
+
+    adapter = _RegistrationClaudeAdapter()
+    return adapter.validate_registration_bash_commands(
+        commands,
+        workspace_root=Path(task_root).resolve(),
+    )
+
+
+def _registration_prompt_stream(prompt: str):
+    async def _generator():
+        yield {
+            "type": "user",
+            "message": {"role": "user", "content": prompt},
+            "parent_tool_use_id": None,
+        }
+
+    return _generator()
 
 
 def _extract_registration_candidate_from_message(
@@ -517,10 +862,36 @@ async def _consume_registration_agent_response(
     iterator = message_stream.__aiter__()
     messages: list[Any] = []
     result_text = ""
+    pending_candidate: Optional[dict[str, Any]] = None
+    pending_candidate_message_type = ""
+
+    def _external_candidate_result(*, timeout_occurred: bool, fallback_reason: str) -> dict[str, Any]:
+        diagnostics = adapter._build_protocol_diagnostics(
+            messages,
+            hook_events=hook_events,
+            timeout_occurred=timeout_occurred,
+        )
+        diagnostics["external_completion"] = {
+            "policy": "result_message_with_schema_fallback",
+            "matched_message_type": pending_candidate_message_type,
+            "fallback_reason": fallback_reason,
+        }
+        return {
+            "messages": adapter._serialize_sdk_messages(messages),
+            "summary": dict(pending_candidate or {}),
+            "result_text": result_text,
+            "sdk_diagnostics": diagnostics,
+            "completion_source": "external_registration_schema",
+        }
 
     while True:
         remaining_total = total_timeout_seconds - (time.monotonic() - start)
         if remaining_total <= 0:
+            if pending_candidate is not None:
+                return _external_candidate_result(
+                    timeout_occurred=True,
+                    fallback_reason="timeout_after_external_candidate",
+                )
             diagnostics = adapter._build_protocol_diagnostics(
                 messages,
                 hook_events=hook_events,
@@ -540,6 +911,11 @@ async def _consume_registration_agent_response(
                 timeout=max(remaining_total, 0.01),
             )
         except StopAsyncIteration:
+            if pending_candidate is not None:
+                return _external_candidate_result(
+                    timeout_occurred=False,
+                    fallback_reason="stream_end_after_external_candidate",
+                )
             diagnostics = adapter._build_protocol_diagnostics(
                 messages,
                 hook_events=hook_events,
@@ -553,6 +929,11 @@ async def _consume_registration_agent_response(
                 diagnostics=diagnostics,
             )
         except asyncio.TimeoutError as exc:
+            if pending_candidate is not None:
+                return _external_candidate_result(
+                    timeout_occurred=True,
+                    fallback_reason="wait_timeout_after_external_candidate",
+                )
             diagnostics = adapter._build_protocol_diagnostics(
                 messages,
                 hook_events=hook_events,
@@ -582,8 +963,18 @@ async def _consume_registration_agent_response(
                     adapter._extract_sdk_summary(message, serialized_messages)
                 )
             except ClaudeSDKExecutionError:
+                if pending_candidate is not None:
+                    return _external_candidate_result(
+                        timeout_occurred=False,
+                        fallback_reason="result_message_invalid_after_external_candidate",
+                    )
                 raise
             except RuntimeError as exc:
+                if pending_candidate is not None:
+                    return _external_candidate_result(
+                        timeout_occurred=False,
+                        fallback_reason="result_message_runtime_error_after_external_candidate",
+                    )
                 raise ClaudeSDKExecutionError(
                     str(exc),
                     error_type="invalid_structured_summary",
@@ -601,22 +992,8 @@ async def _consume_registration_agent_response(
 
         candidate = _extract_registration_candidate_from_message(adapter, message)
         if candidate is not None:
-            diagnostics = adapter._build_protocol_diagnostics(
-                messages,
-                hook_events=hook_events,
-                timeout_occurred=False,
-            )
-            diagnostics["external_completion"] = {
-                "policy": "result_message_with_schema_fallback",
-                "matched_message_type": message.__class__.__name__,
-            }
-            return {
-                "messages": serialized_messages,
-                "summary": candidate,
-                "result_text": result_text,
-                "sdk_diagnostics": diagnostics,
-                "completion_source": "external_registration_schema",
-            }
+            pending_candidate = dict(candidate)
+            pending_candidate_message_type = message.__class__.__name__
 
 
 async def _run_registration_agent_async(
@@ -643,6 +1020,12 @@ async def _run_registration_agent_async(
     )
     provider = ClaudeSDKAdapter(model)
     sdk_env = provider.build_sdk_env()
+    project_src = Path(__file__).resolve().parents[1]
+    existing_pythonpath = str(sdk_env.get("PYTHONPATH", "") or "").strip()
+    pythonpath_entries = [str(project_src)]
+    if existing_pythonpath:
+        pythonpath_entries.append(existing_pythonpath)
+    sdk_env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
     adapter = _RegistrationClaudeAdapter()
     session_config = ExecutorSessionConfig(
         run_id=f"registration-draft-{task_root.name}-{int(time.time())}",
@@ -662,6 +1045,7 @@ async def _run_registration_agent_async(
         registration_input_path=registration_input_path,
         repair_feedback=repair_feedback,
     )
+
     options_kwargs = adapter._build_claude_sdk_options_kwargs(
         session_config=session_config,
         workspace=task_root,
@@ -670,15 +1054,30 @@ async def _run_registration_agent_async(
         mcp_servers=None,
         sdk_env=sdk_env,
     )
-    options_kwargs["hooks"] = adapter._build_claude_sdk_hooks(hook_events)
+    claude_session_id = adapter._new_claude_session_id()
+    options_kwargs["session_id"] = claude_session_id
+    options_kwargs["continue_conversation"] = False
+    options_kwargs["thinking"] = {"type": "disabled"}
+    options_kwargs["hooks"] = adapter.build_registration_sdk_hooks(
+        hook_events,
+        workspace_root=task_root,
+    )
     options = ClaudeAgentOptions(**options_kwargs)
     resolved_model_name = adapter._resolved_model_name(session_config)
     if resolved_model_name:
         options.model = resolved_model_name
-
+    result: Optional[dict[str, Any]] = None
+    pending_error: Optional[ClaudeSDKExecutionError] = None
+    vendor_session_ref: dict[str, Any] = {
+        "sdk_backend": "claude_sdk",
+        "session_id": claude_session_id,
+    }
     async with ClaudeSDKClient(options) as client:
         try:
-            await client.query(prompt)
+            await client.query(
+                _registration_prompt_stream(prompt),
+                session_id=claude_session_id,
+            )
             result = await _consume_registration_agent_response(
                 adapter,
                 client.receive_response(),
@@ -695,20 +1094,48 @@ async def _run_registration_agent_async(
                 sdk_messages=exc.sdk_messages,
             )
             diagnostics["vendor_session_ref"] = vendor_session_ref
-            raise ClaudeSDKExecutionError(
+            pending_error = ClaudeSDKExecutionError(
                 str(exc),
                 error_type=exc.error_type,
                 sdk_messages=exc.sdk_messages,
                 result_text=exc.result_text,
                 diagnostics=diagnostics,
-            ) from exc
-        if "vendor_session_ref" not in result:
-            result["vendor_session_ref"] = adapter._build_vendor_session_ref(
-                client,
-                task_root,
-                sdk_messages=result.get("messages", []),
             )
-        return result
+        else:
+            if result is not None and "vendor_session_ref" not in result:
+                vendor_session_ref = adapter._build_vendor_session_ref(
+                    client,
+                    task_root,
+                    sdk_messages=result.get("messages", []),
+                )
+                result["vendor_session_ref"] = vendor_session_ref
+            elif result is not None:
+                vendor_session_ref = dict(result.get("vendor_session_ref") or vendor_session_ref)
+
+    session_cleanup = adapter._delete_claude_session_history(
+        str(vendor_session_ref.get("session_id", "") or ""),
+        task_root,
+    )
+    vendor_session_ref = adapter._attach_session_cleanup(
+        vendor_session_ref,
+        session_cleanup=session_cleanup,
+    )
+    if pending_error is not None:
+        pending_error.diagnostics = dict(pending_error.diagnostics)
+        pending_error.diagnostics["vendor_session_ref"] = vendor_session_ref
+        raise pending_error
+    if result is None:
+        raise ClaudeSDKExecutionError(
+            "Claude SDK registration agent returned no result payload",
+            error_type="sdk_error",
+            sdk_messages=[],
+            result_text="",
+            diagnostics={"vendor_session_ref": vendor_session_ref},
+        )
+    result["vendor_session_ref"] = vendor_session_ref
+    result.setdefault("sdk_diagnostics", {})
+    result["sdk_diagnostics"]["vendor_session_ref"] = vendor_session_ref
+    return result
 
 
 def run_registration_agent(
@@ -736,6 +1163,7 @@ def run_registration_agent(
 
 __all__ = [
     "REGISTRATION_INPUT_FILENAME",
+    "REGISTRATION_PROBE_SCRIPT_PATH",
     "build_registration_agent_prompt",
     "build_registration_agent_system_prompt",
     "coerce_registration_agent_output",
@@ -744,5 +1172,6 @@ __all__ = [
     "registration_agent_output_schema",
     "resolve_registration_input_path",
     "run_registration_agent",
+    "validate_registration_agent_bash_commands",
     "validate_registration_input",
 ]
