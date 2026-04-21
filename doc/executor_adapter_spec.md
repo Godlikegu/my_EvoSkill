@@ -144,6 +144,10 @@ Prompt requirements for the Claude path are intentionally lightweight:
 - restrict writes to `work/`, `output/`, and `checkpoints/`
 - instruct the agent to run `python evaluation/self_eval.py` after `python work/main.py`
 - require the agent to stop immediately after `python evaluation/self_eval.py` passes
+- when network is disabled, keep network access explicitly prohibited in both
+  the system prompt and the task prompt
+- when network is enabled, insert a bounded paper-first research step before
+  coding and prefer Claude SDK web tools over Bash-based web access
 - render a manifest-driven task template with:
   - `## Problem Description` from `README_public.md`
   - `## Data Specification` from public metadata and `requirements.txt`
@@ -167,6 +171,20 @@ Optional compatibility behavior:
 - `workspace_stop_oracle = "submit_tool"` may re-enable the legacy
   `check_ready()` / `submit_result(...)` path for compatibility experiments
 - the default formal execution path is `public_self_eval`, not `submit_tool`
+
+When the live runner opt-in network flag is enabled:
+
+- `allowed_tools` additionally includes `WebFetch` and `WebSearch`
+- `disallowed_tools` drops those two web tools but still keeps other blocked
+  categories such as `TodoWrite`
+- the generated prompt tells the agent to do one brief paper-first external
+  search before writing code
+- preferred source order is papers, project pages, and abstract pages first,
+  followed by official or author implementations when needed
+- the prompt prefers `WebSearch` / `WebFetch` over `curl`-style Bash network
+  access
+- the prompt keeps the lookup bounded and frames it as solver-strategy
+  formation rather than open-ended literature review
 
 ## Runtime Layout
 

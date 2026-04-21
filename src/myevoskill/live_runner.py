@@ -32,6 +32,7 @@ def run_registered_task_live(
     *,
     project_root: Path,
     skills: Sequence[str] = (),
+    allow_network: bool = False,
 ) -> dict[str, Any]:
     """Compile and run one registered task through the Claude workspace harness."""
 
@@ -84,6 +85,9 @@ def run_registered_task_live(
         workspace_root=run_paths.workspace_root,
         budget_seconds=LIVE_RUN_TIMEOUT_SECONDS,
         model_config=model,
+        tool_policy={
+            "network_access": bool(allow_network),
+        },
         provider_extras={
             "repo_root": str(project_root),
             "workspace_prompt_mode": "semantic_only",
@@ -285,6 +289,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         default="",
         help="Project root containing registry/tasks (defaults to cwd).",
     )
+    parser.add_argument(
+        "--allow-network",
+        action="store_true",
+        help="Allow the Execution Agent to access the network during the live run.",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     project_root = Path(args.project_root).resolve() if args.project_root else Path.cwd().resolve()
@@ -292,6 +301,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.task_id,
         project_root=project_root,
         skills=list(args.skill),
+        allow_network=bool(args.allow_network),
     )
 
     manifest = result["manifest"]

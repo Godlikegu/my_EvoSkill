@@ -750,8 +750,84 @@ def test_claude_workspace_adapter_prompt_marks_readme_as_authoritative(tmp_path)
     assert "Prefer the `Write` tool to create or modify `work/` source files" in prompt
     assert "Use Bash mainly to run programs, inspect files, debug, and perform workspace-local" in prompt
     assert "Any Bash command is acceptable if it stays inside the workspace" in prompt
+    assert "network access" in prompt
     assert "Absolute or relative paths are both acceptable when they resolve inside the workspace" in prompt
     assert "preferably with the `Write` tool" in prompt
+    assert "WebSearch" not in prompt
+    assert "WebFetch" not in prompt
+    assert "paper-first" not in prompt
+
+
+def test_claude_workspace_prompt_encourages_network_research_when_enabled(tmp_path):
+    bundle = make_bundle(
+        tmp_path,
+        {
+            "registration_contract": {
+                "files": [
+                    {
+                        "path": "README_public.md",
+                        "visibility": "public",
+                        "semantics": "Task description and public constraints for the solver.",
+                    },
+                    {
+                        "path": "data/meta_data.json",
+                        "visibility": "public",
+                        "semantics": "Physical parameters, constants, and experiment configuration.",
+                    },
+                    {
+                        "path": "requirements.txt",
+                        "visibility": "public",
+                        "semantics": "Available dependency set for the workspace.",
+                    },
+                ],
+                "execution": {
+                    "read_first": [
+                        "README_public.md",
+                        "data/meta_data.json",
+                        "requirements.txt",
+                    ],
+                    "readable_paths": [
+                        "README_public.md",
+                        "requirements.txt",
+                        "data/meta_data.json",
+                    ],
+                    "writable_paths": ["work/", "output/", "checkpoints/"],
+                    "entrypoint": "work/main.py",
+                },
+            },
+        },
+    )
+    (bundle.public_bundle_dir / "data").mkdir(parents=True, exist_ok=True)
+    (bundle.public_bundle_dir / "data" / "meta_data.json").write_text('{"alpha": 1}', encoding="utf-8")
+    (bundle.public_bundle_dir / "requirements.txt").write_text("numpy\nscipy\n", encoding="utf-8")
+    workspace_root = tmp_path / "workspace"
+    (workspace_root / "evaluation").mkdir(parents=True, exist_ok=True)
+    (workspace_root / "evaluation" / "self_eval.py").write_text("print('ok')\n", encoding="utf-8")
+    adapter = ClaudeWorkspaceAdapter()
+    prompt = adapter._build_workspace_agent_prompt(
+        bundle,
+        ["skill-a"],
+        workspace_root=workspace_root,
+        tool_policy=adapter._coerce_tool_policy(
+            ExecutorSessionConfig(
+                run_id="run-1",
+                env_hash="env-1",
+                tool_policy={"network_access": True},
+            )
+        ),
+        stop_oracle="public_self_eval",
+        prompt_mode="semantic_only",
+        completion_policy="main_success_output_contract",
+    )
+
+    assert "WebSearch" in prompt
+    assert "WebFetch" in prompt
+    assert "paper-first" in prompt
+    assert "do at least one brief external search" in prompt
+    assert "Before writing code, use `WebSearch` and `WebFetch`" in prompt
+    assert "consult official or author implementations only when the papers do not provide enough implementation detail" in prompt
+    assert "Keep external research bounded" in prompt
+    assert "such as network access" not in prompt
 
 
 def test_claude_workspace_prompt_requires_manifest_output_contract(tmp_path):
@@ -910,6 +986,36 @@ def test_claude_workspace_adapter_builds_sdk_options_with_default_max_turns(tmp_
     assert options["disallowed_tools"] == ["WebFetch", "WebSearch", "TodoWrite"]
     assert options["mcp_servers"] == {}
     assert options["env"] == {}
+
+
+def test_claude_workspace_adapter_builds_sdk_options_with_web_tools_when_network_enabled(
+    tmp_path,
+):
+    adapter = ClaudeWorkspaceAdapter()
+    session = ExecutorSessionConfig(
+        run_id="run-1",
+        env_hash="env-1",
+        tool_policy={"network_access": True},
+    )
+    policy = adapter._coerce_tool_policy(session)
+    options = adapter._build_claude_sdk_options_kwargs(
+        session_config=session,
+        workspace=tmp_path / "workspace",
+        system_prompt=adapter._build_workspace_system_prompt(policy),
+        stop_oracle="public_self_eval",
+        tool_policy=policy,
+    )
+
+    assert options["allowed_tools"] == [
+        "Read",
+        "Write",
+        "Bash",
+        "Glob",
+        "Grep",
+        "WebFetch",
+        "WebSearch",
+    ]
+    assert options["disallowed_tools"] == ["TodoWrite"]
 
 
 def test_claude_workspace_adapter_omits_sdk_max_turns_when_unbounded(tmp_path):
@@ -1851,7 +1957,41 @@ def test_claude_workspace_adapter_rejects_denied_categories(tmp_path, command, e
     assert expected_detail in violations[0]["detail"]
 
 
-def test_claude_workspace_system_prompt_describes_boundary_policy():
+def test_claude_workspace_tool_policy_allows_network_fetch_tokens_when_enabled():
+    adapter = ClaudeWorkspaceAdapter()
+    policy = adapter._coerce_tool_policy(
+        ExecutorSessionConfig(
+            run_id="run-1",
+            env_hash="env-1",
+            tool_policy={"network_access": True},
+        )
+    )
+
+    assert policy["network_access"] is True
+    assert "curl" not in [str(item).lower() for item in policy["bash_denied_tokens"]]
+    assert "wget" not in [str(item).lower() for item in policy["bash_denied_tokens"]]
+    assert "ssh" in [str(item).lower() for item in policy["bash_denied_tokens"]]
+    assert "scp" in [str(item).lower() for item in policy["bash_denied_tokens"]]
+
+
+def test_claude_workspace_adapter_allows_curl_when_network_enabled(tmp_path):
+    adapter = ClaudeWorkspaceAdapter()
+    policy = adapter._coerce_tool_policy(
+        ExecutorSessionConfig(
+            run_id="run-1",
+            env_hash="env-1",
+            tool_policy={"network_access": True},
+        )
+    )
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    violations = adapter._validate_bash_commands(["curl https://example.invalid"], workspace, policy)
+
+    assert violations == []
+
+
+def test_claude_workspace_system_prompt_describes_boundary_policy_when_network_disabled():
     adapter = ClaudeWorkspaceAdapter()
     prompt = adapter._build_workspace_system_prompt(
         adapter._coerce_tool_policy(ExecutorSessionConfig(run_id="run-1", env_hash="env-1"))
@@ -1862,6 +2002,30 @@ def test_claude_workspace_system_prompt_describes_boundary_policy():
     assert "Denied Bash tokens" not in prompt["append"]
     assert "Any Bash command that stays inside the workspace" in prompt["append"]
     assert "Prohibited external side effects include network access" in prompt["append"]
+    assert "Network access is disabled by the harness." in prompt["append"]
+    assert "WebSearch" not in prompt["append"]
+    assert "paper-first" not in prompt["append"]
+
+
+def test_claude_workspace_system_prompt_encourages_network_research_when_enabled():
+    adapter = ClaudeWorkspaceAdapter()
+    prompt = adapter._build_workspace_system_prompt(
+        adapter._coerce_tool_policy(
+            ExecutorSessionConfig(
+                run_id="run-1",
+                env_hash="env-1",
+                tool_policy={"network_access": True},
+            )
+        )
+    )
+
+    assert "Network access is enabled only because the harness allowed it" in prompt["append"]
+    assert "Before writing code, do one brief paper-first external search" in prompt["append"]
+    assert "Prioritize papers, project pages, and paper abstract pages" in prompt["append"]
+    assert "WebSearch" in prompt["append"]
+    assert "WebFetch" in prompt["append"]
+    assert "Prohibited external side effects still include package or environment installation" in prompt["append"]
+    assert "Prohibited external side effects include network access" not in prompt["append"]
 
 
 def test_claude_workspace_adapter_rejects_disallowed_bash_commands(tmp_path, monkeypatch):

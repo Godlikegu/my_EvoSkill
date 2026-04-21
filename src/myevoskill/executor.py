@@ -1086,6 +1086,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
     DEFAULT_WORKSPACE_PROMPT_MODE = "inline_public_content"
     DEFAULT_COMPLETION_POLICY = "sdk_result_message"
     DEFAULT_ALLOWED_TOOLS = ["Read", "Write", "Bash", "Glob", "Grep"]
+    NETWORK_ENABLED_ALLOWED_TOOLS = ["WebFetch", "WebSearch"]
     DEFAULT_DISALLOWED_TOOLS = ["WebFetch", "WebSearch", "TodoWrite"]
     SUBMISSION_TOOL_NAMES = ["check_ready", "submit_result"]
     SUBMISSION_SERVER_NAME = "myevoskill_harness"
@@ -1217,7 +1218,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             f"model_name={resolved_model_name}",
             f"api_key_env={session_config.model_config.api_key_env or 'ANTHROPIC_API_KEY'}",
             f"skills={','.join(active_skills)}",
-            f"allowed_tools={','.join(self._all_allowed_tools(stop_oracle))}",
+            f"allowed_tools={','.join(self._all_allowed_tools(stop_oracle, tool_policy=tool_policy))}",
             f"runtime_layout={json.dumps(task_spec.get('runtime_layout') or {}, sort_keys=True)}",
             f"effective_model_timeout_seconds={policy.model_timeout_seconds}",
             f"effective_execution_budget_seconds={policy.execution_budget_seconds}",
@@ -1607,7 +1608,9 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                         "checkpoints_dir": str(checkpoints_dir),
                         "agent_mode": "workspace_edit",
                         "sdk_backend": "claude_sdk",
-                        "allowed_tools": list(self._all_allowed_tools(stop_oracle)),
+                        "allowed_tools": list(
+                            self._all_allowed_tools(stop_oracle, tool_policy=tool_policy)
+                        ),
                         "tool_policy_summary": self._summarize_tool_policy(tool_policy),
                         "feedback_scope": "none",
                         "harness_feedback_mode": "none",
@@ -1858,7 +1861,9 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 ),
                 "agent_mode": "workspace_edit",
                 "sdk_backend": "claude_sdk",
-                "allowed_tools": list(self._all_allowed_tools(stop_oracle)),
+                "allowed_tools": list(
+                    self._all_allowed_tools(stop_oracle, tool_policy=tool_policy)
+                ),
                 "tool_policy_summary": self._summarize_tool_policy(tool_policy),
                 "feedback_scope": "none",
                 "harness_feedback_mode": "none",
@@ -3077,6 +3082,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             if inline_public_content
             else ""
         )
+        network_access_enabled = bool(tool_policy.get("network_access", False))
         write_tool_rule = (
             "Prefer the `Write` tool to create or modify `work/` source files such as "
             "`work/src/*.py` and `work/main.py`; do not rely on Bash for routine source edits."
@@ -3085,18 +3091,13 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "Use Bash mainly to run programs, inspect files, debug, and perform workspace-local "
             "file operations that stay inside writable roots."
         )
-        bash_boundary_rule = (
-            "Any Bash command is acceptable if it stays inside the workspace, avoids read-only "
-            "roots, and does not trigger prohibited external side effects such as network access, "
-            "package installation, version control, privilege escalation, system control, or "
-            "killing processes."
-        )
+        bash_boundary_rule = self._workspace_bash_boundary_rule(network_access_enabled)
         path_boundary_rule = (
             "Absolute or relative paths are both acceptable when they resolve inside the "
             "workspace; write targets must stay under `work/`, `output/`, or `checkpoints/`."
         )
         write_tool_workflow = (
-            "2. Create and update the solver under `work/src/*.py` plus `work/main.py`, "
+            "Create and update the solver under `work/src/*.py` plus `work/main.py`, "
             "preferably with the `Write` tool."
         )
         meta_data = (
@@ -3104,39 +3105,49 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             if inline_public_content
             else ""
         )
+        network_rule_items = self._workspace_network_research_rule_items(network_access_enabled)
+        network_workflow_items = self._workspace_network_workflow_items(network_access_enabled)
         if stop_oracle == "submit_tool":
             important_rules = [
                 "STOP CONDITION: After `python work/main.py` succeeds and the required output artifacts exist, your next step must be `check_ready()`, not more analysis or optimization. When `check_ready()` returns `ready=true`, call `submit_result(...)`. If `submit_result(...)` is accepted, immediately return the final structured summary and stop all further tool use.",
-                "1. Read `README_public.md` first and treat it as the authoritative task specification.",
-                "2. Use relative paths from the current workspace root; do not guess hardcoded absolute paths.",
-                *self._render_output_requirements(output_contract),
-                "3. Use only packages already available in `requirements.txt`.",
-                "4. Explore public inputs with tools instead of assuming file contents.",
-                "5. You may write only under `work/`, `output/`, and `checkpoints/`.",
-                "6. " + write_tool_rule,
-                "7. " + bash_usage_rule,
-                "8. " + bash_boundary_rule,
-                "9. " + path_boundary_rule,
-                "10. Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
-                "11. Run the solver from the workspace root with `python work/main.py`.",
-                "12. If `python work/main.py` fails, debug locally within the same session and rerun it as needed.",
-                "13. Use `check_ready()` as the authoritative public completion oracle. Completion is defined by the harness contract, not by your subjective confidence or by hidden metrics.",
-                "14. If the run succeeded and required outputs exist, call `check_ready()` immediately even if you think the model could still be improved.",
-                "15. Do not spend extra turns on scientific interpretation, parameter sweeps, scaling analysis, plotting, or physics refinement after the public contract is already satisfied.",
-                "16. Use `submit_result(...)` to submit the final summary with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
-                "17. After `submit_result(...)` is accepted, return the same structured summary and stop immediately.",
-                "18. Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
+                *self._number_prompt_items(
+                    [
+                        "Read `README_public.md` first and treat it as the authoritative task specification.",
+                        "Use relative paths from the current workspace root; do not guess hardcoded absolute paths.",
+                        *self._render_output_requirements(output_contract),
+                        "Use only packages already available in `requirements.txt`.",
+                        "Explore public inputs with tools instead of assuming file contents.",
+                        *network_rule_items,
+                        "You may write only under `work/`, `output/`, and `checkpoints/`.",
+                        write_tool_rule,
+                        bash_usage_rule,
+                        bash_boundary_rule,
+                        path_boundary_rule,
+                        "Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
+                        "Run the solver from the workspace root with `python work/main.py`.",
+                        "If `python work/main.py` fails, debug locally within the same session and rerun it as needed.",
+                        "Use `check_ready()` as the authoritative public completion oracle. Completion is defined by the harness contract, not by your subjective confidence or by hidden metrics.",
+                        "If the run succeeded and required outputs exist, call `check_ready()` immediately even if you think the model could still be improved.",
+                        "Do not spend extra turns on scientific interpretation, parameter sweeps, scaling analysis, plotting, or physics refinement after the public contract is already satisfied.",
+                        "Use `submit_result(...)` to submit the final summary with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
+                        "After `submit_result(...)` is accepted, return the same structured summary and stop immediately.",
+                        "Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
+                    ]
+                ),
             ]
-            workflow_lines = [
-                "1. Read `README_public.md`, then inspect the public data and metadata you need.",
-                write_tool_workflow,
-                "3. Run `python work/main.py` from the workspace root.",
-                "4. If the run fails, debug locally in this same session and rerun `python work/main.py`.",
-                "5. Once the run succeeds and required outputs exist, call `check_ready()` immediately.",
-                "6. Do not do more analysis or improvement before `check_ready()` once the contract artifacts already exist.",
-                "7. When `check_ready()` returns `ready=true`, call `submit_result(...)` with the final summary.",
-                "8. If `submit_result(...)` is accepted, immediately return the same structured summary and stop.",
-            ]
+            workflow_lines = self._number_prompt_items(
+                [
+                    "Read `README_public.md`, then inspect the public data and metadata you need.",
+                    *network_workflow_items,
+                    write_tool_workflow,
+                    "Run `python work/main.py` from the workspace root.",
+                    "If the run fails, debug locally in this same session and rerun `python work/main.py`.",
+                    "Once the run succeeds and required outputs exist, call `check_ready()` immediately.",
+                    "Do not do more analysis or improvement before `check_ready()` once the contract artifacts already exist.",
+                    "When `check_ready()` returns `ready=true`, call `submit_result(...)` with the final summary.",
+                    "If `submit_result(...)` is accepted, immediately return the same structured summary and stop.",
+                ]
+            )
             intro_lines = [
                 "You are operating inside a constrained Claude workspace harness.",
                 "Your job is to complete the workspace contract and stop cleanly, not to keep improving the science indefinitely.",
@@ -3155,30 +3166,38 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         elif external_output_contract:
             important_rules = [
                 "STOP CONDITION: After `python work/main.py` succeeds and the required outputs exist, immediately return the final structured summary and stop all further tool use.",
-                "1. Read `README_public.md` first and treat it as the authoritative task specification.",
-                "2. Use relative paths from the current workspace root; do not guess hardcoded absolute paths.",
-                *self._render_output_requirements(output_contract),
-                "3. Use only packages already available in `requirements.txt`.",
-                "4. Explore public inputs with tools instead of assuming file contents.",
-                "5. You may write only under `work/`, `output/`, and `checkpoints/`.",
-                "6. " + write_tool_rule,
-                "7. " + bash_usage_rule,
-                "8. " + bash_boundary_rule,
-                "9. " + path_boundary_rule,
-                "10. Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
-                "11. Run the solver from the workspace root with `python work/main.py`.",
-                "12. If `python work/main.py` fails, debug locally within the same session and rerun it as needed.",
-                "13. If `python work/main.py` succeeds and the required outputs exist, immediately return the structured summary with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
-                "14. Do not spend extra turns on scientific interpretation, parameter sweeps, plotting, or physics refinement after the output contract is already satisfied.",
-                "15. Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
+                *self._number_prompt_items(
+                    [
+                        "Read `README_public.md` first and treat it as the authoritative task specification.",
+                        "Use relative paths from the current workspace root; do not guess hardcoded absolute paths.",
+                        *self._render_output_requirements(output_contract),
+                        "Use only packages already available in `requirements.txt`.",
+                        "Explore public inputs with tools instead of assuming file contents.",
+                        *network_rule_items,
+                        "You may write only under `work/`, `output/`, and `checkpoints/`.",
+                        write_tool_rule,
+                        bash_usage_rule,
+                        bash_boundary_rule,
+                        path_boundary_rule,
+                        "Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
+                        "Run the solver from the workspace root with `python work/main.py`.",
+                        "If `python work/main.py` fails, debug locally within the same session and rerun it as needed.",
+                        "If `python work/main.py` succeeds and the required outputs exist, immediately return the structured summary with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
+                        "Do not spend extra turns on scientific interpretation, parameter sweeps, plotting, or physics refinement after the output contract is already satisfied.",
+                        "Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
+                    ]
+                ),
             ]
-            workflow_lines = [
-                "1. Read `README_public.md`, then inspect the public data and metadata you need.",
-                write_tool_workflow,
-                "3. Run `python work/main.py` from the workspace root.",
-                "4. If the run fails, debug locally in this same session and rerun `python work/main.py`.",
-                "5. When `python work/main.py` succeeds and the required outputs exist, immediately return the structured summary and stop.",
-            ]
+            workflow_lines = self._number_prompt_items(
+                [
+                    "Read `README_public.md`, then inspect the public data and metadata you need.",
+                    *network_workflow_items,
+                    write_tool_workflow,
+                    "Run `python work/main.py` from the workspace root.",
+                    "If the run fails, debug locally in this same session and rerun `python work/main.py`.",
+                    "When `python work/main.py` succeeds and the required outputs exist, immediately return the structured summary and stop.",
+                ]
+            )
             intro_lines = [
                 "You are operating inside a constrained Claude workspace harness.",
                 "Your job is to complete the workspace contract and stop cleanly, not to keep improving the science indefinitely.",
@@ -3196,33 +3215,41 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         else:
             important_rules = [
                 "STOP CONDITION: After `python work/main.py` succeeds, run `python evaluation/self_eval.py`. If it exits successfully, immediately return the final structured summary and stop all further tool use.",
-                "1. Read `README_public.md` first and treat it as the authoritative task specification.",
-                "2. Use relative paths from the current workspace root; do not guess hardcoded absolute paths.",
-                *self._render_output_requirements(output_contract),
-                "3. Use only packages already available in `requirements.txt`.",
-                "4. Explore public inputs with tools instead of assuming file contents.",
-                "5. You may write only under `work/`, `output/`, and `checkpoints/`.",
-                "6. " + write_tool_rule,
-                "7. " + bash_usage_rule,
-                "8. " + bash_boundary_rule,
-                "9. " + path_boundary_rule,
-                "10. Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
-                "11. Run the solver from the workspace root with `python work/main.py`.",
-                "12. After the solver run, use `python evaluation/self_eval.py` as the public completion oracle.",
-                "13. If `python evaluation/self_eval.py` fails, debug locally within the same session and rerun the solver and self-eval as needed.",
-                "14. If `python evaluation/self_eval.py` passes, immediately return the structured summary with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
-                "15. Do not spend extra turns on scientific interpretation, parameter sweeps, plotting, or physics refinement after `python evaluation/self_eval.py` passes.",
-                "16. Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
+                *self._number_prompt_items(
+                    [
+                        "Read `README_public.md` first and treat it as the authoritative task specification.",
+                        "Use relative paths from the current workspace root; do not guess hardcoded absolute paths.",
+                        *self._render_output_requirements(output_contract),
+                        "Use only packages already available in `requirements.txt`.",
+                        "Explore public inputs with tools instead of assuming file contents.",
+                        *network_rule_items,
+                        "You may write only under `work/`, `output/`, and `checkpoints/`.",
+                        write_tool_rule,
+                        bash_usage_rule,
+                        bash_boundary_rule,
+                        path_boundary_rule,
+                        "Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
+                        "Run the solver from the workspace root with `python work/main.py`.",
+                        "After the solver run, use `python evaluation/self_eval.py` as the public completion oracle.",
+                        "If `python evaluation/self_eval.py` fails, debug locally within the same session and rerun the solver and self-eval as needed.",
+                        "If `python evaluation/self_eval.py` passes, immediately return the structured summary with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
+                        "Do not spend extra turns on scientific interpretation, parameter sweeps, plotting, or physics refinement after `python evaluation/self_eval.py` passes.",
+                        "Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
+                    ]
+                ),
             ]
-            workflow_lines = [
-                "1. Read `README_public.md`, then inspect the public data and metadata you need.",
-                write_tool_workflow,
-                "3. Run `python work/main.py` from the workspace root.",
-                "4. If the run fails, debug locally in this same session and rerun `python work/main.py`.",
-                "5. When `python work/main.py` succeeds, run `python evaluation/self_eval.py` immediately.",
-                "6. If `python evaluation/self_eval.py` fails, repair locally and rerun the solver and self-eval.",
-                "7. If `python evaluation/self_eval.py` succeeds, immediately return the structured summary and stop.",
-            ]
+            workflow_lines = self._number_prompt_items(
+                [
+                    "Read `README_public.md`, then inspect the public data and metadata you need.",
+                    *network_workflow_items,
+                    write_tool_workflow,
+                    "Run `python work/main.py` from the workspace root.",
+                    "If the run fails, debug locally in this same session and rerun `python work/main.py`.",
+                    "When `python work/main.py` succeeds, run `python evaluation/self_eval.py` immediately.",
+                    "If `python evaluation/self_eval.py` fails, repair locally and rerun the solver and self-eval.",
+                    "If `python evaluation/self_eval.py` succeeds, immediately return the structured summary and stop.",
+                ]
+            )
             intro_lines = [
                 "You are operating inside a constrained Claude workspace harness.",
                 "Your job is to complete the workspace contract and stop cleanly, not to keep improving the science indefinitely.",
@@ -3308,6 +3335,47 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             ]
         )
         return "\n".join(prompt_lines)
+
+    def _number_prompt_items(self, items: Sequence[str]) -> list[str]:
+        return [f"{index}. {item}" for index, item in enumerate(items, start=1)]
+
+    def _workspace_bash_boundary_rule(self, network_access_enabled: bool) -> str:
+        prohibited_side_effects = [
+            "package installation",
+            "version control",
+            "privilege escalation",
+            "system control",
+            "killing processes",
+        ]
+        if not network_access_enabled:
+            prohibited_side_effects.insert(0, "network access")
+        return (
+            "Any Bash command is acceptable if it stays inside the workspace, avoids read-only "
+            "roots, and does not trigger prohibited external side effects such as "
+            + ", ".join(prohibited_side_effects)
+            + "."
+        )
+
+    def _workspace_network_research_rule_items(
+        self, network_access_enabled: bool
+    ) -> list[str]:
+        if not network_access_enabled:
+            return []
+        return [
+            "After reading `README_public.md` and `task_contract.public.json`, do at least one brief external search that is directly relevant to the task method before writing code.",
+            "Use a paper-first search order: prioritize papers, project pages, and paper abstract pages; consult official or author implementations only when the papers do not provide enough implementation detail.",
+            "Prefer Claude SDK web tools such as `WebSearch` and `WebFetch` for external lookup instead of Bash-based web access.",
+            "Keep external research bounded: use it to form a solver strategy, not to conduct an open-ended literature review. If a short search does not surface high-value sources, proceed with the best justified local assumptions.",
+        ]
+
+    def _workspace_network_workflow_items(
+        self, network_access_enabled: bool
+    ) -> list[str]:
+        if not network_access_enabled:
+            return []
+        return [
+            "Before writing code, use `WebSearch` and `WebFetch` to do a brief paper-first search for the task method, then extract the solver strategy you will implement.",
+        ]
 
     def _build_legacy_workspace_agent_prompt(
 
@@ -3781,6 +3849,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             workspace=workspace,
             system_prompt=system_prompt,
             stop_oracle=stop_oracle,
+            tool_policy=tool_policy,
             mcp_servers=mcp_servers,
             sdk_env=sdk_env,
         )
@@ -3902,11 +3971,13 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         stop_oracle: Optional[str] = None,
     ) -> dict[str, Any]:
         stop_oracle = str(stop_oracle or self.DEFAULT_STOP_ORACLE)
-        network_line = (
-            "Network access is disabled by the harness."
-            if not bool(tool_policy.get("network_access", False))
-            else "Network access is enabled only because the harness allowed it; other prohibited external side effects remain forbidden."
+        network_access_enabled = bool(tool_policy.get("network_access", False))
+        prohibited_side_effects_line = (
+            "Prohibited external side effects include network access, package or environment installation, version control operations, privilege escalation, system or service control, and killing processes."
+            if not network_access_enabled
+            else "Prohibited external side effects still include package or environment installation, version control operations, privilege escalation, system or service control, and killing processes."
         )
+        network_lines = self._workspace_system_network_lines(network_access_enabled)
         if stop_oracle == "submit_tool":
             append_lines = [
                 "You are an execution agent inside a harness, not an open-ended research assistant.",
@@ -3922,8 +3993,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "Absolute or relative paths are acceptable when they resolve inside the workspace; writes must stay under "
                 + ", ".join(tool_policy["write_roots"])
                 + ".",
-                "Prohibited external side effects include network access, package or environment installation, version control operations, privilege escalation, system or service control, and killing processes.",
-                network_line,
+                prohibited_side_effects_line,
+                *network_lines,
                 "Hidden judge signals are not available.",
                 "Use the workspace tools to debug locally within this same session if `python work/main.py` fails.",
                 "Use `check_ready()` as the authoritative public completion oracle before stopping.",
@@ -3947,8 +4018,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "Absolute or relative paths are acceptable when they resolve inside the workspace; writes must stay under "
                 + ", ".join(tool_policy["write_roots"])
                 + ".",
-                "Prohibited external side effects include network access, package or environment installation, version control operations, privilege escalation, system or service control, and killing processes.",
-                network_line,
+                prohibited_side_effects_line,
+                *network_lines,
                 "Hidden judge signals are not available.",
                 "Use the workspace tools to debug locally within this same session if `python work/main.py` fails.",
                 "Use `python evaluation/self_eval.py` as the authoritative public completion oracle before stopping.",
@@ -3962,6 +4033,17 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "preset": "claude_code",
             "append": append_text,
         }
+
+    def _workspace_system_network_lines(self, network_access_enabled: bool) -> list[str]:
+        if not network_access_enabled:
+            return ["Network access is disabled by the harness."]
+        return [
+            "Network access is enabled only because the harness allowed it; other prohibited external side effects remain forbidden.",
+            "Before writing code, do one brief paper-first external search that is directly relevant to the task method.",
+            "Prioritize papers, project pages, and paper abstract pages; consult official or author implementations only when the papers leave implementation details unclear.",
+            "Prefer Claude SDK web tools such as `WebSearch` and `WebFetch` for external lookup instead of Bash-based web access.",
+            "Keep external lookup bounded: use it to form a solver strategy, not to conduct an open-ended literature review. If a short search does not reveal strong sources, proceed with the best justified local assumptions.",
+        ]
 
     def _workspace_summary_schema(self) -> dict[str, Any]:
         return {
@@ -3983,11 +4065,29 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "additionalProperties": True,
         }
 
-    def _all_allowed_tools(self, stop_oracle: Optional[str] = None) -> list[str]:
+    def _all_allowed_tools(
+        self,
+        stop_oracle: Optional[str] = None,
+        *,
+        tool_policy: Optional[dict[str, Any]] = None,
+    ) -> list[str]:
         stop_oracle = str(stop_oracle or self.DEFAULT_STOP_ORACLE)
+        allowed_tools = list(self.DEFAULT_ALLOWED_TOOLS)
+        if bool((tool_policy or {}).get("network_access", False)):
+            allowed_tools.extend(self.NETWORK_ENABLED_ALLOWED_TOOLS)
         if stop_oracle == "submit_tool":
-            return [*self.DEFAULT_ALLOWED_TOOLS, *self.SUBMISSION_TOOL_NAMES]
-        return list(self.DEFAULT_ALLOWED_TOOLS)
+            allowed_tools.extend(self.SUBMISSION_TOOL_NAMES)
+        return list(dict.fromkeys(allowed_tools))
+
+    def _all_disallowed_tools(self, *, tool_policy: Optional[dict[str, Any]] = None) -> list[str]:
+        disallowed_tools = list(self.DEFAULT_DISALLOWED_TOOLS)
+        if bool((tool_policy or {}).get("network_access", False)):
+            disallowed_tools = [
+                item
+                for item in disallowed_tools
+                if item not in set(self.NETWORK_ENABLED_ALLOWED_TOOLS)
+            ]
+        return list(dict.fromkeys(disallowed_tools))
 
     def _resolve_workspace_stop_oracle(self, session_config: ExecutorSessionConfig) -> str:
         raw_value = session_config.provider_extras.get(
@@ -4522,10 +4622,12 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         workspace: Path,
         system_prompt: dict[str, Any],
         stop_oracle: str,
+        tool_policy: Optional[dict[str, Any]] = None,
         mcp_servers: Optional[dict[str, Any]] = None,
         sdk_env: Optional[dict[str, str]] = None,
     ) -> dict[str, Any]:
-        allowed_tools = self._all_allowed_tools(stop_oracle)
+        allowed_tools = self._all_allowed_tools(stop_oracle, tool_policy=tool_policy)
+        disallowed_tools = self._all_disallowed_tools(tool_policy=tool_policy)
         raw_max_turns = session_config.provider_extras.get("claude_max_turns", 50)
         if raw_max_turns is None:
             max_turns = None
@@ -4538,7 +4640,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         return {
             "tools": list(allowed_tools),
             "allowed_tools": list(allowed_tools),
-            "disallowed_tools": list(self.DEFAULT_DISALLOWED_TOOLS),
+            "disallowed_tools": list(disallowed_tools),
             "system_prompt": system_prompt,
             "output_format": {"type": "json_schema", "schema": self._workspace_summary_schema()},
             "setting_sources": ["user", "project"],
@@ -5060,14 +5162,25 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
 
     def _coerce_tool_policy(self, session_config: ExecutorSessionConfig) -> dict[str, Any]:
         incoming = dict(session_config.tool_policy)
+        network_access = bool(incoming.get("network_access", False))
+        bash_denied_tokens = [
+            str(item)
+            for item in incoming.get("bash_denied_tokens", list(self.DEFAULT_BASH_DENIED_TOKENS))
+        ]
+        if network_access:
+            bash_denied_tokens = [
+                token
+                for token in bash_denied_tokens
+                if str(token).strip().lower() not in {"curl", "wget"}
+            ]
         # Keep the workspace policy provider-agnostic so the harness remains the
         # source of truth across Claude SDK, OpenHands, and future integrations.
         return {
             "read_roots": [str(item) for item in incoming.get("read_roots", ["data", "public_bundle", "evaluation", "README_public.md", "requirements.txt"])],
             "write_roots": [str(item) for item in incoming.get("write_roots", ["work", "output", "checkpoints"])],
             "bash_allowed_prefixes": [str(item) for item in incoming.get("bash_allowed_prefixes", list(self.DEFAULT_BASH_ALLOWED_PREFIXES))],
-            "bash_denied_tokens": [str(item) for item in incoming.get("bash_denied_tokens", list(self.DEFAULT_BASH_DENIED_TOKENS))],
-            "network_access": bool(incoming.get("network_access", False)),
+            "bash_denied_tokens": bash_denied_tokens,
+            "network_access": network_access,
         }
 
     def _summarize_tool_policy(self, tool_policy: dict[str, Any]) -> dict[str, Any]:

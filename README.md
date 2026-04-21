@@ -67,6 +67,20 @@ python -m myevoskill.task_live --task-id conventional_ptychography --project-roo
 PYTHONPATH=src python -m myevoskill.task_live --task-id conventional_ptychography --project-root .
 ```
 
+To explicitly allow the Execution Agent to use the network during a live run:
+
+```bash
+python -m myevoskill.task_live --task-id conventional_ptychography --project-root . --allow-network
+```
+
+When this flag is enabled, MyEvoSkill allows both networked Bash/Python access
+and Claude SDK web tools such as `WebSearch` and `WebFetch`.
+The generated execution prompt also switches to a paper-first workflow: after
+reading `README_public.md` and `task_contract.public.json`, the agent is told
+to do one brief bounded external search before writing code, preferring papers,
+project pages, and abstract pages first, and only then consulting official or
+author implementations if more detail is needed.
+
 Live execution is gated by:
 
 - a registered manifest under `registry/tasks/`

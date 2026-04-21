@@ -57,6 +57,16 @@ python -m myevoskill.task_live --task-id conventional_ptychography --project-roo
 PYTHONPATH=src python -m myevoskill.task_live --task-id conventional_ptychography --project-root .
 ```
 
+If a task explicitly needs online retrieval during solver generation, live runs
+may opt in with:
+
+```bash
+python -m myevoskill.task_live --task-id conventional_ptychography --project-root . --allow-network
+```
+
+This opt-in enables both workspace-level network access and Claude SDK web
+tools for the Execution Agent.
+
 ## Contract Responsibilities
 
 `task_contract.json` should define only the durable runtime contract:
