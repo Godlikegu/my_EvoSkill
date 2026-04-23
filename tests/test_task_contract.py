@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from myevoskill.task_contract import (
     derive_public_task_contract,
@@ -281,3 +282,231 @@ def test_derive_public_task_contract_preserves_nested_value_bindings():
     assert params_true["value"]["temperature"]["source"] == "file"
     assert params_true["value"]["temperature"]["file_id"] == "ground_truth"
     assert params_true["value"]["temperature"]["visibility"] == "private"
+
+
+def test_validate_task_contract_rejects_invalid_explicit_helper_input_schema():
+    contract = {
+        "version": 2,
+        "task_id": "demo_invalid_helper_schema",
+        "family": "demo",
+        "files": [
+            {
+                "id": "metric_helper",
+                "path": "src/metric_helper.py",
+                "visibility": "private",
+                "role": "metric_helper",
+                "semantics": "Metric helper.",
+            }
+        ],
+        "execution": {
+            "read_first": [],
+            "readable_files": [],
+            "entrypoint": "work/main.py",
+            "writable_paths": ["output/"],
+        },
+        "output": {
+            "path": "output/reconstruction.npz",
+            "format": "npz",
+            "fields": [
+                {
+                    "name": "reconstruction",
+                    "dtype": "float32",
+                    "shape": [2],
+                    "semantics": "Prediction.",
+                }
+            ],
+        },
+        "metrics": [
+            {
+                "name": "score",
+                "goal": "maximize",
+                "threshold": 0.0,
+                "helper": {
+                    "interface": "python_callable",
+                    "file_id": "metric_helper",
+                    "callable": "compute_metrics",
+                    "invocation": {"mode": "kwargs"},
+                    "result": {"mode": "scalar"},
+                    "input_schema": {
+                        "required": ["estimate", "reference"],
+                        "optional": ["estimate"],
+                    },
+                },
+                "inputs": {
+                    "estimate": {
+                        "source": "output",
+                        "field": "reconstruction",
+                        "expected_shape": [2],
+                    },
+                    "reference": {
+                        "source": "value",
+                        "value": [1.0, 2.0],
+                        "expected_shape": [2],
+                    },
+                },
+            }
+        ],
+    }
+
+    errors = validate_task_contract(contract)
+
+    assert any("helper.input_schema is invalid" in error for error in errors)
+
+
+def test_validate_task_contract_task_paths_rejects_metric_adapter_input_binding_name_mismatch(
+    tmp_path,
+):
+    helper_path = tmp_path / "evaluation" / "task_metric_adapter.py"
+    helper_path.parent.mkdir(parents=True, exist_ok=True)
+    helper_path.write_text(
+        "\n".join(
+            [
+                "METRIC_RECIPES = {'nrmse': {'op': 'nrmse'}}",
+                "",
+                "def compute_metric(metric_name, inputs):",
+                "    return 0.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    contract = {
+        "version": 2,
+        "task_id": "demo_metric_adapter_schema",
+        "family": "demo",
+        "files": [
+            {
+                "id": "metric_adapter",
+                "path": "evaluation/task_metric_adapter.py",
+                "visibility": "private",
+                "role": "metric_helper",
+                "semantics": "Metric adapter.",
+            }
+        ],
+        "execution": {
+            "read_first": [],
+            "readable_files": [],
+            "entrypoint": "work/main.py",
+            "writable_paths": ["output/"],
+        },
+        "output": {
+            "path": "output/reconstruction.npz",
+            "format": "npz",
+            "fields": [
+                {
+                    "name": "reconstruction",
+                    "dtype": "float32",
+                    "shape": [2],
+                    "semantics": "Prediction.",
+                }
+            ],
+        },
+        "metrics": [
+            {
+                "name": "nrmse",
+                "goal": "minimize",
+                "threshold": 1.0,
+                "helper": {
+                    "interface": "metric_adapter",
+                    "file_id": "metric_adapter",
+                    "callable": "compute_metric",
+                },
+                "inputs": {
+                    "image": {
+                        "source": "value",
+                        "value": [1.0, 2.0],
+                        "expected_shape": [2],
+                    },
+                    "reference": {
+                        "source": "value",
+                        "value": [1.0, 2.0],
+                        "expected_shape": [2],
+                    },
+                },
+            }
+        ],
+    }
+
+    assert validate_task_contract(contract) == []
+    errors = validate_task_contract_task_paths(tmp_path, contract)
+
+    assert any("missing required helper input bindings" in error for error in errors)
+    assert any("unexpected helper input bindings" in error for error in errors)
+
+
+def test_evaluate_metric_rejects_metric_adapter_input_binding_name_mismatch(tmp_path):
+    helper_path = tmp_path / "evaluation" / "task_metric_adapter.py"
+    helper_path.parent.mkdir(parents=True, exist_ok=True)
+    helper_path.write_text(
+        "\n".join(
+            [
+                "METRIC_RECIPES = {'nrmse': {'op': 'nrmse'}}",
+                "",
+                "def compute_metric(metric_name, inputs):",
+                "    raise AssertionError('should not execute helper when bindings are invalid')",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    contract = {
+        "version": 2,
+        "task_id": "demo_runtime_metric_adapter_schema",
+        "family": "demo",
+        "files": [
+            {
+                "id": "metric_adapter",
+                "path": "evaluation/task_metric_adapter.py",
+                "visibility": "private",
+                "role": "metric_helper",
+                "semantics": "Metric adapter.",
+            }
+        ],
+        "execution": {
+            "read_first": [],
+            "readable_files": [],
+            "entrypoint": "work/main.py",
+            "writable_paths": ["output/"],
+        },
+        "output": {
+            "path": "output/reconstruction.npz",
+            "format": "npz",
+            "fields": [
+                {
+                    "name": "reconstruction",
+                    "dtype": "float32",
+                    "shape": [2],
+                    "semantics": "Prediction.",
+                }
+            ],
+        },
+        "metrics": [
+            {
+                "name": "nrmse",
+                "goal": "minimize",
+                "threshold": 1.0,
+                "helper": {
+                    "interface": "metric_adapter",
+                    "file_id": "metric_adapter",
+                    "callable": "compute_metric",
+                },
+                "inputs": {
+                    "image": {
+                        "source": "value",
+                        "value": [1.0, 2.0],
+                        "expected_shape": [2],
+                    },
+                    "reference": {
+                        "source": "value",
+                        "value": [1.0, 2.0],
+                        "expected_shape": [2],
+                    },
+                },
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match="missing required helper input bindings"):
+        evaluate_metric(tmp_path, contract, contract["metrics"][0], output_payload=None)

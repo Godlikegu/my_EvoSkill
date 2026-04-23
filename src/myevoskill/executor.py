@@ -1589,9 +1589,9 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     workspace_root=workspace,
                     artifacts_uri=str(output_dir),
                     transcript_uri=str(transcript_path),
-                    stdout=final_completed.stdout,
+                    stdout=self._completed_process_text(final_completed.stdout),
                     stderr=self._append_protocol_failure_stderr(
-                        final_completed.stderr,
+                        self._completed_process_text(final_completed.stderr),
                         str(response_error),
                     ),
                     runtime_seconds=final_runtime,
@@ -1725,12 +1725,14 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     completion_policy=completion_policy,
                 )
 
+            final_completed_stdout = self._completed_process_text(final_completed.stdout)
+            final_completed_stderr = self._completed_process_text(final_completed.stderr)
             (workspace / f"stdout_round_{round_index}.log").write_text(
-                final_completed.stdout,
+                final_completed_stdout,
                 encoding="utf-8",
             )
             (workspace / f"stderr_round_{round_index}.log").write_text(
-                final_completed.stderr,
+                final_completed_stderr,
                 encoding="utf-8",
             )
             (workspace / "post_run_audit.json").write_text(
@@ -1830,8 +1832,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             workspace_root=workspace,
             artifacts_uri=str(output_dir),
             transcript_uri=str(transcript_path),
-            stdout=final_completed.stdout,
-            stderr=final_completed.stderr,
+            stdout=final_completed_stdout,
+            stderr=final_completed_stderr,
             runtime_seconds=final_runtime,
             metadata={
                 "execution_mode": session_config.execution_mode,
@@ -2080,12 +2082,14 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             final_runtime = time.time() - start
             _configure_workspace_permissions(runtime_paths, lock_runtime_root=False)
 
+            final_completed_stdout = self._completed_process_text(final_completed.stdout)
+            final_completed_stderr = self._completed_process_text(final_completed.stderr)
             (workspace / f"stdout_round_{round_index}.log").write_text(
-                final_completed.stdout,
+                final_completed_stdout,
                 encoding="utf-8",
             )
             (workspace / f"stderr_round_{round_index}.log").write_text(
-                final_completed.stderr,
+                final_completed_stderr,
                 encoding="utf-8",
             )
             final_self_check = self._public_self_check(
@@ -2152,8 +2156,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             workspace_root=workspace,
             artifacts_uri=str(output_dir),
             transcript_uri=str(transcript_path),
-            stdout=final_completed.stdout,
-            stderr=final_completed.stderr,
+            stdout=final_completed_stdout,
+            stderr=final_completed_stderr,
             runtime_seconds=final_runtime,
             metadata={
                 "execution_mode": session_config.execution_mode,
@@ -2952,6 +2956,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         if output_state["missing_outputs"] and not output_exists:
             schema_warnings = ["missing output artifact", *schema_warnings]
         output_contract_satisfied = bool(output_state.get("output_schema_valid", False))
+        completed_stdout = self._completed_process_text(completed.stdout)
+        completed_stderr = self._completed_process_text(completed.stderr)
         return {
             "run_succeeded": completed.returncode == 0 and not timed_out,
             "returncode": completed.returncode,
@@ -2961,8 +2967,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "missing_outputs": list(output_state["missing_outputs"]),
             "missing_output_fields": list(output_state["missing_output_fields"]),
             "schema_warnings": schema_warnings,
-            "stdout_tail": completed.stdout[-2000:],
-            "stderr_tail": completed.stderr[-2000:],
+            "stdout_tail": completed_stdout[-2000:],
+            "stderr_tail": completed_stderr[-2000:],
             "public_self_eval_command": self._workspace_self_eval_command(),
             "public_self_eval_returncode": None,
             "public_self_eval_timed_out": False,
@@ -5501,6 +5507,12 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             return stripped[1:-1]
         return stripped
 
+    def _looks_like_shell_redirection_token(self, token: str) -> bool:
+        normalized = self._strip_matching_quotes(str(token or "").strip())
+        if not normalized:
+            return False
+        return bool(re.match(r"^\d*(?:>>?|<<?|<<<|>&|<&).*$", normalized))
+
     def _strip_heredoc_body(self, segment: str) -> str:
         in_single = False
         in_double = False
@@ -5764,7 +5776,11 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         paths: list[str] = []
         for token in tokens:
             normalized = self._strip_matching_quotes(str(token or "").strip())
-            if not normalized or self._looks_like_shell_flag(normalized):
+            if (
+                not normalized
+                or self._looks_like_shell_flag(normalized)
+                or self._looks_like_shell_redirection_token(normalized)
+            ):
                 continue
             paths.append(normalized)
         return paths
@@ -5808,13 +5824,24 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 operator += char
                 index += 1
 
+            fd_index = index - len(operator)
+            while fd_index > 0 and segment[fd_index - 1].isdigit():
+                fd_index -= 1
+
             cursor = index + 1
             while cursor < len(segment) and segment[cursor].isspace():
                 cursor += 1
 
             target, cursor = self._read_shell_token(segment, cursor)
             target = self._strip_matching_quotes(target)
-            if target and not target.startswith("&") and not self._is_special_shell_sink(target):
+            operator_token = self._strip_matching_quotes(segment[fd_index : index + 1].strip())
+            if (
+                target
+                and operator_token not in {"<<", "<<<"}
+                and not target.startswith("&")
+                and not self._looks_like_shell_redirection_token(target)
+                and not self._is_special_shell_sink(target)
+            ):
                 effects.append(
                     {
                         "mode": "write" if operator.startswith(">") else "read",
@@ -5846,6 +5873,13 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             buffer.append(char)
             index += 1
         return "".join(buffer), index
+
+    def _completed_process_text(self, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        return str(value)
 
     def _generate_legacy_workspace_response(
         self,
@@ -6056,6 +6090,10 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         schema_warnings = list(output_state["schema_warnings"])
         if output_state["missing_outputs"] and not output_exists:
             schema_warnings = ["missing output artifact", *schema_warnings]
+        completed_stdout = self._completed_process_text(completed.stdout)
+        completed_stderr = self._completed_process_text(completed.stderr)
+        self_eval_stdout = self._completed_process_text(self_eval_completed.stdout)
+        self_eval_stderr = self._completed_process_text(self_eval_completed.stderr)
         public_self_eval_passed = (
             self_eval_completed.returncode == 0
             and not self_eval_timed_out
@@ -6070,8 +6108,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "missing_outputs": list(output_state["missing_outputs"]),
             "missing_output_fields": list(output_state["missing_output_fields"]),
             "schema_warnings": schema_warnings,
-            "stdout_tail": completed.stdout[-2000:],
-            "stderr_tail": completed.stderr[-2000:],
+            "stdout_tail": completed_stdout[-2000:],
+            "stderr_tail": completed_stderr[-2000:],
             "public_self_eval_command": self._workspace_self_eval_command(),
             "public_self_eval_returncode": self_eval_completed.returncode,
             "public_self_eval_timed_out": self_eval_timed_out,
@@ -6080,8 +6118,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "public_self_eval_checks": list(self_eval_payload.get("checks", [])),
             "public_self_eval_errors": list(self_eval_payload.get("errors", [])),
             "public_self_eval_warnings": list(self_eval_payload.get("warnings", [])),
-            "public_self_eval_stdout": self_eval_completed.stdout,
-            "public_self_eval_stderr": self_eval_completed.stderr,
+            "public_self_eval_stdout": self_eval_stdout,
+            "public_self_eval_stderr": self_eval_stderr,
             "self_check_passed": (
                 completed.returncode == 0
                 and not timed_out

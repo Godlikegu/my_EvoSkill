@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -29,6 +30,40 @@ ALLOWED_PREPROCESS = {"identity", "abs", "angle", "real", "imag"}
 ALLOWED_HELPER_INTERFACES = {"python_callable", "metric_adapter", "mapping_adapter", "builtin"}
 ALLOWED_HELPER_INVOCATION_MODES = {"metric_name_and_inputs", "kwargs", "mapping"}
 ALLOWED_HELPER_RESULT_MODES = {"scalar", "mapping_key"}
+
+METRIC_OP_INPUT_SCHEMA_BASE: dict[str, dict[str, list[str]]] = {
+    "cosine_ncc": {"required": ["estimate", "reference"], "optional": []},
+    "centered_ncc": {"required": ["estimate", "reference"], "optional": []},
+    "nrmse": {"required": ["estimate", "reference"], "optional": []},
+    "magnitude_cosine_ncc": {"required": ["estimate", "reference"], "optional": []},
+    "magnitude_nrmse": {"required": ["estimate", "reference"], "optional": []},
+    "phase_centered_ncc": {"required": ["estimate", "reference"], "optional": []},
+    "phase_centered_nrmse": {"required": ["estimate", "reference"], "optional": []},
+    "mean_absolute_error": {"required": ["estimate", "reference"], "optional": []},
+    "framewise_mean": {"required": ["estimate", "reference"], "optional": []},
+    "channel_mean_cosine_ncc": {"required": ["estimate", "reference"], "optional": []},
+    "channel_mean_nrmse": {"required": ["estimate", "reference"], "optional": []},
+    "weighted_nrmse_mean": {
+        "required": ["estimate", "reference", "lat_weight_matrix"],
+        "optional": [],
+    },
+    "weighted_nrmse_channel": {
+        "required": ["estimate", "reference", "lat_weight_matrix"],
+        "optional": [],
+    },
+    "exoplanet_snr": {
+        "required": ["image", "planet_x", "planet_y", "fwhm", "exclude_nearest"],
+        "optional": [],
+    },
+    "lucky_sharpness_ratio": {"required": ["stacked", "best_frame"], "optional": []},
+    "microscope_noise_reduction_factor": {"required": ["noisy", "denoised"], "optional": []},
+    "microscope_sharpness_improvement_factor": {
+        "required": ["denoised", "deconvolved"],
+        "optional": [],
+    },
+    "plane_wave_psf_fwhm_mean": {"required": ["bmode", "x", "z", "z_targets"], "optional": []},
+    "plane_wave_cnr_mean": {"required": ["bmode", "x", "z", "cyst_centers"], "optional": []},
+}
 
 
 def task_contract_paths(task_root: Path) -> dict[str, Path]:
@@ -280,6 +315,103 @@ def normalize_metric_helper(helper: Mapping[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _normalize_metric_input_schema(raw_schema: Any) -> dict[str, list[str]] | None:
+    if raw_schema is None:
+        return None
+    if not isinstance(raw_schema, Mapping):
+        raise ValueError("helper.input_schema must be an object")
+
+    normalized: dict[str, list[str]] = {}
+    seen_names: set[str] = set()
+    for section_name in ("required", "optional"):
+        raw_names = raw_schema.get(section_name, [])
+        if raw_names is None:
+            raw_names = []
+        if not isinstance(raw_names, list):
+            raise ValueError(f"helper.input_schema.{section_name} must be a list")
+        normalized_names: list[str] = []
+        for index, raw_name in enumerate(raw_names):
+            name = str(raw_name or "").strip()
+            if not name:
+                raise ValueError(f"helper.input_schema.{section_name}[{index}] must be a non-empty string")
+            if name in seen_names:
+                raise ValueError(f"helper.input_schema names must be unique ({name!r})")
+            seen_names.add(name)
+            normalized_names.append(name)
+        normalized[section_name] = normalized_names
+    return normalized
+
+
+def _metric_input_schema_error_messages(
+    metric_name: str,
+    inputs: Mapping[str, Any],
+    schema: Mapping[str, Sequence[str]],
+) -> list[str]:
+    actual_names = {str(name) for name in dict(inputs).keys()}
+    required_names = {str(name) for name in schema.get("required", [])}
+    optional_names = {str(name) for name in schema.get("optional", [])}
+    allowed_names = required_names | optional_names
+    errors: list[str] = []
+    missing_names = sorted(required_names - actual_names)
+    unexpected_names = sorted(actual_names - allowed_names)
+    if missing_names:
+        errors.append(
+            f"metric {metric_name!r} is missing required helper input bindings: {missing_names}"
+        )
+    if unexpected_names:
+        errors.append(
+            f"metric {metric_name!r} declares unexpected helper input bindings: {unexpected_names}"
+        )
+    return errors
+
+
+def _metric_recipe_input_schema(recipe: Mapping[str, Any]) -> dict[str, list[str]] | None:
+    op = str(recipe.get("op", "") or "").strip()
+    if not op:
+        return None
+    if op in METRIC_OP_INPUT_SCHEMA_BASE:
+        schema = {
+            "required": list(METRIC_OP_INPUT_SCHEMA_BASE[op]["required"]),
+            "optional": list(METRIC_OP_INPUT_SCHEMA_BASE[op]["optional"]),
+        }
+        mask_key = str(recipe.get("mask_key", "") or "").strip()
+        if mask_key:
+            schema["optional"].append(mask_key)
+        return _normalize_metric_input_schema(schema)
+    if op == "identity_scalar":
+        key_name = str(recipe.get("key", "value") or "value").strip() or "value"
+        return {"required": [key_name], "optional": []}
+    if op == "mean_of_pairs":
+        required_names: set[str] = set()
+        for pair in list(recipe.get("pairs", []) or []):
+            if not isinstance(pair, Mapping):
+                continue
+            estimate_name = str(pair.get("estimate", "") or "").strip()
+            reference_name = str(pair.get("reference", "") or "").strip()
+            if estimate_name:
+                required_names.add(estimate_name)
+            if reference_name:
+                required_names.add(reference_name)
+        return {"required": sorted(required_names), "optional": []}
+    if op == "vector_metric":
+        required_names = {
+            str(name).strip()
+            for name in list(recipe.get("estimate_keys", []) or []) + list(recipe.get("reference_keys", []) or [])
+            if str(name or "").strip()
+        }
+        return {"required": sorted(required_names), "optional": []}
+    return None
+
+
+def _builtin_metric_input_schema(
+    metric_name: str,
+    helper: Mapping[str, Any],
+) -> dict[str, list[str]] | None:
+    builtin_name = str(helper.get("builtin", "") or metric_name).strip()
+    recipe = {"op": builtin_name}
+    return _metric_recipe_input_schema(recipe)
+
+
 def validate_task_contract(
     contract: Mapping[str, Any],
     *,
@@ -423,6 +555,7 @@ def validate_task_contract(
                 interface = str(normalized_helper.get("interface", "") or "").strip()
                 file_id = str(normalized_helper.get("file_id", "") or "").strip()
                 callable_name = str(normalized_helper.get("callable", "") or "").strip()
+                metric_input_schema: dict[str, list[str]] | None = None
                 if raw_interface not in ALLOWED_HELPER_INTERFACES:
                     errors.append(
                         f"{prefix}.helper.interface must be one of: {sorted(ALLOWED_HELPER_INTERFACES)}"
@@ -463,9 +596,26 @@ def validate_task_contract(
                                 f"{prefix}.helper.result.key is required when "
                                 "helper.result.mode == 'mapping_key'"
                             )
+                try:
+                    metric_input_schema = _normalize_metric_input_schema(helper.get("input_schema"))
+                except Exception as exc:
+                    errors.append(f"{prefix}.helper.input_schema is invalid ({exc})")
+                if metric_input_schema is None and interface == "builtin":
+                    try:
+                        metric_input_schema = _builtin_metric_input_schema(name, normalized_helper)
+                    except Exception as exc:
+                        errors.append(f"{prefix}.helper builtin input schema is invalid ({exc})")
             if not isinstance(inputs, Mapping) or not dict(inputs):
                 errors.append(f"{prefix}.inputs must be a non-empty object")
                 continue
+            if metric_input_schema is not None:
+                errors.extend(
+                    _metric_input_schema_error_messages(
+                        name or f"metric_{index}",
+                        dict(inputs),
+                        metric_input_schema,
+                    )
+                )
             for input_name, raw_input in dict(inputs).items():
                 input_prefix = f"{prefix}.inputs[{input_name!r}]"
                 input_payload = raw_input if isinstance(raw_input, Mapping) else {}
@@ -524,6 +674,24 @@ def validate_task_contract_task_paths(task_root: Path, contract: Mapping[str, An
     output_path = str((contract.get("output") or {}).get("path", "") or "").strip()
     if output_path and Path(output_path).is_absolute():
         errors.append("output.path must be relative")
+    for index, raw_metric in enumerate(contract.get("metrics", []) or []):
+        if not isinstance(raw_metric, Mapping):
+            continue
+        metric_name = str(raw_metric.get("name", f"metric_{index}") or f"metric_{index}")
+        try:
+            metric_input_schema = infer_metric_input_schema(task_root, contract, raw_metric)
+        except Exception as exc:
+            errors.append(f"metrics[{metric_name!r}] helper input schema inference failed ({exc})")
+            continue
+        if metric_input_schema is None:
+            continue
+        errors.extend(
+            _metric_input_schema_error_messages(
+                metric_name,
+                dict(raw_metric.get("inputs") or {}),
+                metric_input_schema,
+            )
+        )
     return sorted(dict.fromkeys(errors))
 
 
@@ -850,7 +1018,7 @@ def build_metric_requirements(contract: Mapping[str, Any]) -> list[MetricRequire
     return requirements
 
 
-def load_metric_callable(
+def _load_metric_helper_module(
     task_root: Path,
     contract: Mapping[str, Any],
     metric: Mapping[str, Any],
@@ -861,7 +1029,6 @@ def load_metric_callable(
     if interface == "builtin":
         return None
     file_id = str(normalized_helper.get("file_id", "") or "").strip()
-    callable_name = str(normalized_helper.get("callable", "") or "").strip()
     file_entry = file_map(contract).get(file_id)
     if not isinstance(file_entry, Mapping):
         raise KeyError(f"metric helper file not found: {file_id}")
@@ -874,9 +1041,86 @@ def load_metric_callable(
         raise RuntimeError(f"cannot import metric helper module: {module_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+def _infer_metric_input_schema_from_callable(
+    helper_callable: Any,
+) -> dict[str, list[str]] | None:
+    try:
+        signature = inspect.signature(helper_callable)
+    except (TypeError, ValueError):
+        return None
+    required_names: list[str] = []
+    optional_names: list[str] = []
+    for parameter in signature.parameters.values():
+        if parameter.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
+            return None
+        if parameter.default is inspect._empty:
+            required_names.append(parameter.name)
+        else:
+            optional_names.append(parameter.name)
+    return {"required": required_names, "optional": optional_names}
+
+
+def infer_metric_input_schema(
+    task_root: Path | None,
+    contract: Mapping[str, Any],
+    metric: Mapping[str, Any],
+) -> dict[str, list[str]] | None:
+    helper = dict(metric.get("helper") or {})
+    explicit_schema = _normalize_metric_input_schema(helper.get("input_schema"))
+    if explicit_schema is not None:
+        return explicit_schema
+
+    metric_name = str(metric.get("name", "") or "").strip()
+    normalized_helper = normalize_metric_helper(helper)
+    interface = str(normalized_helper.get("interface", "python_callable") or "python_callable").strip()
+    if interface == "builtin":
+        return _builtin_metric_input_schema(metric_name, normalized_helper)
+    if task_root is None:
+        return None
+
+    invocation_mode = str(
+        dict(normalized_helper.get("invocation") or {}).get("mode", "metric_name_and_inputs")
+        or "metric_name_and_inputs"
+    ).strip()
+    module = _load_metric_helper_module(task_root, contract, metric)
+    if module is None:
+        return None
+    callable_name = str(normalized_helper.get("callable", "") or "").strip()
     helper_callable = getattr(module, callable_name, None)
     if not callable(helper_callable):
-        raise AttributeError(f"metric helper callable not found: {module_path}:{callable_name}")
+        return None
+    if invocation_mode == "kwargs":
+        return _infer_metric_input_schema_from_callable(helper_callable)
+    if invocation_mode == "metric_name_and_inputs":
+        metric_recipes = getattr(module, "METRIC_RECIPES", None)
+        if isinstance(metric_recipes, Mapping) and metric_name in metric_recipes:
+            recipe = metric_recipes[metric_name]
+            if isinstance(recipe, Mapping):
+                return _metric_recipe_input_schema(recipe)
+    return None
+
+
+def load_metric_callable(
+    task_root: Path,
+    contract: Mapping[str, Any],
+    metric: Mapping[str, Any],
+):
+    helper = dict(metric.get("helper") or {})
+    normalized_helper = normalize_metric_helper(helper)
+    if str(normalized_helper.get("interface", "python_callable") or "python_callable").strip() == "builtin":
+        return None
+    callable_name = str(normalized_helper.get("callable", "") or "").strip()
+    module = _load_metric_helper_module(task_root, contract, metric)
+    helper_callable = getattr(module, callable_name, None)
+    if not callable(helper_callable):
+        raise AttributeError(f"metric helper callable not found: {callable_name}")
     return helper_callable
 
 
@@ -997,6 +1241,15 @@ def evaluate_metric(
     output_payload: Any,
 ) -> float:
     metric_name = str(metric.get("name", "") or "").strip()
+    metric_input_schema = infer_metric_input_schema(task_root, contract, metric)
+    if metric_input_schema is not None:
+        schema_errors = _metric_input_schema_error_messages(
+            metric_name,
+            dict(metric.get("inputs") or {}),
+            metric_input_schema,
+        )
+        if schema_errors:
+            raise ValueError("; ".join(schema_errors))
     resolved_inputs = resolve_metric_inputs(
         task_root,
         contract,

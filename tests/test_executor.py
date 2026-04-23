@@ -1931,6 +1931,47 @@ def test_claude_workspace_adapter_allows_workspace_heredoc_file_creation(tmp_pat
     assert violations == []
 
 
+def test_claude_workspace_adapter_allows_workspace_redirection_sink_commands(tmp_path):
+    adapter = ClaudeWorkspaceAdapter()
+    policy = adapter._coerce_tool_policy(ExecutorSessionConfig(run_id="run-1", env_hash="env-1"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    violations = adapter._validate_bash_commands(
+        [
+            "mkdir -p work/src output checkpoints 2>/dev/null",
+            f'cd "{workspace.resolve()}" && ls work/ 2>/dev/null',
+            "echo ready 1>nul 2>nul",
+            r"type nul > work\src\example.py",
+        ],
+        workspace,
+        policy,
+    )
+
+    assert violations == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "mkdir -p data/cache 2>/dev/null",
+        'cat > evaluation/self_eval.py << "EOF"\nprint(1)\nEOF',
+        "cd /mnt/outside && ls work/ 2>/dev/null",
+    ],
+)
+def test_claude_workspace_adapter_rejects_redirected_out_of_policy_commands(tmp_path, command):
+    adapter = ClaudeWorkspaceAdapter()
+    policy = adapter._coerce_tool_policy(ExecutorSessionConfig(run_id="run-1", env_hash="env-1"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    violations = adapter._validate_bash_commands([command], workspace, policy)
+
+    assert len(violations) == 1
+    assert violations[0]["command"] == command
+    assert violations[0]["category"] in {"outside_workspace_path", "outside_write_roots"}
+
+
 @pytest.mark.parametrize(
     ("command", "expected_detail"),
     [
@@ -2026,6 +2067,59 @@ def test_claude_workspace_system_prompt_encourages_network_research_when_enabled
     assert "WebFetch" in prompt["append"]
     assert "Prohibited external side effects still include package or environment installation" in prompt["append"]
     assert "Prohibited external side effects include network access" not in prompt["append"]
+
+
+def test_claude_workspace_public_self_check_handles_none_stdio(tmp_path):
+    bundle = make_bundle(tmp_path)
+    _, runtime_paths = _prepare_runtime_workspace(bundle, tmp_path / "workspace")
+    adapter = ClaudeWorkspaceAdapter()
+    session = ExecutorSessionConfig(run_id="run-1", env_hash="env-1")
+    tool_policy = adapter._coerce_tool_policy(session)
+    task_spec = json.loads(bundle.task_spec_path.read_text(encoding="utf-8"))
+    adapter._install_public_self_eval_runtime(
+        task_spec=task_spec,
+        runtime_paths=runtime_paths,
+        tool_policy=tool_policy,
+    )
+    np.savez(runtime_paths["runtime_root"] / "output" / "reconstruction.npz", sample=np.array([1.0]))
+
+    audit = adapter._public_self_check(
+        task_spec=task_spec,
+        runtime_paths=runtime_paths,
+        completed=subprocess.CompletedProcess(["python", "work/main.py"], 0, None, None),
+        timed_out=False,
+        entrypoint="work/main.py",
+        env=_runtime_environment(session, bundle, runtime_paths),
+        timeout_seconds=30,
+    )
+
+    assert audit["stdout_tail"] == ""
+    assert audit["stderr_tail"] == ""
+    assert isinstance(audit["public_self_eval_stdout"], str)
+    assert isinstance(audit["public_self_eval_stderr"], str)
+
+
+def test_claude_workspace_output_contract_completion_handles_none_stdio(tmp_path):
+    bundle = make_bundle(tmp_path)
+    _, runtime_paths = _prepare_runtime_workspace(bundle, tmp_path / "workspace")
+    adapter = ClaudeWorkspaceAdapter()
+    task_spec = json.loads(bundle.task_spec_path.read_text(encoding="utf-8"))
+    np.savez(runtime_paths["runtime_root"] / "output" / "reconstruction.npz", sample=np.array([1.0]))
+
+    result = adapter._evaluate_workspace_completion(
+        task_spec=task_spec,
+        runtime_paths=runtime_paths,
+        completed=subprocess.CompletedProcess(["python", "work/main.py"], 0, None, None),
+        timed_out=False,
+        entrypoint="work/main.py",
+        env={},
+        timeout_seconds=30,
+        completion_policy="main_success_output_contract",
+    )
+
+    assert result["stdout_tail"] == ""
+    assert result["stderr_tail"] == ""
+    assert result["output_contract_satisfied"] is True
 
 
 def test_claude_workspace_adapter_rejects_disallowed_bash_commands(tmp_path, monkeypatch):
