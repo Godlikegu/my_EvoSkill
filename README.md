@@ -30,14 +30,15 @@ This file is the single source of truth for:
 Register a task from its canonical contract:
 
 ```bash
-myevoskill-task-register --task-root ../tasks/conventional_ptychography --output-root .
+./scripts/run_task_register.sh --task-root ../tasks/conventional_ptychography --output-root .
 ```
 
-Equivalent module forms:
+Compatibility forms:
 
 ```bash
-python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
 PYTHONPATH=src python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
+python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
+myevoskill-task-register --task-root ../tasks/conventional_ptychography --output-root .
 ```
 
 Registration writes:
@@ -57,20 +58,33 @@ marked live-ready.
 Run a registered task through the unified live runner:
 
 ```bash
-myevoskill-task-live --task-id conventional_ptychography --project-root .
+./scripts/run_task_live.sh --task-id conventional_ptychography --project-root .
 ```
 
-Equivalent module forms:
+Run the Inspect executor against an OpenAI-style endpoint:
 
 ```bash
-python -m myevoskill.task_live --task-id conventional_ptychography --project-root .
+./scripts/run_task_live.sh \
+  --task-id conventional_ptychography \
+  --project-root . \
+  --executor inspect \
+  --model-provider openai-compatible \
+  --model-base-url https://your-endpoint.example/v1 \
+  --model-api-key-env OPENAI_API_KEY \
+  --model-name your-model
+```
+
+Compatibility forms:
+
+```bash
 PYTHONPATH=src python -m myevoskill.task_live --task-id conventional_ptychography --project-root .
+myevoskill-task-live --task-id conventional_ptychography --project-root .
 ```
 
 To explicitly allow the Execution Agent to use the network during a live run:
 
 ```bash
-python -m myevoskill.task_live --task-id conventional_ptychography --project-root . --allow-network
+./scripts/run_task_live.sh --task-id conventional_ptychography --project-root . --allow-network
 ```
 
 When this flag is enabled, MyEvoSkill allows both networked Bash/Python access
@@ -111,3 +125,16 @@ That means:
   Runtime environment build and cache behavior.
 - [doc/judge_and_security.md](doc/judge_and_security.md)
   Judge model, hidden metrics, and isolation rules.
+
+## Dev Environment
+
+Use a named system conda environment instead of the repo-local `.conda_env` workflow:
+
+```bash
+./scripts/create_dev_env.sh
+conda activate myevoskill
+./scripts/run_tests.sh -q
+```
+
+`pip install -e .` and installed console scripts are still supported for compatibility, but the
+recommended workflow is `conda activate <env>` plus the bash wrappers under `scripts/`.

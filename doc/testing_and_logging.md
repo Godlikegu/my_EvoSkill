@@ -139,5 +139,6 @@ Current live workspace-agent smoke prerequisites:
 Recommended command:
 
 ```bash
-./.conda_env/bin/python -m pytest -q -m external_network tests/test_integration_pipeline.py -k real_manifest_live
+conda activate myevoskill
+./scripts/run_tests.sh -q -m external_network tests/test_integration_pipeline.py -k real_manifest_live
 ```

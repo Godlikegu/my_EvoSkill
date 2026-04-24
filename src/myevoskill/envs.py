@@ -172,7 +172,13 @@ def python_executable_path_entries(python_executable: Path | str) -> list[str]:
     parent = executable.parent
     env_root = parent.parent if parent.name.lower() in {"scripts", "bin"} else parent
     candidates: list[Path] = [executable.parent, env_root]
-    if os.name == "nt":
+    windows_style_layout = bool(
+        executable.suffix.lower() == ".exe"
+        or (env_root / "Scripts").exists()
+        or (env_root / "Library" / "bin").exists()
+        or (env_root / "DLLs").exists()
+    )
+    if windows_style_layout:
         candidates.extend(
             [
                 env_root / "Scripts",

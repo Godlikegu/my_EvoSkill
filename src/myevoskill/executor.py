@@ -491,6 +491,25 @@ class InspectBridgeAdapter(FallbackAdapter):
     """Inspect AI bridge adapter with explicit dependency detection."""
 
     provider_name = "inspect_bridge"
+    INSPECT_PROMPT_VERSION = "v9_inspect_plan_scaffold_self_eval"
+    NATIVE_INSPECT_PROMPT_VERSION = "v10_inspect_native_agent_public_self_eval"
+    DEFAULT_MAX_REPAIR_ROUNDS = 3
+    PLAN_ARTIFACT_PATH = "output/plan.md"
+    DEFAULT_SCIENTIFIC_LAYOUT_FILES = (
+        "work/src/__init__.py",
+        "work/src/preprocessing.py",
+        "work/src/physics_model.py",
+        "work/src/solvers.py",
+        "work/src/visualization.py",
+        "work/main.py",
+    )
+    DEFAULT_SCIENTIFIC_CORE_FILES = (
+        "work/src/preprocessing.py",
+        "work/src/physics_model.py",
+        "work/src/solvers.py",
+        "work/src/visualization.py",
+        "work/main.py",
+    )
 
     def __init__(self, inspect_available: Optional[bool] = None):
         self._inspect_available_override = inspect_available
@@ -534,6 +553,10 @@ class InspectBridgeAdapter(FallbackAdapter):
                     },
                 }
             )
+        if self._should_use_legacy_workspace_mode(session_config):
+            return self._run_inspect_workspace(task_bundle, session_config, active_skills)
+        if self._should_use_native_agent_mode(session_config):
+            return self._run_inspect_native_agent(task_bundle, session_config, active_skills)
         record = self._run_with_model(task_bundle, session_config, active_skills)
         return RunRecord(
             **{
@@ -544,6 +567,1868 @@ class InspectBridgeAdapter(FallbackAdapter):
                 },
             }
         )
+
+    def _should_use_legacy_workspace_mode(self, session_config: ExecutorSessionConfig) -> bool:
+        model_config = session_config.model_config
+        if model_config is None:
+            return False
+        if "inspect_workspace_mode" in session_config.provider_extras:
+            return bool(session_config.provider_extras.get("inspect_workspace_mode"))
+        if bool(session_config.provider_extras.get("inspect_legacy_bridge", False)):
+            return True
+        if "mock_inspect_response" in session_config.provider_extras:
+            return True
+        return False
+
+    def _should_use_native_agent_mode(self, session_config: ExecutorSessionConfig) -> bool:
+        model_config = session_config.model_config
+        if model_config is None:
+            return False
+        if self._should_use_legacy_workspace_mode(session_config):
+            return False
+        if "mock_llm_response" in session_config.provider_extras:
+            return False
+        if bool(session_config.provider_extras.get("legacy_single_shot", False)):
+            return False
+        provider_name = str(model_config.provider_name or "").strip().lower()
+        return provider_name in {
+            "openai",
+            "openai-compatible",
+            "openai_compatible",
+            "custom_http",
+            "custom-http",
+        }
+
+    def _run_inspect_native_agent(
+        self,
+        task_bundle: TaskBundle,
+        session_config: ExecutorSessionConfig,
+        active_skills: Sequence[str],
+    ) -> RunRecord:
+        provider_adapter = self._provider_adapter(session_config)
+        safe_model_config = provider_adapter.safe_log_config()
+        resolved_model_name = self._resolved_model_name(session_config, provider_adapter)
+        task_spec, runtime_paths = _prepare_runtime_workspace(
+            task_bundle, _resolve_workspace_root(task_bundle, session_config)
+        )
+        policy = resolve_runtime_policy(
+            task_spec=task_spec,
+            session_config=session_config,
+            model_config=session_config.model_config,
+        )
+        workspace = runtime_paths["runtime_root"]
+        work_dir = runtime_paths["work_dir"]
+        output_dir = runtime_paths["output_dir"]
+        checkpoints_dir = runtime_paths["checkpoints_dir"]
+        transcript_path = workspace / "transcript.txt"
+        support = ClaudeWorkspaceAdapter()
+        tool_policy = support._coerce_tool_policy(session_config)
+        env = _runtime_environment(session_config, task_bundle, runtime_paths)
+        support._install_public_self_eval_runtime(
+            task_spec=task_spec,
+            runtime_paths=runtime_paths,
+            tool_policy=tool_policy,
+        )
+        support._seed_workspace_scaffold(runtime_paths)
+        readonly_before = support._snapshot_roots(workspace, tool_policy["read_roots"])
+        writable_before = support._snapshot_roots(workspace, tool_policy["write_roots"])
+        sandbox_spec = self._build_inspect_sandbox_spec(
+            runtime_paths=runtime_paths,
+            tool_policy=tool_policy,
+            env=env,
+        )
+        sandbox_spec.update(
+            {
+                "sandbox_mode": "local_workspace_native",
+                "container_runtime": "",
+                "native_agent": True,
+                "native_tools": ["text_editor", "bash", "submit"],
+            }
+        )
+        (workspace / "inspect_sandbox.json").write_text(
+            json.dumps(sandbox_spec, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        agent_prompt = self._build_inspect_native_agent_prompt(
+            task_bundle=task_bundle,
+            active_skills=active_skills,
+            workspace_root=workspace,
+            tool_policy=tool_policy,
+            sandbox_spec=sandbox_spec,
+        )
+        prompt_path = workspace / "agent_prompt_round_1.txt"
+        prompt_path.write_text(agent_prompt, encoding="utf-8")
+        transcript_lines = [
+            f"provider={self.provider_name}",
+            "sdk_backend=inspect_ai_native_local",
+            "bridge_mode=inspect_native_agent",
+            f"task_id={task_bundle.task_id}",
+            f"model_provider={session_config.model_config.provider_name}",
+            f"model_name={resolved_model_name}",
+            f"api_key_env={session_config.model_config.api_key_env}",
+            f"skills={','.join(active_skills)}",
+            f"runtime_layout={json.dumps(task_spec.get('runtime_layout') or {}, sort_keys=True)}",
+            f"effective_model_timeout_seconds={policy.model_timeout_seconds}",
+            f"effective_execution_budget_seconds={policy.execution_budget_seconds}",
+            f"network_access={bool(tool_policy.get('network_access', False))}",
+            f"prompt_file={prompt_path.name}",
+            "",
+        ]
+
+        _configure_workspace_permissions(runtime_paths, lock_runtime_root=False)
+        _configure_workspace_permissions(runtime_paths, lock_runtime_root=True)
+        start = time.time()
+        agent_result = self._run_inspect_native_agent_session(
+            provider_adapter=provider_adapter,
+            session_config=session_config,
+            prompt=agent_prompt,
+            runtime_root=workspace,
+            tool_policy=tool_policy,
+            env=env,
+            model_timeout_seconds=policy.model_timeout_seconds,
+            execution_budget_seconds=policy.execution_budget_seconds,
+        )
+        final_runtime = time.time() - start
+        _configure_workspace_permissions(runtime_paths, lock_runtime_root=False)
+
+        inspect_messages = list(agent_result.get("inspect_messages", []))
+        native_completion = str(agent_result.get("completion", "") or "")
+        native_error = str(agent_result.get("error", "") or "")
+        native_timed_out = bool(agent_result.get("timed_out", False))
+        native_tool_trace_present = bool(agent_result.get("native_tool_trace_present", False))
+        native_command_trace_present = bool(
+            agent_result.get("native_command_trace_present", False)
+        )
+        native_commands = list(agent_result.get("commands_run", []))
+        touched_paths = list(agent_result.get("files_touched", []))
+
+        (workspace / "inspect_native_messages_round_1.json").write_text(
+            json.dumps(inspect_messages, indent=2, sort_keys=True, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (workspace / "inspect_native_completion.txt").write_text(
+            native_completion,
+            encoding="utf-8",
+        )
+        if native_error:
+            (workspace / "inspect_native_error.txt").write_text(
+                native_error,
+                encoding="utf-8",
+            )
+
+        writable_after = support._snapshot_roots(workspace, tool_policy["write_roots"])
+        if not touched_paths:
+            touched_paths = support._collect_changed_paths(writable_before, writable_after)
+        final_files_written = sorted(dict.fromkeys(touched_paths))
+        (workspace / "files_written_round_1.json").write_text(
+            json.dumps(final_files_written, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        (workspace / "commands_run_round_1.json").write_text(
+            json.dumps(native_commands, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+        synthetic_completed = subprocess.CompletedProcess(
+            ["inspect_native_agent"],
+            0 if not native_error and not native_timed_out else 1,
+            native_completion,
+            native_error,
+        )
+        final_self_check = support._public_self_check(
+            task_spec=task_spec,
+            runtime_paths=runtime_paths,
+            completed=synthetic_completed,
+            timed_out=native_timed_out,
+            entrypoint="work/main.py",
+            env=env,
+            timeout_seconds=policy.execution_budget_seconds,
+        )
+        readonly_after = support._snapshot_roots(workspace, tool_policy["read_roots"])
+        readonly_violations = support._detect_snapshot_mutations(readonly_before, readonly_after)
+        if readonly_violations:
+            final_self_check["readonly_violations"] = list(readonly_violations)
+            final_self_check["self_check_passed"] = False
+            final_self_check["public_self_eval_passed"] = False
+            final_self_check["output_contract_satisfied"] = False
+        protocol_summary = self._inspect_native_protocol_summary(
+            task_bundle=task_bundle,
+            workspace=workspace,
+            files_written=final_files_written,
+            completion_text=native_completion,
+        )
+        (workspace / "agent_summary_round_1.json").write_text(
+            json.dumps(
+                {
+                    "solver_summary": native_completion,
+                    "declared_outputs": protocol_summary.get("public_required_outputs", []),
+                    "assumptions": [],
+                    "implementation_notes": [native_completion] if native_completion else [],
+                    "validation_plan": [],
+                    "files_written": final_files_written,
+                    "commands_run": native_commands,
+                    "protocol": protocol_summary,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        (workspace / "stdout_round_1.log").write_text(
+            synthetic_completed.stdout,
+            encoding="utf-8",
+        )
+        (workspace / "stderr_round_1.log").write_text(
+            synthetic_completed.stderr,
+            encoding="utf-8",
+        )
+        (workspace / "public_self_eval_round_1.json").write_text(
+            json.dumps(final_self_check, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        (workspace / "public_self_eval_stdout_round_1.log").write_text(
+            str(final_self_check.get("public_self_eval_stdout", "") or ""),
+            encoding="utf-8",
+        )
+        (workspace / "public_self_eval_stderr_round_1.log").write_text(
+            str(final_self_check.get("public_self_eval_stderr", "") or ""),
+            encoding="utf-8",
+        )
+        (workspace / "post_run_audit.json").write_text(
+            json.dumps(final_self_check, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+        trajectory_rounds = [
+            {
+                "round_index": 1,
+                "prompt_path": str(prompt_path),
+                "commands_run": list(native_commands),
+                "files_written": list(final_files_written),
+                "post_run_audit": dict(final_self_check),
+                "returncode": synthetic_completed.returncode,
+                "protocol_status": "completed",
+                "protocol_failure_reason": "",
+                "protocol_warnings": list(protocol_summary.get("protocol_warnings", [])),
+                "protocol_summary": dict(protocol_summary),
+                "inspect_messages": inspect_messages,
+                "vendor_session_ref": {},
+                "error_type": "",
+                "error_message": native_error,
+            }
+        ]
+
+        transcript_lines.extend(
+            [
+                f"native_tool_trace_present={native_tool_trace_present}",
+                f"native_command_trace_present={native_command_trace_present}",
+                f"files_written={','.join(final_files_written)}",
+                f"commands_run={json.dumps(native_commands, sort_keys=True)}",
+                f"plan_artifact_present={bool(protocol_summary.get('plan_artifact_present', False))}",
+                f"default_scientific_layout_present={bool(protocol_summary.get('default_scientific_layout_present', False))}",
+                f"protocol_warnings={json.dumps(protocol_summary.get('protocol_warnings', []), sort_keys=True)}",
+                f"public_self_eval_passed_post_run={bool(final_self_check.get('public_self_eval_passed', False))}",
+                f"output_contract_satisfied_post_run={bool(final_self_check.get('output_contract_satisfied', False))}",
+                "",
+            ]
+        )
+
+        if native_timed_out:
+            run_failure_reason = "native_agent_timeout"
+        elif readonly_violations:
+            run_failure_reason = "readonly_violation"
+        elif native_error:
+            run_failure_reason = "native_agent_failed"
+        elif not final_self_check.get("output_exists", False):
+            run_failure_reason = "missing_output_artifact"
+        elif not final_self_check.get(
+            "output_contract_satisfied",
+            final_self_check.get("self_check_passed", False),
+        ):
+            run_failure_reason = "output_contract_failed"
+        elif not final_self_check.get("public_self_eval_passed", False):
+            run_failure_reason = "public_self_eval_failed"
+        else:
+            run_failure_reason = ""
+        run_status = "succeeded" if not run_failure_reason else "failed"
+        final_error_info = {}
+        if run_failure_reason:
+            final_error_info = {
+                "error_type": run_failure_reason,
+                "message": native_error or "inspect native agent did not satisfy the public completion policy",
+            }
+
+        vendor_session_ref = self._build_inspect_vendor_session_ref(trajectory_rounds)
+        self._write_inspect_trajectory_artifacts(
+            workspace=workspace,
+            task_id=task_bundle.task_id,
+            model_provider=session_config.model_config.provider_name,
+            model_name=resolved_model_name,
+            trajectory_rounds=trajectory_rounds,
+            final_status=("success" if not run_failure_reason else "failed"),
+            final_error_info=final_error_info,
+            vendor_session_ref=vendor_session_ref,
+        )
+        transcript_path.write_text("\n".join(transcript_lines) + "\n", encoding="utf-8")
+
+        return RunRecord(
+            run_id=session_config.run_id,
+            task_id=task_bundle.task_id,
+            provider=self.provider_name,
+            provider_session_id=str(vendor_session_ref.get("session_id", "") or session_config.run_id),
+            model_provider=session_config.model_config.provider_name,
+            model_name=resolved_model_name,
+            env_hash=session_config.env_hash,
+            skills_active=list(active_skills),
+            workspace_root=workspace,
+            artifacts_uri=str(output_dir),
+            transcript_uri=str(transcript_path),
+            stdout=synthetic_completed.stdout,
+            stderr=synthetic_completed.stderr,
+            runtime_seconds=final_runtime,
+            metadata={
+                "execution_mode": session_config.execution_mode,
+                "returncode": synthetic_completed.returncode,
+                "command": ["inspect_ai_native_agent"],
+                "model_provider_kind": safe_model_config.get("kind", ""),
+                "api_key_env": session_config.model_config.api_key_env,
+                "runtime_layout": task_spec.get("runtime_layout") or {},
+                "runtime_root": str(workspace),
+                "work_dir": str(work_dir),
+                "output_dir": str(output_dir),
+                "checkpoints_dir": str(checkpoints_dir),
+                "task_python_executable": str(env.get("MYEVOSKILL_TASK_PYTHON") or sys.executable),
+                "task_env_hash": str(env.get("MYEVOSKILL_TASK_ENV_HASH") or session_config.env_hash),
+                "task_env_backend": str(env.get("MYEVOSKILL_TASK_ENV_BACKEND") or ""),
+                "task_env_ready": bool(
+                    ((task_spec.get("runtime_env") or {}) if isinstance(task_spec, Mapping) else {}).get(
+                        "ready",
+                        False,
+                    )
+                ),
+                "agent_mode": "inspect_native_agent",
+                "sdk_backend": "inspect_ai_native_local",
+                "bridge_mode": "inspect_native_agent",
+                "tool_policy_summary": support._summarize_tool_policy(tool_policy),
+                "network_access": bool(tool_policy.get("network_access", False)),
+                "feedback_scope": "public_self_eval_only",
+                "harness_feedback_mode": "public_self_eval_only",
+                "agent_stop_policy": "submit_after_public_self_eval",
+                "stop_oracle": "public_self_eval",
+                "workspace_prompt_mode": "inspect_native_agent",
+                "workspace_completion_policy": "public_self_eval",
+                "configured_max_workspace_iterations": 1,
+                "iteration_count": 1,
+                "repair_round_count": max(
+                    0,
+                    sum("python evaluation/self_eval.py" in cmd for cmd in native_commands) - 1,
+                ),
+                "files_written": final_files_written,
+                "commands_run": native_commands,
+                "entrypoint_run_seen_in_trace": any(
+                    "python work/main.py" in command for command in native_commands
+                ),
+                "public_self_eval_seen_in_trace": any(
+                    "python evaluation/self_eval.py" in command for command in native_commands
+                ),
+                "public_self_eval_passed_post_run": bool(
+                    final_self_check.get("public_self_eval_passed", False)
+                ),
+                "output_contract_satisfied_post_run": bool(
+                    final_self_check.get(
+                        "output_contract_satisfied",
+                        final_self_check.get("self_check_passed", False),
+                    )
+                ),
+                "run_status": run_status,
+                "run_failure_reason": run_failure_reason,
+                "public_self_check_status": final_self_check,
+                "post_run_audit": final_self_check,
+                "message_count": len(inspect_messages),
+                "tool_call_count": len(final_files_written) + len(native_commands),
+                "native_agent_used": True,
+                "native_tool_trace_present": native_tool_trace_present,
+                "native_command_trace_present": native_command_trace_present,
+                "trajectory_normalized_path": str(workspace / "trajectory_normalized.json"),
+                "trajectory_summary_path": str(workspace / "trajectory_summary.json"),
+                "vendor_session_ref": vendor_session_ref,
+                "protocol_status": "completed" if not final_error_info else "failed",
+                "protocol_failure_reason": str(final_error_info.get("error_type", "") or ""),
+                "prompt_contract_version": self.NATIVE_INSPECT_PROMPT_VERSION,
+                "command_history_summary": [
+                    "inspect_native_agent",
+                    "inspect_native_tool_trace",
+                    "inspect_public_self_eval",
+                ],
+                **_timeout_metadata(
+                    policy,
+                    timed_out=native_timed_out,
+                    timeout_scope="solver_execution" if native_timed_out else "",
+                ),
+                **protocol_summary,
+            },
+        )
+
+    def _run_inspect_native_agent_session(
+        self,
+        *,
+        provider_adapter: Any,
+        session_config: ExecutorSessionConfig,
+        prompt: str,
+        runtime_root: Path,
+        tool_policy: dict[str, Any],
+        env: Mapping[str, str],
+        model_timeout_seconds: int,
+        execution_budget_seconds: int,
+    ) -> dict[str, Any]:
+        try:
+            from inspect_ai.agent import react, run
+            from inspect_ai.model import GenerateConfig, get_model
+            from inspect_ai.tool import bash, text_editor
+            from inspect_ai.util._limit import time_limit
+            from inspect_ai.util._sandbox.context import (
+                sandbox_default_context_var,
+                sandbox_environments_context_var,
+                sandbox_with_environments_context_var,
+            )
+        except ModuleNotFoundError as exc:
+            raise RuntimeError("inspect_ai native agent runtime is unavailable") from exc
+
+        model_config = GenerateConfig(
+            timeout=model_timeout_seconds,
+            temperature=float(session_config.model_config.temperature),
+            max_tokens=session_config.model_config.max_tokens or None,
+        )
+        if "mock_native_inspect_outputs" in session_config.provider_extras:
+            model = get_model(
+                "mockllm/model",
+                custom_outputs=session_config.provider_extras["mock_native_inspect_outputs"],
+                config=model_config,
+            )
+        else:
+            model = get_model(
+                self._inspect_native_model_ref(
+                    str(session_config.model_config.model_name or "").strip()
+                ),
+                base_url=str(session_config.model_config.base_url or "").strip(),
+                api_key=provider_adapter.resolve_api_key(),
+                config=model_config,
+            )
+
+        workspace_sandbox = self._create_inspect_native_workspace_sandbox(
+            runtime_root=runtime_root,
+            env=env,
+        )
+        approval = self._build_inspect_native_approval_policies(tool_policy)
+        tools = [
+            text_editor(timeout=execution_budget_seconds),
+            bash(timeout=execution_budget_seconds),
+        ]
+        agent = react(
+            model=model,
+            prompt=prompt,
+            tools=tools,
+            submit=True,
+            approval=approval,
+        )
+
+        async def _execute() -> dict[str, Any]:
+            token_env = sandbox_environments_context_var.set({"default": workspace_sandbox})
+            token_with = sandbox_with_environments_context_var.set({})
+            token_default = sandbox_default_context_var.set("default")
+            try:
+                state, limit_error = await run(
+                    agent,
+                    "Complete the task in the current workspace and call submit() only after the public self-eval passes.",
+                    limits=[time_limit(execution_budget_seconds)],
+                )
+            finally:
+                sandbox_default_context_var.reset(token_default)
+                sandbox_with_environments_context_var.reset(token_with)
+                sandbox_environments_context_var.reset(token_env)
+
+            serialized_messages = self._serialize_sdk_messages(list(state.messages))
+            commands_run = self._extract_inspect_native_commands(serialized_messages)
+            files_touched = self._extract_inspect_native_file_touches(serialized_messages)
+            return {
+                "inspect_messages": serialized_messages,
+                "completion": str(state.output.completion or ""),
+                "error": "",
+                "timed_out": limit_error is not None,
+                "native_tool_trace_present": self._inspect_native_tool_trace_present(
+                    serialized_messages
+                ),
+                "native_command_trace_present": bool(commands_run),
+                "commands_run": commands_run,
+                "files_touched": files_touched,
+            }
+
+        try:
+            return asyncio.run(_execute())
+        except Exception as exc:
+            return {
+                "inspect_messages": [],
+                "completion": "",
+                "error": str(exc),
+                "timed_out": _is_timeout_error(exc),
+                "native_tool_trace_present": False,
+                "native_command_trace_present": False,
+                "commands_run": [],
+                "files_touched": [],
+            }
+
+    def _inspect_native_model_ref(self, model_name: str) -> str:
+        stripped = str(model_name or "").strip()
+        if not stripped:
+            raise RuntimeError("inspect native agent requires a non-empty model_name")
+        known_prefixes = (
+            "openai/",
+            "anthropic/",
+            "google/",
+            "groq/",
+            "fireworks/",
+            "ollama/",
+            "together/",
+            "mockllm/",
+        )
+        if stripped.startswith(known_prefixes):
+            return stripped
+        return f"openai/{stripped}"
+
+    def _create_inspect_native_workspace_sandbox(
+        self,
+        *,
+        runtime_root: Path,
+        env: Mapping[str, str],
+    ) -> Any:
+        from inspect_ai.util._sandbox.environment import SandboxEnvironment
+        from inspect_ai.util._subprocess import subprocess as inspect_subprocess
+
+        runtime_root = Path(runtime_root).resolve()
+        base_env = dict(env)
+
+        class WorkspaceSandboxEnvironment(SandboxEnvironment):
+            def __init__(self) -> None:
+                super().__init__()
+
+            @classmethod
+            async def sample_cleanup(
+                cls,
+                task_name: str,
+                config: Any,
+                environments: dict[str, Any],
+                interrupted: bool,
+            ) -> None:
+                del cls, task_name, config, environments, interrupted
+
+            async def exec(
+                self,
+                cmd: list[str],
+                input: str | bytes | None = None,
+                cwd: str | None = None,
+                env: dict[str, str] | None = None,
+                user: str | None = None,
+                timeout: int | None = None,
+                timeout_retry: bool = True,
+                concurrency: bool = True,
+            ) -> Any:
+                del user, timeout_retry
+                merged_env = dict(os.environ)
+                merged_env.update(base_env)
+                if env:
+                    merged_env.update(env)
+                final_cwd = self._resolve_path(cwd or ".")
+                return await inspect_subprocess(
+                    args=cmd,
+                    input=input,
+                    cwd=str(final_cwd),
+                    env=merged_env,
+                    timeout=timeout,
+                    concurrency=concurrency,
+                )
+
+            async def write_file(self, file: str, contents: str | bytes) -> None:
+                target = self._resolve_path(file)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if isinstance(contents, str):
+                    target.write_text(contents, encoding="utf-8")
+                else:
+                    target.write_bytes(contents)
+
+            async def read_file(self, file: str, text: bool = True) -> Any:
+                target = self._resolve_path(file)
+                if text:
+                    return target.read_text(encoding="utf-8")
+                return target.read_bytes()
+
+            def default_polling_interval(self) -> float:
+                return 0.2
+
+            def _resolve_path(self, file: str) -> Path:
+                candidate = Path(file)
+                resolved = (
+                    candidate.resolve()
+                    if candidate.is_absolute()
+                    else (runtime_root / candidate).resolve()
+                )
+                if resolved != runtime_root and runtime_root not in resolved.parents:
+                    raise PermissionError(f"path escapes workspace root: {file}")
+                return resolved
+
+        return WorkspaceSandboxEnvironment()
+
+    def _build_inspect_native_approval_policies(
+        self,
+        tool_policy: dict[str, Any],
+    ) -> list[Any]:
+        from inspect_ai.approval import Approval, ApprovalPolicy, approver, auto_approver
+
+        denied_tokens = [
+            str(token).strip().lower()
+            for token in tool_policy.get("bash_denied_tokens", [])
+            if str(token).strip()
+        ]
+
+        @approver(name="myevoskill_bash")
+        def bash_approver() -> Any:
+            async def approve(
+                message: str,
+                call: Any,
+                view: Any,
+                history: list[Any],
+            ) -> Any:
+                del message, view, history
+                command = str(call.arguments.get("command", "") or "")
+                lowered = command.lower()
+                for token in denied_tokens:
+                    if token and token in lowered:
+                        return Approval(
+                            decision="reject",
+                            explanation=(
+                                "Rejected by MyEvoSkill tool policy because command "
+                                f"contains denied token '{token}'."
+                            ),
+                        )
+                return Approval(
+                    decision="approve",
+                    explanation="Allowed by MyEvoSkill tool policy.",
+                )
+
+            return approve
+
+        return [
+            ApprovalPolicy(approver=bash_approver(), tools="bash"),
+            ApprovalPolicy(approver=auto_approver("approve"), tools=["text_editor", "submit"]),
+        ]
+
+    def _build_inspect_native_agent_prompt(
+        self,
+        *,
+        task_bundle: TaskBundle,
+        active_skills: Sequence[str],
+        workspace_root: Path,
+        tool_policy: dict[str, Any],
+        sandbox_spec: dict[str, Any],
+    ) -> str:
+        support = ClaudeWorkspaceAdapter()
+        compile_report: Dict[str, Any] = {}
+        if task_bundle.compile_report_path.exists():
+            compile_report = json.loads(task_bundle.compile_report_path.read_text(encoding="utf-8"))
+        final_contract = dict(compile_report.get("final_public_contract", {}))
+        readme = (
+            task_bundle.readme_public_path.read_text(encoding="utf-8")
+            if task_bundle.readme_public_path and task_bundle.readme_public_path.exists()
+            else ""
+        )
+        requirements = self._safe_read_text(task_bundle.public_bundle_dir / "requirements.txt")
+        metrics = self._safe_read_text(task_bundle.public_bundle_dir / "evaluation" / "metrics.json")
+        meta_data = self._safe_read_text(task_bundle.public_bundle_dir / "data" / "meta_data.json")
+        listed_files = sorted(
+            path.relative_to(task_bundle.public_bundle_dir).as_posix()
+            for path in task_bundle.public_bundle_dir.rglob("*")
+            if path.is_file()
+        )
+        default_layout = "\n".join(f"- `{path}`" for path in self.DEFAULT_SCIENTIFIC_LAYOUT_FILES)
+        network_access = bool(tool_policy.get("network_access", False))
+        return "\n".join(
+            [
+                "You are an InspectAI native coding agent operating directly inside the provided workspace.",
+                "Use the available native tools to inspect files, edit code, and run commands.",
+                f"Workspace root: {workspace_root}",
+                "Treat `task_contract.public.json` as the authoritative interface contract.",
+                "Treat `README_public.md` as the authoritative task description and method guidance.",
+                "Treat `requirements.txt` as the dependency boundary.",
+                "Before implementation, create `output/plan.md` with sections:",
+                "- `Task Understanding`",
+                "- `Input/Output Contract`",
+                "- `Module Layout`",
+                "- `Algorithm Choice`",
+                "- `Implementation Steps`",
+                "- `Validation Plan`",
+                "- `Assumptions`",
+                "For scientific Python tasks, prefer this default module layout:",
+                default_layout,
+                "Use `text_editor` for routine source edits and file inspection.",
+                "Use `bash` to run programs, inspect directories, and debug.",
+                "You must work inside the staged workspace only.",
+                "Prefer editing files under `work/` and writing the required plan artifact at `output/plan.md`.",
+                "Run `python work/main.py` and then `python evaluation/self_eval.py` before calling `submit()`.",
+                "If public self-eval fails, repair the existing implementation instead of restarting from scratch.",
+                (
+                    "Network access is disabled. Do not use network commands, remote APIs, package downloads, or external web access."
+                    if not network_access
+                    else "Network access is enabled, but keep side effects local and use it sparingly."
+                ),
+                "Sandbox policy:",
+                json.dumps(sandbox_spec, indent=2, sort_keys=True),
+                "",
+                f"Active skills: {', '.join(active_skills) if active_skills else '(none)'}",
+                f"Public files: {', '.join(listed_files)}",
+                f"Public contract: {json.dumps(final_contract, sort_keys=True)}",
+                "",
+                "README_public.md:",
+                readme,
+                "",
+                "requirements.txt:",
+                requirements,
+                "",
+                "evaluation/metrics.json:",
+                metrics,
+                "",
+                "data/meta_data.json:",
+                meta_data,
+                "",
+                "Call `submit()` only when the required output exists and public self-eval passes.",
+            ]
+        )
+
+    def _extract_inspect_native_commands(self, inspect_messages: Sequence[Any]) -> list[str]:
+        commands: list[str] = []
+        for message in inspect_messages:
+            if not isinstance(message, dict):
+                continue
+            for tool_call in message.get("tool_calls", []) or []:
+                if not isinstance(tool_call, dict):
+                    continue
+                if str(tool_call.get("function", "") or "") != "bash":
+                    continue
+                arguments = dict(tool_call.get("arguments") or {})
+                command = str(arguments.get("command", "") or "").strip()
+                if command:
+                    commands.append(command)
+        return list(dict.fromkeys(commands))
+
+    def _extract_inspect_native_file_touches(self, inspect_messages: Sequence[Any]) -> list[str]:
+        touched: list[str] = []
+        for message in inspect_messages:
+            if not isinstance(message, dict):
+                continue
+            for tool_call in message.get("tool_calls", []) or []:
+                if not isinstance(tool_call, dict):
+                    continue
+                if str(tool_call.get("function", "") or "") != "text_editor":
+                    continue
+                arguments = dict(tool_call.get("arguments") or {})
+                path = str(arguments.get("path", "") or "").replace("\\", "/").strip()
+                if path:
+                    touched.append(path.lstrip("./"))
+        return list(dict.fromkeys(touched))
+
+    def _inspect_native_tool_trace_present(self, inspect_messages: Sequence[Any]) -> bool:
+        for message in inspect_messages:
+            if isinstance(message, dict) and list(message.get("tool_calls", []) or []):
+                return True
+        return False
+
+    def _inspect_native_protocol_summary(
+        self,
+        *,
+        task_bundle: TaskBundle,
+        workspace: Path,
+        files_written: Sequence[str],
+        completion_text: str,
+    ) -> dict[str, Any]:
+        observed_files: dict[str, str] = {}
+        for relative_path in (self.PLAN_ARTIFACT_PATH, *self.DEFAULT_SCIENTIFIC_LAYOUT_FILES):
+            candidate = workspace / relative_path
+            if candidate.exists() and candidate.is_file():
+                observed_files[relative_path] = candidate.read_text(encoding="utf-8")
+        plan_text = observed_files.get(self.PLAN_ARTIFACT_PATH, "")
+        layout_state = self._inspect_default_layout_state(
+            files=observed_files,
+            implementation_notes=[completion_text] if completion_text else [],
+            plan_text=plan_text,
+        )
+        public_required_outputs = self._inspect_required_output_paths(task_bundle)
+        required_outputs_present = all((workspace / path).exists() for path in public_required_outputs)
+        protocol_warnings: list[str] = []
+        if self.PLAN_ARTIFACT_PATH not in observed_files:
+            protocol_warnings.append("required plan artifact output/plan.md is missing")
+        if not layout_state["default_scientific_layout_present"]:
+            protocol_warnings.append("default scientific multi-file layout not fully adopted")
+        if not layout_state["layout_deviation_explained"]:
+            protocol_warnings.append(
+                "layout deviation is not explained in output/plan.md or the final completion"
+            )
+        if not required_outputs_present:
+            protocol_warnings.append("required output artifacts are missing after native agent run")
+        return {
+            "plan_artifact_required": True,
+            "plan_artifact_present": self.PLAN_ARTIFACT_PATH in observed_files,
+            "plan_artifact_path": self.PLAN_ARTIFACT_PATH,
+            "plan_artifact_written_before_entrypoint": self.PLAN_ARTIFACT_PATH in files_written,
+            "implementation_notes_present": bool(completion_text.strip()),
+            "validation_plan_present": "validation plan" in plan_text.lower(),
+            "declared_outputs_match_public_contract": required_outputs_present,
+            "declared_outputs_source": "post_run_workspace_scan",
+            "public_required_outputs": public_required_outputs,
+            "protocol_warnings": protocol_warnings,
+            **layout_state,
+        }
+
+    def _run_inspect_workspace(
+        self,
+        task_bundle: TaskBundle,
+        session_config: ExecutorSessionConfig,
+        active_skills: Sequence[str],
+    ) -> RunRecord:
+        provider_adapter = self._provider_adapter(session_config)
+        safe_model_config = provider_adapter.safe_log_config()
+        resolved_model_name = self._resolved_model_name(session_config, provider_adapter)
+        task_spec, runtime_paths = _prepare_runtime_workspace(
+            task_bundle, _resolve_workspace_root(task_bundle, session_config)
+        )
+        policy = resolve_runtime_policy(
+            task_spec=task_spec,
+            session_config=session_config,
+            model_config=session_config.model_config,
+        )
+        workspace = runtime_paths["runtime_root"]
+        work_dir = runtime_paths["work_dir"]
+        output_dir = runtime_paths["output_dir"]
+        checkpoints_dir = runtime_paths["checkpoints_dir"]
+        transcript_path = workspace / "transcript.txt"
+        support = ClaudeWorkspaceAdapter()
+        tool_policy = support._coerce_tool_policy(session_config)
+        env = _runtime_environment(session_config, task_bundle, runtime_paths)
+        support._install_public_self_eval_runtime(
+            task_spec=task_spec,
+            runtime_paths=runtime_paths,
+            tool_policy=tool_policy,
+        )
+        support._seed_workspace_scaffold(runtime_paths)
+        readonly_before = support._snapshot_roots(workspace, tool_policy["read_roots"])
+        sandbox_spec = self._build_inspect_sandbox_spec(
+            runtime_paths=runtime_paths,
+            tool_policy=tool_policy,
+            env=env,
+        )
+        (workspace / "inspect_sandbox.json").write_text(
+            json.dumps(sandbox_spec, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+        max_iterations = int(
+            session_config.provider_extras.get(
+                "max_workspace_iterations",
+                self.DEFAULT_MAX_REPAIR_ROUNDS,
+            )
+            or self.DEFAULT_MAX_REPAIR_ROUNDS
+        )
+        max_iterations = max(1, min(self.DEFAULT_MAX_REPAIR_ROUNDS, max_iterations))
+        base_prompt = self._build_inspect_workspace_agent_prompt(
+            task_bundle=task_bundle,
+            active_skills=active_skills,
+            workspace_root=workspace,
+            tool_policy=tool_policy,
+            sandbox_spec=sandbox_spec,
+        )
+        transcript_lines = [
+            f"provider={self.provider_name}",
+            "sdk_backend=inspect_ai_compatible",
+            "feedback_scope=public_self_eval_only",
+            f"task_id={task_bundle.task_id}",
+            f"model_provider={session_config.model_config.provider_name}",
+            f"model_name={resolved_model_name}",
+            f"api_key_env={session_config.model_config.api_key_env}",
+            f"skills={','.join(active_skills)}",
+            f"runtime_layout={json.dumps(task_spec.get('runtime_layout') or {}, sort_keys=True)}",
+            f"effective_model_timeout_seconds={policy.model_timeout_seconds}",
+            f"effective_execution_budget_seconds={policy.execution_budget_seconds}",
+            f"network_access={bool(tool_policy.get('network_access', False))}",
+            f"max_workspace_iterations={max_iterations}",
+            "",
+        ]
+
+        final_completed = subprocess.CompletedProcess(["python", "work/main.py"], 1, "", "")
+        final_timed_out = False
+        final_runtime = 0.0
+        final_metadata: Dict[str, Any] = {}
+        final_self_check: Dict[str, Any] = {
+            "self_check_passed": False,
+            "schema_warnings": ["inspect workspace agent did not run"],
+            "public_self_eval_passed": False,
+            "output_contract_satisfied": False,
+        }
+        final_files_written: list[str] = []
+        commands_run: list[str] = []
+        trajectory_rounds: list[dict[str, Any]] = []
+        previous_feedback: Optional[dict[str, Any]] = None
+        previous_summary: Optional[dict[str, Any]] = None
+        final_error_info: dict[str, Any] = {}
+        run_failure_reason = "workspace_not_started"
+        run_status = "failed"
+        final_protocol_summary: dict[str, Any] = {
+            "plan_artifact_required": True,
+            "plan_artifact_present": False,
+            "plan_artifact_path": self.PLAN_ARTIFACT_PATH,
+            "plan_artifact_written_before_entrypoint": False,
+            "default_scientific_layout_expected": True,
+            "default_scientific_layout_present": False,
+            "layout_deviation_explained": False,
+            "implementation_notes_present": False,
+            "validation_plan_present": False,
+            "declared_outputs_match_public_contract": False,
+            "public_required_outputs": self._inspect_required_output_paths(task_bundle),
+            "protocol_warnings": [],
+        }
+
+        for round_index in range(1, max_iterations + 1):
+            round_prompt = self._compose_inspect_round_prompt(
+                base_prompt=base_prompt,
+                round_index=round_index,
+                previous_feedback=previous_feedback,
+                previous_summary=previous_summary,
+            )
+            prompt_path = workspace / f"agent_prompt_round_{round_index}.txt"
+            prompt_path.write_text(round_prompt, encoding="utf-8")
+            transcript_lines.extend(
+                [
+                    f"ROUND {round_index}",
+                    f"prompt_file={prompt_path.name}",
+                ]
+            )
+            try:
+                response_payload, response_metadata = self._generate_inspect_workspace_response(
+                    provider_adapter=provider_adapter,
+                    session_config=session_config,
+                    prompt=round_prompt,
+                    model_timeout_seconds=policy.model_timeout_seconds,
+                    round_index=round_index,
+                )
+            except Exception as exc:
+                if not _is_timeout_error(exc):
+                    raise
+                transcript_path.write_text("\n".join(transcript_lines) + "\n", encoding="utf-8")
+                return RunRecord(
+                    run_id=session_config.run_id,
+                    task_id=task_bundle.task_id,
+                    provider=self.provider_name,
+                    provider_session_id=session_config.run_id,
+                    model_provider=session_config.model_config.provider_name,
+                    model_name=resolved_model_name,
+                    env_hash=session_config.env_hash,
+                    skills_active=list(active_skills),
+                    workspace_root=workspace,
+                    artifacts_uri=str(output_dir),
+                    transcript_uri=str(transcript_path),
+                    stdout="",
+                    stderr=(
+                        f"MyEvoSkill model request timed out after "
+                        f"{policy.model_timeout_seconds} seconds.\n"
+                    ),
+                    runtime_seconds=0.0,
+                    metadata={
+                        "execution_mode": session_config.execution_mode,
+                        "returncode": -1,
+                        "command": [],
+                        "model_provider_kind": safe_model_config.get("kind", ""),
+                        "api_key_env": session_config.model_config.api_key_env,
+                        "runtime_layout": task_spec.get("runtime_layout") or {},
+                        "runtime_root": str(workspace),
+                        "work_dir": str(work_dir),
+                        "output_dir": str(output_dir),
+                        "checkpoints_dir": str(checkpoints_dir),
+                        "tool_policy_summary": support._summarize_tool_policy(tool_policy),
+                        "network_access": bool(tool_policy.get("network_access", False)),
+                        "bridge_mode": "inspect_agent",
+                        "sdk_backend": "inspect_ai_compatible",
+                        "protocol_status": "failed",
+                        "protocol_failure_reason": "model_request_timeout",
+                        "prompt_contract_version": self.INSPECT_PROMPT_VERSION,
+                        **_timeout_metadata(
+                            policy,
+                            timed_out=True,
+                            timeout_scope="model_request",
+                        ),
+                    },
+                )
+            (workspace / f"raw_response_round_{round_index}.txt").write_text(
+                str(response_metadata.get("raw_response_text", "")),
+                encoding="utf-8",
+            )
+            (workspace / f"parsed_response_round_{round_index}.json").write_text(
+                json.dumps(
+                    response_metadata.get("parsed_response", {}),
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+
+            files = dict(response_payload["files"])
+            entrypoint = str(response_payload["entrypoint"] or "work/main.py")
+            violations = self._validate_inspect_workspace_paths(files, entrypoint)
+            if violations:
+                raise RuntimeError("modified read-only paths: " + ", ".join(violations))
+
+            ensure_clean_run_directory(work_dir)
+            support._seed_workspace_scaffold(runtime_paths)
+            final_files_written = support._write_workspace_files(workspace, files)
+            protocol_summary = self._inspect_protocol_summary(
+                task_bundle=task_bundle,
+                response_payload=response_payload,
+                files_written=final_files_written,
+            )
+            round_commands = [f"python {entrypoint}", "python evaluation/self_eval.py"]
+            commands_run.extend(round_commands)
+            (workspace / f"files_written_round_{round_index}.json").write_text(
+                json.dumps(final_files_written, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            (workspace / f"commands_run_round_{round_index}.json").write_text(
+                json.dumps(round_commands, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            (workspace / f"agent_summary_round_{round_index}.json").write_text(
+                json.dumps(
+                    {
+                        "solver_summary": response_payload["solver_summary"],
+                        "declared_outputs": response_payload["declared_outputs"],
+                        "assumptions": response_payload["assumptions"],
+                        "implementation_notes": response_payload["implementation_notes"],
+                        "validation_plan": response_payload["validation_plan"],
+                        "files_written": final_files_written,
+                        "commands_run": round_commands,
+                        "protocol": protocol_summary,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            _configure_workspace_permissions(runtime_paths, lock_runtime_root=False)
+            _configure_workspace_permissions(runtime_paths, lock_runtime_root=True)
+            start = time.time()
+            final_completed, final_timed_out = _run_subprocess(
+                ["python", entrypoint],
+                cwd=workspace,
+                env=env,
+                timeout_seconds=policy.execution_budget_seconds,
+            )
+            final_runtime = time.time() - start
+            _configure_workspace_permissions(runtime_paths, lock_runtime_root=False)
+            final_self_check = support._public_self_check(
+                task_spec=task_spec,
+                runtime_paths=runtime_paths,
+                completed=final_completed,
+                timed_out=final_timed_out,
+                entrypoint=entrypoint,
+                env=env,
+                timeout_seconds=policy.execution_budget_seconds,
+            )
+            readonly_after = support._snapshot_roots(workspace, tool_policy["read_roots"])
+            readonly_violations = support._detect_snapshot_mutations(readonly_before, readonly_after)
+            if readonly_violations:
+                final_self_check["readonly_violations"] = list(readonly_violations)
+                final_self_check["self_check_passed"] = False
+                final_self_check["public_self_eval_passed"] = False
+                final_self_check["output_contract_satisfied"] = False
+            (workspace / f"stdout_round_{round_index}.log").write_text(
+                final_completed.stdout,
+                encoding="utf-8",
+            )
+            (workspace / f"stderr_round_{round_index}.log").write_text(
+                final_completed.stderr,
+                encoding="utf-8",
+            )
+            (workspace / f"public_self_eval_round_{round_index}.json").write_text(
+                json.dumps(final_self_check, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            (workspace / f"public_self_eval_stdout_round_{round_index}.log").write_text(
+                str(final_self_check.get("public_self_eval_stdout", "") or ""),
+                encoding="utf-8",
+            )
+            (workspace / f"public_self_eval_stderr_round_{round_index}.log").write_text(
+                str(final_self_check.get("public_self_eval_stderr", "") or ""),
+                encoding="utf-8",
+            )
+            (workspace / "post_run_audit.json").write_text(
+                json.dumps(final_self_check, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            trajectory_rounds.append(
+                {
+                    "round_index": round_index,
+                    "prompt_path": str(prompt_path),
+                    "commands_run": list(round_commands),
+                    "files_written": list(final_files_written),
+                    "post_run_audit": dict(final_self_check),
+                    "returncode": final_completed.returncode,
+                    "protocol_status": "completed",
+                    "protocol_failure_reason": "",
+                    "protocol_warnings": list(protocol_summary.get("protocol_warnings", [])),
+                    "protocol_summary": dict(protocol_summary),
+                    "inspect_messages": list(response_metadata.get("inspect_messages", [])),
+                    "vendor_session_ref": dict(
+                        response_metadata.get("vendor_session_ref", {}) or {}
+                    ),
+                    "error_type": "",
+                    "error_message": "",
+                }
+            )
+            transcript_lines.extend(
+                [
+                    f"response_format={response_metadata.get('response_format', '')}",
+                    f"files_written={','.join(final_files_written)}",
+                    f"commands_run={json.dumps(round_commands, sort_keys=True)}",
+                    f"returncode={final_completed.returncode}",
+                    f"plan_artifact_present={bool(protocol_summary.get('plan_artifact_present', False))}",
+                    f"default_scientific_layout_present={bool(protocol_summary.get('default_scientific_layout_present', False))}",
+                    f"protocol_warnings={json.dumps(protocol_summary.get('protocol_warnings', []), sort_keys=True)}",
+                    f"public_self_eval_passed_post_run={bool(final_self_check.get('public_self_eval_passed', False))}",
+                    f"output_contract_satisfied_post_run={bool(final_self_check.get('output_contract_satisfied', False))}",
+                    "",
+                ]
+            )
+            if final_timed_out:
+                run_failure_reason = "entrypoint_timeout"
+            elif readonly_violations:
+                run_failure_reason = "readonly_violation"
+            elif final_completed.returncode != 0:
+                run_failure_reason = "entrypoint_failed"
+            elif not final_self_check.get("output_exists", False):
+                run_failure_reason = "missing_output_artifact"
+            elif not final_self_check.get(
+                "output_contract_satisfied",
+                final_self_check.get("self_check_passed", False),
+            ):
+                run_failure_reason = "output_contract_failed"
+            elif not final_self_check.get("public_self_eval_passed", False):
+                run_failure_reason = "public_self_eval_failed"
+            else:
+                run_failure_reason = ""
+            run_status = "succeeded" if not run_failure_reason else "failed"
+            final_metadata = {
+                **response_metadata,
+                "entrypoint": entrypoint,
+                "sdk_backend": "inspect_ai_compatible",
+                "bridge_mode": "inspect_agent",
+                "feedback_scope": "public_self_eval_only",
+                "sandbox_spec_path": str(workspace / "inspect_sandbox.json"),
+            }
+            final_protocol_summary = dict(protocol_summary)
+            previous_feedback = final_self_check
+            previous_summary = {
+                **response_metadata.get("parsed_response", {}),
+                "files_written": final_files_written,
+                "commands_run": round_commands,
+                "protocol": protocol_summary,
+            }
+            if final_self_check.get("self_check_passed", False):
+                break
+
+        if not final_self_check.get("self_check_passed", False):
+            final_error_info = {
+                "error_type": run_failure_reason or "public_self_eval_failed",
+                "message": "inspect workspace agent exhausted repair rounds without passing public self-eval",
+            }
+        vendor_session_ref = self._build_inspect_vendor_session_ref(trajectory_rounds)
+        self._write_inspect_trajectory_artifacts(
+            workspace=workspace,
+            task_id=task_bundle.task_id,
+            model_provider=session_config.model_config.provider_name,
+            model_name=resolved_model_name,
+            trajectory_rounds=trajectory_rounds,
+            final_status=("success" if final_self_check.get("self_check_passed", False) else "failed"),
+            final_error_info=final_error_info,
+            vendor_session_ref=vendor_session_ref,
+        )
+        transcript_path.write_text("\n".join(transcript_lines) + "\n", encoding="utf-8")
+        message_count = sum(
+            len(list(round_trace.get("inspect_messages", [])))
+            for round_trace in trajectory_rounds
+        )
+        tool_call_count = sum(
+            len(list(round_trace.get("commands_run", [])))
+            + len(list(round_trace.get("files_written", [])))
+            for round_trace in trajectory_rounds
+        )
+        return RunRecord(
+            run_id=session_config.run_id,
+            task_id=task_bundle.task_id,
+            provider=self.provider_name,
+            provider_session_id=str(vendor_session_ref.get("session_id", "") or session_config.run_id),
+            model_provider=session_config.model_config.provider_name,
+            model_name=resolved_model_name,
+            env_hash=session_config.env_hash,
+            skills_active=list(active_skills),
+            workspace_root=workspace,
+            artifacts_uri=str(output_dir),
+            transcript_uri=str(transcript_path),
+            stdout=final_completed.stdout,
+            stderr=final_completed.stderr,
+            runtime_seconds=final_runtime,
+            metadata={
+                "execution_mode": session_config.execution_mode,
+                "returncode": final_completed.returncode,
+                "command": ["python", str(final_metadata.get("entrypoint", "work/main.py"))],
+                "model_provider_kind": safe_model_config.get("kind", ""),
+                "api_key_env": session_config.model_config.api_key_env,
+                "runtime_layout": task_spec.get("runtime_layout") or {},
+                "runtime_root": str(workspace),
+                "work_dir": str(work_dir),
+                "output_dir": str(output_dir),
+                "checkpoints_dir": str(checkpoints_dir),
+                "task_python_executable": str(env.get("MYEVOSKILL_TASK_PYTHON") or sys.executable),
+                "task_env_hash": str(env.get("MYEVOSKILL_TASK_ENV_HASH") or session_config.env_hash),
+                "task_env_backend": str(env.get("MYEVOSKILL_TASK_ENV_BACKEND") or ""),
+                "task_env_ready": bool(
+                    ((task_spec.get("runtime_env") or {}) if isinstance(task_spec, Mapping) else {}).get(
+                        "ready",
+                        False,
+                    )
+                ),
+                "agent_mode": "workspace_edit",
+                "sdk_backend": "inspect_ai_compatible",
+                "tool_policy_summary": support._summarize_tool_policy(tool_policy),
+                "network_access": bool(tool_policy.get("network_access", False)),
+                "feedback_scope": "public_self_eval_only",
+                "harness_feedback_mode": "public_self_eval_only",
+                "agent_stop_policy": "run_self_eval_then_summary",
+                "stop_oracle": "public_self_eval",
+                "workspace_prompt_mode": "inspect_workspace_json",
+                "workspace_completion_policy": "public_self_eval",
+                "configured_max_workspace_iterations": max_iterations,
+                "iteration_count": len(trajectory_rounds),
+                "files_written": final_files_written,
+                "commands_run": list(dict.fromkeys(commands_run)),
+                "entrypoint_run_seen_in_trace": any(
+                    "python work/main.py" in command for command in commands_run
+                ),
+                "public_self_eval_seen_in_trace": any(
+                    "python evaluation/self_eval.py" in command for command in commands_run
+                ),
+                "public_self_eval_passed_post_run": bool(
+                    final_self_check.get("public_self_eval_passed", False)
+                ),
+                "output_contract_satisfied_post_run": bool(
+                    final_self_check.get(
+                        "output_contract_satisfied",
+                        final_self_check.get("self_check_passed", False),
+                    )
+                ),
+                "run_status": run_status,
+                "run_failure_reason": run_failure_reason,
+                "public_self_check_status": final_self_check,
+                "post_run_audit": final_self_check,
+                "message_count": message_count,
+                "tool_call_count": tool_call_count,
+                "trajectory_normalized_path": str(workspace / "trajectory_normalized.json"),
+                "trajectory_summary_path": str(workspace / "trajectory_summary.json"),
+                "vendor_session_ref": vendor_session_ref,
+                "repair_round_count": max(0, len(trajectory_rounds) - 1),
+                "protocol_status": "completed" if not final_error_info else "failed",
+                "protocol_failure_reason": str(final_error_info.get("error_type", "") or ""),
+                "prompt_contract_version": self.INSPECT_PROMPT_VERSION,
+                "command_history_summary": [
+                    "inspect_workspace_generate",
+                    "inspect_workspace_run",
+                    "inspect_public_self_eval",
+                ],
+                **_timeout_metadata(
+                    policy,
+                    timed_out=final_timed_out,
+                    timeout_scope="solver_execution" if final_timed_out else "",
+                ),
+                **final_protocol_summary,
+                **final_metadata,
+            },
+        )
+
+    def _build_inspect_workspace_agent_prompt(
+        self,
+        *,
+        task_bundle: TaskBundle,
+        active_skills: Sequence[str],
+        workspace_root: Path,
+        tool_policy: dict[str, Any],
+        sandbox_spec: dict[str, Any],
+    ) -> str:
+        support = ClaudeWorkspaceAdapter()
+        base_prompt = support._build_legacy_workspace_agent_prompt(task_bundle, active_skills)
+        network_access = bool(tool_policy.get("network_access", False))
+        default_layout = "\n".join(
+            f"- `{path}`" for path in self.DEFAULT_SCIENTIFIC_LAYOUT_FILES
+        )
+        plan_sections = "\n".join(
+            [
+                "- `Task Understanding`",
+                "- `Input/Output Contract`",
+                "- `Module Layout`",
+                "- `Algorithm Choice`",
+                "- `Implementation Steps`",
+                "- `Validation Plan`",
+                "- `Assumptions`",
+            ]
+        )
+        inspect_lines = [
+            "You are running inside an Inspect AI compatible workspace harness.",
+            f"Workspace root: {workspace_root}",
+            "Follow this fixed workflow in order:",
+            "1. Read `README_public.md`.",
+            "2. Read `task_contract.public.json`.",
+            "3. Read `requirements.txt`.",
+            "4. Read `data/meta_data.json` and other public inputs only as needed.",
+            f"5. Before implementation, write the plan artifact to `{self.PLAN_ARTIFACT_PATH}`.",
+            "6. Implement the solver using the default scientific multi-file layout unless the task is truly too small to justify it.",
+            "7. Run `python work/main.py`.",
+            "8. Run `python evaluation/self_eval.py`.",
+            "9. Repair using only public feedback if validation fails.",
+            "",
+            "Authority rules:",
+            "- `task_contract.public.json` is the authoritative interface contract.",
+            "- `README_public.md` provides the algorithmic and scientific context.",
+            "- `requirements.txt` defines the dependency boundary.",
+            "",
+            f"The plan artifact `{self.PLAN_ARTIFACT_PATH}` is required and must include these sections:",
+            plan_sections,
+            "",
+            "For scientific Python tasks, use this default layout and keep responsibilities separated:",
+            default_layout,
+            "- `work/src/preprocessing.py`: input loading, preprocessing, normalization, shape handling.",
+            "- `work/src/physics_model.py`: forward model or physical simulation components.",
+            "- `work/src/solvers.py`: inverse solver, optimization loop, reconstruction logic.",
+            "- `work/src/visualization.py`: summaries, plots, diagnostics, lightweight reporting helpers.",
+            "- `work/main.py`: orchestration and required output writing.",
+            "- `work/src/__init__.py`: package organization or exports.",
+            "If you intentionally deviate from this layout, explain why in both the plan artifact and `implementation_notes`.",
+            "",
+            "Modify only files under `work/`, except for the required plan artifact at `output/plan.md`.",
+            "Do not write other process artifacts under `output/` through the model response.",
+            "Always return `entrypoint` under `work/`, normally `work/main.py`.",
+            "Return one JSON object with these top-level keys: files, entrypoint, declared_outputs, assumptions, solver_summary, implementation_notes, validation_plan.",
+            "The `files` object must include `output/plan.md` and should usually include most of the default scientific layout files.",
+            "Use `implementation_notes` to explain module boundaries, any layout deviation, and important solver decisions.",
+            "Use `validation_plan` to describe how you will verify outputs with `python work/main.py` and `python evaluation/self_eval.py`.",
+            (
+                "Network access is disabled. Do not use external web access, package downloads, or remote APIs."
+                if not network_access
+                else "Network access is enabled in a bounded way. Use it only for brief paper-first lookup and keep all other side effects local."
+            ),
+            "Sandbox policy:",
+            json.dumps(sandbox_spec, indent=2, sort_keys=True),
+            "",
+            "If earlier rounds failed, repair the existing plan and modules instead of collapsing everything back into one file.",
+            "Ignore any older minimal response-schema wording below and follow the Inspect workspace contract in this prompt.",
+            "",
+        ]
+        return "\n".join([*inspect_lines, base_prompt])
+
+    def _compose_inspect_round_prompt(
+        self,
+        *,
+        base_prompt: str,
+        round_index: int,
+        previous_feedback: Optional[dict[str, Any]],
+        previous_summary: Optional[dict[str, Any]],
+    ) -> str:
+        lines = [base_prompt, "", f"Round: {round_index}"]
+        if round_index > 1:
+            lines.extend(
+                [
+                    "Previous attempt failed. Repair the existing solution instead of restarting blindly.",
+                    "Read the existing `output/plan.md` first, then make the smallest targeted fixes that align code, modules, and validation.",
+                    "Prioritize fixing missing modules, contract mismatches, and plan-to-implementation drift before rewriting the solver.",
+                    "",
+                    "Previous implementation and protocol summary:",
+                    json.dumps(previous_summary or {}, indent=2, sort_keys=True),
+                    "",
+                    "Previous public self-eval feedback:",
+                    json.dumps(previous_feedback or {}, indent=2, sort_keys=True),
+                ]
+            )
+        return "\n".join(lines)
+
+    def _generate_inspect_workspace_response(
+        self,
+        *,
+        provider_adapter: Any,
+        session_config: ExecutorSessionConfig,
+        prompt: str,
+        model_timeout_seconds: int,
+        round_index: int,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        if "mock_inspect_response" in session_config.provider_extras:
+            provider_adapter.resolve_api_key()
+            raw_response = self._resolve_mock_response(
+                session_config.provider_extras["mock_inspect_response"],
+                round_index,
+            )
+            return self._parse_inspect_workspace_model_response(
+                raw_content=raw_response,
+                bridge_mode="inspect_agent_mock",
+                model_provider_kind=provider_adapter.safe_log_config().get("kind", ""),
+            )
+        if "mock_llm_response" in session_config.provider_extras:
+            provider_adapter.resolve_api_key()
+            raw_response = self._resolve_mock_response(
+                session_config.provider_extras["mock_llm_response"],
+                round_index,
+            )
+            return self._parse_inspect_workspace_model_response(
+                raw_content=raw_response,
+                bridge_mode="inspect_agent_mock",
+                model_provider_kind=provider_adapter.safe_log_config().get("kind", ""),
+            )
+        messages = [
+            {"role": "system", "content": self._build_inspect_workspace_system_prompt()},
+            {"role": "user", "content": prompt},
+        ]
+        url, headers, payload = provider_adapter.build_request(messages)
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=model_timeout_seconds) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        raw_content = self._extract_model_content(body)
+        return self._parse_inspect_workspace_model_response(
+            raw_content=raw_content,
+            bridge_mode="inspect_agent",
+            model_provider_kind=provider_adapter.safe_log_config().get("kind", ""),
+        )
+
+    def _build_inspect_workspace_system_prompt(self) -> str:
+        return "\n".join(
+            [
+                "You are an Inspect AI compatible coding agent working in a constrained scientific task workspace.",
+                "Return a single JSON object with exactly these top-level keys:",
+                '- "files": required object mapping relative workspace paths to complete file contents',
+                '- "entrypoint": required relative Python entrypoint path',
+                '- "declared_outputs": required list of output paths you expect to produce',
+                '- "assumptions": required list of assumptions',
+                '- "solver_summary": required short string',
+                '- "implementation_notes": required list of implementation notes',
+                '- "validation_plan": required list of validation steps',
+                "Do not include markdown fences.",
+                "Do not include explanatory prose outside the JSON object.",
+                "All code paths must remain under `work/`.",
+                'The required plan artifact path `output/plan.md` is the only allowed non-`work/` file path.',
+            ]
+        )
+
+    def _normalize_inspect_workspace_path(self, path: Any) -> str:
+        normalized = str(path or "").replace("\\", "/").strip()
+        if not normalized:
+            return ""
+        normalized = normalized.lstrip("./")
+        if normalized in {"plan.md", self.PLAN_ARTIFACT_PATH}:
+            return self.PLAN_ARTIFACT_PATH
+        if normalized.startswith("output/"):
+            return normalized
+        if normalized.startswith("work/"):
+            return normalized
+        if normalized.startswith("/") or normalized.startswith("../"):
+            return normalized
+        return f"work/{normalized}"
+
+    def _validate_inspect_workspace_paths(
+        self,
+        files: dict[str, str],
+        entrypoint: str,
+    ) -> list[str]:
+        violations: list[str] = []
+        for path in files.keys():
+            normalized = str(path or "").replace("\\", "/").strip()
+            if (
+                not normalized
+                or normalized.startswith("/")
+                or normalized.startswith("../")
+                or "/../" in f"/{normalized}"
+            ):
+                violations.append(normalized or "<empty>")
+                continue
+            if normalized.startswith("work/"):
+                continue
+            if normalized == self.PLAN_ARTIFACT_PATH:
+                continue
+            violations.append(normalized)
+        support = ClaudeWorkspaceAdapter()
+        violations.extend(support._validate_workspace_paths({}, entrypoint))
+        return sorted(set(violations))
+
+    def _inspect_default_layout_state(
+        self,
+        files: Mapping[str, str],
+        implementation_notes: Sequence[str],
+        plan_text: str,
+    ) -> dict[str, Any]:
+        authored_paths = sorted(
+            path for path in files.keys() if path in self.DEFAULT_SCIENTIFIC_LAYOUT_FILES
+        )
+        default_layout_present = all(
+            path in files for path in self.DEFAULT_SCIENTIFIC_CORE_FILES
+        )
+        explanation_text = "\n".join([*implementation_notes, plan_text]).lower()
+        layout_deviation_explained = default_layout_present or any(
+            token in explanation_text
+            for token in (
+                "deviation",
+                "deviate",
+                "single file",
+                "single-file",
+                "too small",
+                "simple task",
+                "simple enough",
+                "not necessary",
+                "not needed",
+                "combined into main",
+                "kept in main.py",
+            )
+        )
+        return {
+            "default_scientific_layout_expected": True,
+            "default_scientific_layout_present": default_layout_present,
+            "default_scientific_layout_paths_authored": authored_paths,
+            "default_scientific_layout_missing": [
+                path for path in self.DEFAULT_SCIENTIFIC_LAYOUT_FILES if path not in files
+            ],
+            "layout_deviation_explained": layout_deviation_explained,
+        }
+
+    def _inspect_required_output_paths(self, task_bundle: TaskBundle) -> list[str]:
+        support = ClaudeWorkspaceAdapter()
+        output_contract = support._load_manifest_output_contract(task_bundle)
+        return sorted(
+            {
+                str(item.get("path", "") or "").replace("\\", "/").strip()
+                for item in output_contract.get("required_outputs", []) or []
+                if str(item.get("path", "") or "").strip()
+            }
+        )
+
+    def _inspect_protocol_summary(
+        self,
+        *,
+        task_bundle: TaskBundle,
+        response_payload: dict[str, Any],
+        files_written: Sequence[str],
+    ) -> dict[str, Any]:
+        files = dict(response_payload.get("files", {}) or {})
+        declared_outputs = [
+            str(item).replace("\\", "/").strip()
+            for item in response_payload.get("declared_outputs", []) or []
+            if str(item).strip()
+        ]
+        plan_text = str(files.get(self.PLAN_ARTIFACT_PATH, "") or "")
+        plan_artifact_present = self.PLAN_ARTIFACT_PATH in files
+        layout_state = self._inspect_default_layout_state(
+            files=files,
+            implementation_notes=response_payload.get("implementation_notes", []) or [],
+            plan_text=plan_text,
+        )
+        public_required_outputs = self._inspect_required_output_paths(task_bundle)
+        declared_outputs_match_public_contract = (
+            sorted(dict.fromkeys(declared_outputs)) == public_required_outputs
+        )
+        protocol_warnings: list[str] = []
+        if not layout_state["default_scientific_layout_present"]:
+            protocol_warnings.append(
+                "default scientific multi-file layout not fully adopted"
+            )
+        if not layout_state["layout_deviation_explained"]:
+            protocol_warnings.append(
+                "layout deviation is not explained in output/plan.md or implementation_notes"
+            )
+        if not declared_outputs_match_public_contract:
+            protocol_warnings.append(
+                "declared_outputs do not match the public output contract"
+            )
+        return {
+            "plan_artifact_required": True,
+            "plan_artifact_present": plan_artifact_present,
+            "plan_artifact_path": self.PLAN_ARTIFACT_PATH,
+            "plan_artifact_written_before_entrypoint": self.PLAN_ARTIFACT_PATH in files_written,
+            "implementation_notes_present": bool(
+                response_payload.get("implementation_notes", [])
+            ),
+            "validation_plan_present": bool(response_payload.get("validation_plan", [])),
+            "declared_outputs_match_public_contract": declared_outputs_match_public_contract,
+            "public_required_outputs": public_required_outputs,
+            "protocol_warnings": protocol_warnings,
+            **layout_state,
+        }
+
+    def _parse_inspect_workspace_model_response(
+        self,
+        *,
+        raw_content: str,
+        bridge_mode: str,
+        model_provider_kind: str,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        structured_payload, parse_error, candidate_count, selected_source = (
+            self._extract_structured_payload(raw_content)
+        )
+        if structured_payload is None:
+            raise ModelResponseParseError(
+                "inspect workspace agent requires a structured JSON response",
+                raw_response=raw_content,
+                parse_error=parse_error or "inspect_workspace_json_parse_failed",
+                candidate_count=candidate_count,
+                selected_source=selected_source or "inspect_workspace_json",
+            )
+        support = ClaudeWorkspaceAdapter()
+        raw_files = support._coerce_workspace_files(structured_payload.get("files"))
+        files = {
+            self._normalize_inspect_workspace_path(path): content
+            for path, content in raw_files.items()
+        }
+        entrypoint = structured_payload.get("entrypoint", "work/main.py")
+        if not isinstance(entrypoint, str) or not entrypoint.strip():
+            raise ModelResponseParseError(
+                "structured inspect workspace response missing required field 'entrypoint'",
+                raw_response=raw_content,
+                parse_error="inspect_workspace_json_missing_entrypoint",
+                candidate_count=candidate_count,
+                selected_source=selected_source,
+            )
+        entrypoint = self._normalize_inspect_workspace_path(entrypoint)
+        declared_outputs = self._coerce_list_field(
+            structured_payload.get("declared_outputs"),
+            default=[],
+        )
+        assumptions = self._coerce_list_field(structured_payload.get("assumptions"), default=[])
+        solver_summary = structured_payload.get("solver_summary", "")
+        implementation_notes = self._coerce_list_field(
+            structured_payload.get("implementation_notes"),
+            default=[],
+        )
+        validation_plan = self._coerce_list_field(
+            structured_payload.get("validation_plan"),
+            default=[],
+        )
+        if self.PLAN_ARTIFACT_PATH not in files:
+            raise ModelResponseParseError(
+                "structured inspect workspace response must include required file 'output/plan.md'",
+                raw_response=raw_content,
+                parse_error="inspect_workspace_json_missing_plan_artifact",
+                candidate_count=candidate_count,
+                selected_source=selected_source,
+            )
+        if not implementation_notes:
+            raise ModelResponseParseError(
+                "structured inspect workspace response missing required field 'implementation_notes'",
+                raw_response=raw_content,
+                parse_error="inspect_workspace_json_missing_implementation_notes",
+                candidate_count=candidate_count,
+                selected_source=selected_source,
+            )
+        if not validation_plan:
+            raise ModelResponseParseError(
+                "structured inspect workspace response missing required field 'validation_plan'",
+                raw_response=raw_content,
+                parse_error="inspect_workspace_json_missing_validation_plan",
+                candidate_count=candidate_count,
+                selected_source=selected_source,
+            )
+        payload = {
+            "files": files,
+            "entrypoint": str(entrypoint),
+            "declared_outputs": declared_outputs,
+            "assumptions": assumptions,
+            "solver_summary": str(solver_summary or ""),
+            "implementation_notes": implementation_notes,
+            "validation_plan": validation_plan,
+        }
+        metadata = {
+            "bridge_mode": bridge_mode,
+            "model_provider_kind": model_provider_kind,
+            "sdk_error_type": "",
+            "raw_response_preview": self._preview_text(raw_content),
+            "raw_response_text": raw_content,
+            "response_format": "structured_json_workspace",
+            "response_candidate_count": candidate_count,
+            "response_selected_source": selected_source,
+            "parsed_response": {
+                "entrypoint": payload["entrypoint"],
+                "declared_outputs": declared_outputs,
+                "assumptions": assumptions,
+                "solver_summary": payload["solver_summary"],
+                "implementation_notes": implementation_notes,
+                "validation_plan": validation_plan,
+                "files": sorted(files.keys()),
+            },
+            "prompt_contract_version": self.INSPECT_PROMPT_VERSION,
+            "inspect_messages": [],
+            "vendor_session_ref": {},
+        }
+        return payload, metadata
+
+    def _build_inspect_sandbox_spec(
+        self,
+        *,
+        runtime_paths: dict[str, Path],
+        tool_policy: dict[str, Any],
+        env: Mapping[str, str],
+    ) -> dict[str, Any]:
+        runtime_root = runtime_paths["runtime_root"]
+        return {
+            "sdk_backend": "inspect_ai_compatible",
+            "sandbox_mode": "container_spec",
+            "container_runtime": "docker_or_podman",
+            "container_runtime_available": bool(shutil.which("docker") or shutil.which("podman")),
+            "network_access": bool(tool_policy.get("network_access", False)),
+            "workspace_root": str(runtime_root),
+            "read_roots": [
+                str(runtime_root / path) for path in tool_policy.get("read_roots", [])
+            ],
+            "write_roots": [
+                str(runtime_root / path) for path in tool_policy.get("write_roots", [])
+            ],
+            "env_allowlist": [
+                key
+                for key in (
+                    "MYEVOSKILL_RUNTIME_ROOT",
+                    "MYEVOSKILL_PUBLIC_BUNDLE",
+                    "MYEVOSKILL_WORK_DIR",
+                    "MYEVOSKILL_OUTPUT_DIR",
+                    "MYEVOSKILL_CHECKPOINT_DIR",
+                    "MYEVOSKILL_WORKSPACE",
+                    "MYEVOSKILL_TASK_ID",
+                    "MYEVOSKILL_TASK_PYTHON",
+                    "MYEVOSKILL_TASK_ENV_HASH",
+                    "MYEVOSKILL_TASK_ENV_BACKEND",
+                    "PYTHONIOENCODING",
+                    "PYTHONUTF8",
+                )
+                if env.get(key)
+            ],
+        }
+
+    def _build_inspect_vendor_session_ref(
+        self,
+        trajectory_rounds: Sequence[dict[str, Any]],
+    ) -> dict[str, Any]:
+        for round_trace in trajectory_rounds:
+            payload = dict(round_trace.get("vendor_session_ref", {}) or {})
+            if payload:
+                return payload
+        return {"session_id": "", "native_trace_copied": False}
+
+    def _write_inspect_trajectory_artifacts(
+        self,
+        *,
+        workspace: Path,
+        task_id: str,
+        model_provider: str,
+        model_name: str,
+        trajectory_rounds: Sequence[dict[str, Any]],
+        final_status: str,
+        final_error_info: dict[str, Any],
+        vendor_session_ref: dict[str, Any],
+    ) -> None:
+        native_lines: list[str] = []
+        normalized_rounds: list[dict[str, Any]] = []
+        for round_trace in trajectory_rounds:
+            round_index = int(round_trace.get("round_index", 0) or 0)
+            for message in round_trace.get("inspect_messages", []) or []:
+                native_lines.append(
+                    json.dumps(
+                        {"round_index": round_index, "message": message},
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                )
+            normalized_rounds.append(
+                {
+                    "round_index": round_index,
+                    "prompt_path": round_trace.get("prompt_path", ""),
+                    "commands_run": list(round_trace.get("commands_run", [])),
+                    "files_written": list(round_trace.get("files_written", [])),
+                    "post_run_audit": round_trace.get("post_run_audit", {}),
+                    "returncode": round_trace.get("returncode"),
+                    "protocol_status": round_trace.get("protocol_status", ""),
+                    "protocol_failure_reason": round_trace.get("protocol_failure_reason", ""),
+                    "error_type": round_trace.get("error_type", ""),
+                    "error_message": round_trace.get("error_message", ""),
+                }
+            )
+        native_path = workspace / "trajectory_native.jsonl"
+        native_path.write_text(
+            ("\n".join(native_lines) + ("\n" if native_lines else "")),
+            encoding="utf-8",
+        )
+        (workspace / "trajectory_normalized.json").write_text(
+            json.dumps(
+                {
+                    "sdk_backend": "inspect_ai_compatible",
+                    "task_id": task_id,
+                    "model_provider": model_provider,
+                    "model_name": model_name,
+                    "final_status": final_status,
+                    "final_error_info": final_error_info,
+                    "rounds": normalized_rounds,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        (workspace / "trajectory_summary.json").write_text(
+            json.dumps(
+                {
+                    "sdk_backend": "inspect_ai_compatible",
+                    "final_status": final_status,
+                    "round_count": len(normalized_rounds),
+                    "message_count": sum(
+                        len(list(item.get("inspect_messages", [])))
+                        for item in trajectory_rounds
+                    ),
+                    "final_error_type": final_error_info.get("error_type", ""),
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        (workspace / "trajectory_redaction_report.json").write_text(
+            json.dumps(
+                {
+                    "policy": "Secrets are not persisted; only safe provider configuration and normalized inspect traces are stored.",
+                    "redacted_fields": [],
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        (workspace / "vendor_session_ref.json").write_text(
+            json.dumps(vendor_session_ref, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+    def _resolve_mock_response(self, mock_value: Any, round_index: int) -> str:
+        if isinstance(mock_value, (list, tuple)):
+            if not mock_value:
+                return ""
+            if round_index - 1 < len(mock_value):
+                return str(mock_value[round_index - 1])
+            return str(mock_value[-1])
+        return str(mock_value)
 
     def _run_with_model(
         self,
@@ -1073,6 +2958,30 @@ class InspectBridgeAdapter(FallbackAdapter):
     def _preview_text(self, content: str, limit: int = 240) -> str:
         collapsed = re.sub(r"\s+", " ", content).strip()
         return collapsed[:limit]
+
+    def _serialize_sdk_messages(self, messages: list[Any]) -> list[Any]:
+        return [self._json_safe(message) for message in messages]
+
+    def _json_safe(self, value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, dict):
+            return {str(key): self._json_safe(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [self._json_safe(item) for item in value]
+        if hasattr(value, "model_dump"):
+            try:
+                return self._json_safe(value.model_dump())
+            except TypeError:
+                pass
+        if hasattr(value, "__dict__"):
+            return self._json_safe(vars(value))
+        return str(value)
+
+    def _safe_read_text(self, path: Path) -> str:
+        if not path.exists() or not path.is_file():
+            return ""
+        return path.read_text(encoding="utf-8")
 
 
 class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
@@ -4558,7 +6467,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         seen: set[str] = set()
         incoming = list(entries)
         if existing_path:
-            incoming.extend(segment for segment in existing_path.split(os.pathsep) if segment)
+            incoming.extend(self._split_existing_path_entries(existing_path))
         for item in incoming:
             normalized = os.path.normcase(os.path.normpath(str(item)))
             if normalized in seen:
@@ -4566,6 +6475,18 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             seen.add(normalized)
             merged_entries.append(str(item))
         return os.pathsep.join(merged_entries)
+
+    def _split_existing_path_entries(self, existing_path: str) -> list[str]:
+        value = str(existing_path or "").strip()
+        if not value:
+            return []
+        if ";" in value:
+            return [segment for segment in value.split(";") if segment]
+        if os.pathsep == ":" and re.search(r"[A-Za-z]:[\\/]", value):
+            matches = re.findall(r"[A-Za-z]:[^:;]*", value)
+            if matches:
+                return [segment for segment in matches if segment]
+        return [segment for segment in value.split(os.pathsep) if segment]
 
     def _build_workspace_sdk_env(
         self,
@@ -5083,25 +7004,6 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             encoding="utf-8",
         )
 
-    def _serialize_sdk_messages(self, messages: list[Any]) -> list[Any]:
-        return [self._json_safe(message) for message in messages]
-
-    def _json_safe(self, value: Any) -> Any:
-        if value is None or isinstance(value, (str, int, float, bool)):
-            return value
-        if isinstance(value, dict):
-            return {str(k): self._json_safe(v) for k, v in value.items()}
-        if isinstance(value, (list, tuple, set)):
-            return [self._json_safe(item) for item in value]
-        if hasattr(value, "model_dump"):
-            try:
-                return self._json_safe(value.model_dump())
-            except TypeError:
-                pass
-        if hasattr(value, "__dict__"):
-            return self._json_safe(vars(value))
-        return str(value)
-
     def _resolve_mock_sdk_response(self, mock_value: Any, round_index: int) -> dict[str, Any]:
         if isinstance(mock_value, (list, tuple)):
             if not mock_value:
@@ -5596,6 +7498,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         workspace_root: Path,
     ) -> dict[str, Any]:
         raw_value = self._strip_matching_quotes(str(raw_path or "").strip())
+        normalized_value = raw_value.replace("\\", "/")
         if not raw_value:
             return {
                 "raw": "",
@@ -5612,8 +7515,13 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "inside_workspace": True,
                 "special_sink": True,
             }
-        path_value = Path(raw_value)
-        candidate = path_value if path_value.is_absolute() else current_dir / path_value
+        windows_absolute = bool(re.match(r"^[A-Za-z]:[\\/]", raw_value))
+        path_value = Path(normalized_value)
+        candidate = (
+            path_value
+            if path_value.is_absolute() or windows_absolute
+            else current_dir / path_value
+        )
         try:
             resolved = candidate.resolve()
         except OSError:
@@ -6097,11 +8005,6 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 return str(mock_value[round_index - 1])
             return str(mock_value[-1])
         return str(mock_value)
-
-    def _safe_read_text(self, path: Path) -> str:
-        if not path.exists() or not path.is_file():
-            return ""
-        return path.read_text(encoding="utf-8")
 
 class ClaudeAdapter(ClaudeWorkspaceAdapter):
     """Compatibility wrapper for the Claude-style workspace agent."""

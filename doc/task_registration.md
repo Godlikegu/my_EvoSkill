@@ -40,32 +40,45 @@ Generated during registration:
 Register a task from its canonical contract:
 
 ```bash
-myevoskill-task-register --task-root ../tasks/conventional_ptychography --output-root .
+./scripts/run_task_register.sh --task-root ../tasks/conventional_ptychography --output-root .
 ```
 
-Equivalent module forms:
+Compatibility forms:
 
 ```bash
-python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
 PYTHONPATH=src python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
+python -m myevoskill.task_registration --task-root ../tasks/conventional_ptychography --output-root .
+myevoskill-task-register --task-root ../tasks/conventional_ptychography --output-root .
 ```
 
 Run a live test after registration:
 
 ```bash
-python -m myevoskill.task_live --task-id conventional_ptychography --project-root .
-PYTHONPATH=src python -m myevoskill.task_live --task-id conventional_ptychography --project-root .
+./scripts/run_task_live.sh --task-id conventional_ptychography --project-root .
 ```
 
 If a task explicitly needs online retrieval during solver generation, live runs
 may opt in with:
 
 ```bash
-python -m myevoskill.task_live --task-id conventional_ptychography --project-root . --allow-network
+./scripts/run_task_live.sh --task-id conventional_ptychography --project-root . --allow-network
 ```
 
 This opt-in enables both workspace-level network access and Claude SDK web
 tools for the Execution Agent.
+
+To use the Inspect executor with an OpenAI-style endpoint:
+
+```bash
+./scripts/run_task_live.sh \
+  --task-id conventional_ptychography \
+  --project-root . \
+  --executor inspect \
+  --model-provider openai-compatible \
+  --model-base-url https://your-endpoint.example/v1 \
+  --model-api-key-env OPENAI_API_KEY \
+  --model-name your-model
+```
 
 ## Contract Responsibilities
 

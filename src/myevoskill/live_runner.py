@@ -11,7 +11,7 @@ from typing import Any, Mapping, Sequence
 
 from .compile_audit import HeuristicCompileAuditAdapter
 from .compiler import TaskBundleCompiler
-from .executor import ClaudeWorkspaceAdapter
+from .executor import ClaudeWorkspaceAdapter, InspectBridgeAdapter
 from .judge_runner import invoke_judge_runner
 from .logging_utils import RunLogger
 from .model_provider import ClaudeSDKAdapter
@@ -21,7 +21,7 @@ from .registration_contract import ensure_live_ready_manifest, ensure_manifest_r
 from .task_adapters import manifest_proxy_spec
 from .task_runtime import ensure_clean_run_directory, resolve_run_paths
 
-LIVE_RUN_TIMEOUT_SECONDS = 30 * 60
+LIVE_RUN_TIMEOUT_SECONDS = 60 * 60
 LIVE_RUN_WORKSPACE_COMPLETION_POLICY = "sdk_result_message"
 LIVE_RUN_MAX_WORKSPACE_ITERATIONS = 0
 LIVE_RUN_CLAUDE_MAX_TURNS = 0
@@ -33,8 +33,13 @@ def run_registered_task_live(
     project_root: Path,
     skills: Sequence[str] = (),
     allow_network: bool = False,
+    executor_name: str = "claude",
+    model_provider: str = "",
+    model_base_url: str = "",
+    model_api_key_env: str = "",
+    model_name: str = "",
 ) -> dict[str, Any]:
-    """Compile and run one registered task through the Claude workspace harness."""
+    """Compile and run one registered task through the selected executor harness."""
 
     project_root = Path(project_root).resolve()
     manifest = load_registered_manifest(task_id, project_root=project_root)
@@ -57,23 +62,46 @@ def run_registered_task_live(
         audit_adapter=HeuristicCompileAuditAdapter(),
     )
 
-    if not (
-        os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("CLAUDE_API_KEY")
-        or os.environ.get("MYEVOSKILL_CLAUDE_API_KEY")
-    ):
-        raise RuntimeError(
-            "one of ANTHROPIC_API_KEY / CLAUDE_API_KEY / MYEVOSKILL_CLAUDE_API_KEY is required"
+    executor_name = str(executor_name or "claude").strip().lower()
+    if executor_name == "inspect":
+        model = ModelConfig(
+            provider_name=str(model_provider or "openai-compatible"),
+            model_name=str(model_name or "").strip(),
+            base_url=str(model_base_url or "").strip(),
+            api_key_env=str(model_api_key_env or "").strip(),
+            temperature=0.0,
+            timeout=LIVE_RUN_TIMEOUT_SECONDS,
         )
-
-    model = ModelConfig(
-        provider_name="claude-sdk",
-        model_name="",
-        api_key_env="ANTHROPIC_API_KEY",
-        temperature=0.0,
-        timeout=LIVE_RUN_TIMEOUT_SECONDS,
-    )
-    resolved_model_name = ClaudeSDKAdapter(model).resolve_model_name()
+        if model.provider_name.lower() not in {"openai-compatible", "openai_compatible", "openai"}:
+            raise RuntimeError("inspect executor currently requires provider_name=openai-compatible")
+        if not model.base_url:
+            raise RuntimeError("inspect executor requires --model-base-url")
+        if not model.api_key_env:
+            raise RuntimeError("inspect executor requires --model-api-key-env")
+        if not os.environ.get(model.api_key_env):
+            raise RuntimeError(
+                f"environment variable '{model.api_key_env}' is required for inspect live runs"
+            )
+        resolved_model_name = model.model_name or "<inspect default>"
+        executor = InspectBridgeAdapter()
+    else:
+        if not (
+            os.environ.get("ANTHROPIC_API_KEY")
+            or os.environ.get("CLAUDE_API_KEY")
+            or os.environ.get("MYEVOSKILL_CLAUDE_API_KEY")
+        ):
+            raise RuntimeError(
+                "one of ANTHROPIC_API_KEY / CLAUDE_API_KEY / MYEVOSKILL_CLAUDE_API_KEY is required"
+            )
+        model = ModelConfig(
+            provider_name="claude-sdk",
+            model_name="",
+            api_key_env="ANTHROPIC_API_KEY",
+            temperature=0.0,
+            timeout=LIVE_RUN_TIMEOUT_SECONDS,
+        )
+        resolved_model_name = ClaudeSDKAdapter(model).resolve_model_name()
+        executor = ClaudeWorkspaceAdapter()
     run_id = f"run-live-{int(time.time())}"
     run_paths = resolve_run_paths(project_root, manifest["task_id"], run_id)
     ensure_clean_run_directory(run_paths.workspace_root)
@@ -98,7 +126,7 @@ def run_registered_task_live(
     )
 
     started_at = time.time()
-    record = ClaudeWorkspaceAdapter().run(bundle, session, list(skills))
+    record = executor.run(bundle, session, list(skills))
     elapsed = time.time() - started_at
     try:
         proxy_spec = manifest_proxy_spec(record, manifest, task_root=task_root)
@@ -121,6 +149,7 @@ def run_registered_task_live(
         "log_dir": log_dir,
         "manifest": manifest,
         "model_label": resolved_model_name or "<claude default>",
+        "executor_name": executor_name,
         "proxy": proxy,
         "record": record,
         "run_id": run_id,
@@ -275,7 +304,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """CLI entrypoint for the manifest-driven live runner."""
 
     parser = argparse.ArgumentParser(
-        description="Run one registered MyEvoSkill task through the Claude workspace harness."
+        description="Run one registered MyEvoSkill task through the selected workspace harness."
     )
     parser.add_argument("--task-id", required=True, help="Registered task id in registry/tasks/")
     parser.add_argument(
@@ -294,6 +323,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Allow the Execution Agent to access the network during the live run.",
     )
+    parser.add_argument(
+        "--executor",
+        choices=["claude", "inspect"],
+        default="claude",
+        help="Execution harness to use for the live run.",
+    )
+    parser.add_argument(
+        "--model-provider",
+        default="",
+        help="Model provider name for non-Claude executors (currently openai-compatible).",
+    )
+    parser.add_argument(
+        "--model-base-url",
+        default="",
+        help="Base URL for OpenAI-style model providers when using --executor inspect.",
+    )
+    parser.add_argument(
+        "--model-api-key-env",
+        default="",
+        help="Environment variable name holding the API key for --executor inspect.",
+    )
+    parser.add_argument(
+        "--model-name",
+        default="",
+        help="Model name for --executor inspect.",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     project_root = Path(args.project_root).resolve() if args.project_root else Path.cwd().resolve()
@@ -302,6 +357,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         project_root=project_root,
         skills=list(args.skill),
         allow_network=bool(args.allow_network),
+        executor_name=str(args.executor or "claude"),
+        model_provider=str(args.model_provider or ""),
+        model_base_url=str(args.model_base_url or ""),
+        model_api_key_env=str(args.model_api_key_env or ""),
+        model_name=str(args.model_name or ""),
     )
 
     manifest = result["manifest"]
@@ -311,7 +371,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"[1/5] Task source: {result['task_root']}")
     print(f"[2/5] Bundle compiled: {result['bundle'].root_dir}")
     print(
-        f"[3/5] Running Claude SDK agent "
+        f"[3/5] Running {result['executor_name']} agent "
         f"(task={manifest['task_id']}, model={result['model_label']}, run_id={result['run_id']})..."
     )
     print(f"       Done in {result['elapsed_seconds']:.1f}s")

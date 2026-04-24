@@ -274,6 +274,311 @@ def test_inspect_bridge_adapter_runs_mock_model_response_and_records_safe_metada
     assert "secret-value" not in transcript
 
 
+def test_inspect_workspace_response_normalizes_root_level_paths_into_work():
+    adapter = InspectBridgeAdapter(inspect_available=True)
+
+    payload, metadata = adapter._parse_inspect_workspace_model_response(
+        raw_content=json.dumps(
+            {
+                "files": {
+                    "plan.md": "# Task Understanding\n",
+                    "main.py": "print('hi')\n",
+                    "solver/utils.py": "VALUE = 1\n",
+                },
+                "entrypoint": "main.py",
+                "declared_outputs": ["output/reconstruction.npz"],
+                "assumptions": [],
+                "solver_summary": "demo",
+                "implementation_notes": ["using a small helper module"],
+                "validation_plan": ["run python work/main.py"],
+            }
+        ),
+        bridge_mode="inspect_agent_mock",
+        model_provider_kind="openai-compatible",
+    )
+
+    assert payload["entrypoint"] == "work/main.py"
+    assert payload["files"] == {
+        "output/plan.md": "# Task Understanding\n",
+        "work/main.py": "print('hi')\n",
+        "work/solver/utils.py": "VALUE = 1\n",
+    }
+    assert metadata["parsed_response"]["entrypoint"] == "work/main.py"
+    assert metadata["parsed_response"]["files"][0] == "output/plan.md"
+
+
+def test_inspect_workspace_response_requires_plan_and_protocol_fields():
+    adapter = InspectBridgeAdapter(inspect_available=True)
+
+    with pytest.raises(Exception, match="output/plan.md"):
+        adapter._parse_inspect_workspace_model_response(
+            raw_content=json.dumps(
+                {
+                    "files": {
+                        "main.py": "print('hi')\n",
+                    },
+                    "entrypoint": "main.py",
+                    "declared_outputs": ["output/reconstruction.npz"],
+                    "assumptions": [],
+                    "solver_summary": "demo",
+                    "implementation_notes": ["note"],
+                    "validation_plan": ["validate"],
+                }
+            ),
+            bridge_mode="inspect_agent_mock",
+            model_provider_kind="openai-compatible",
+        )
+
+    with pytest.raises(Exception, match="implementation_notes"):
+        adapter._parse_inspect_workspace_model_response(
+            raw_content=json.dumps(
+                {
+                    "files": {
+                        "output/plan.md": "# plan\n",
+                        "main.py": "print('hi')\n",
+                    },
+                    "entrypoint": "main.py",
+                    "declared_outputs": ["output/reconstruction.npz"],
+                    "assumptions": [],
+                    "solver_summary": "demo",
+                    "validation_plan": ["validate"],
+                }
+            ),
+            bridge_mode="inspect_agent_mock",
+            model_provider_kind="openai-compatible",
+        )
+
+    with pytest.raises(Exception, match="validation_plan"):
+        adapter._parse_inspect_workspace_model_response(
+            raw_content=json.dumps(
+                {
+                    "files": {
+                        "output/plan.md": "# plan\n",
+                        "main.py": "print('hi')\n",
+                    },
+                    "entrypoint": "main.py",
+                    "declared_outputs": ["output/reconstruction.npz"],
+                    "assumptions": [],
+                    "solver_summary": "demo",
+                    "implementation_notes": ["note"],
+                }
+            ),
+            bridge_mode="inspect_agent_mock",
+            model_provider_kind="openai-compatible",
+        )
+
+
+def test_inspect_bridge_adapter_workspace_mode_runs_self_eval_and_writes_trajectory(
+    tmp_path, monkeypatch
+):
+    bundle = make_bundle(tmp_path)
+    (bundle.public_bundle_dir / "data").mkdir(parents=True, exist_ok=True)
+    np.savez(
+        bundle.public_bundle_dir / "data" / "raw_data.npz",
+        measurements=np.array([[0.1, 0.2]], dtype=float),
+        nu_axis=np.array([[1.0, 2.0]], dtype=float),
+    )
+    model = ModelConfig(
+        provider_name="openai-compatible",
+        model_name="gpt-test",
+        base_url="https://example.invalid/v1",
+        api_key_env="TEST_API_KEY",
+    )
+    response_payload = {
+        "files": {
+            "output/plan.md": "\n".join(
+                [
+                    "# Task Understanding",
+                    "",
+                    "# Input/Output Contract",
+                    "",
+                    "# Module Layout",
+                    "",
+                    "# Algorithm Choice",
+                    "",
+                    "# Implementation Steps",
+                    "",
+                    "# Validation Plan",
+                    "",
+                    "# Assumptions",
+                ]
+            )
+            + "\n",
+            "work/main.py": "\n".join(
+                [
+                    "from src.preprocessing import load_inputs",
+                    "from src.physics_model import build_model",
+                    "from src.solvers import solve",
+                    "from src.visualization import summarize",
+                    "from pathlib import Path",
+                    "import numpy as np",
+                    "Path('output').mkdir(parents=True, exist_ok=True)",
+                    "raw = load_inputs()",
+                    "model = build_model(raw)",
+                    "signal = solve(model)",
+                    "summarize(signal)",
+                    "np.savez('output/reconstruction.npz', signal=signal)",
+                    "print('inspect-workspace-pass')",
+                ]
+            )
+            + "\n",
+            "work/src/__init__.py": "",
+            "work/src/preprocessing.py": "\n".join(
+                [
+                    "import numpy as np",
+                    "",
+                    "def load_inputs():",
+                    "    raw = np.load('data/raw_data.npz')",
+                    "    return raw['measurements']",
+                ]
+            )
+            + "\n",
+            "work/src/physics_model.py": "\n".join(
+                [
+                    "def build_model(raw):",
+                    "    return raw",
+                ]
+            )
+            + "\n",
+            "work/src/solvers.py": "\n".join(
+                [
+                    "def solve(model):",
+                    "    return model",
+                ]
+            )
+            + "\n",
+            "work/src/visualization.py": "\n".join(
+                [
+                    "def summarize(signal):",
+                    "    return {'shape': getattr(signal, 'shape', None)}",
+                ]
+            )
+            + "\n",
+        },
+        "entrypoint": "work/main.py",
+        "declared_outputs": ["output/reconstruction.npz"],
+        "assumptions": ["public inputs are sufficient"],
+        "solver_summary": "inspect workspace test",
+        "implementation_notes": [
+            "Use the default scientific module split to keep preprocessing, modeling, solving, and reporting separate."
+        ],
+        "validation_plan": [
+            "Run python work/main.py",
+            "Run python evaluation/self_eval.py",
+        ],
+    }
+    config = ExecutorSessionConfig(
+        run_id="run-inspect-workspace",
+        env_hash="env-1",
+        workspace_root=tmp_path / "workspace",
+        model_config=model,
+        provider_extras={"mock_inspect_response": json.dumps(response_payload)},
+    )
+    monkeypatch.setenv("TEST_API_KEY", "secret-value")
+
+    record = InspectBridgeAdapter(inspect_available=True).run(bundle, config, ["skill-a"])
+
+    assert record.provider == "inspect_bridge"
+    assert record.metadata["bridge_mode"] == "inspect_agent"
+    assert record.metadata["sdk_backend"] == "inspect_ai_compatible"
+    assert record.metadata["prompt_contract_version"] == "v9_inspect_plan_scaffold_self_eval"
+    assert record.metadata["public_self_eval_seen_in_trace"] is True
+    assert record.metadata["public_self_eval_passed_post_run"] is True
+    assert record.metadata["output_contract_satisfied_post_run"] is True
+    assert record.metadata["network_access"] is False
+    assert record.metadata["plan_artifact_required"] is True
+    assert record.metadata["plan_artifact_present"] is True
+    assert record.metadata["plan_artifact_written_before_entrypoint"] is True
+    assert record.metadata["default_scientific_layout_expected"] is True
+    assert record.metadata["default_scientific_layout_present"] is True
+    assert record.metadata["implementation_notes_present"] is True
+    assert record.metadata["validation_plan_present"] is True
+    assert record.metadata["declared_outputs_match_public_contract"] is True
+    assert record.metadata["protocol_warnings"] == []
+    assert record.metadata["tool_call_count"] >= 2
+    assert "inspect-workspace-pass" in record.stdout
+    assert (tmp_path / "workspace" / "inspect_sandbox.json").exists()
+    assert (tmp_path / "workspace" / "trajectory_normalized.json").exists()
+    assert (tmp_path / "workspace" / "trajectory_summary.json").exists()
+    assert (tmp_path / "workspace" / "vendor_session_ref.json").exists()
+    assert (tmp_path / "workspace" / "public_self_eval_round_1.json").exists()
+    assert (tmp_path / "workspace" / "output" / "plan.md").exists()
+
+
+def test_inspect_bridge_adapter_workspace_mode_records_network_opt_in(
+    tmp_path, monkeypatch
+):
+    bundle = make_bundle(tmp_path)
+    model = ModelConfig(
+        provider_name="openai-compatible",
+        model_name="gpt-test",
+        base_url="https://example.invalid/v1",
+        api_key_env="TEST_API_KEY",
+    )
+    response_payload = {
+        "files": {
+            "output/plan.md": "\n".join(
+                [
+                    "# Task Understanding",
+                    "",
+                    "# Input/Output Contract",
+                    "",
+                    "# Module Layout",
+                    "",
+                    "Small smoke test: deviation from the default scientific layout is acceptable here.",
+                    "",
+                    "# Algorithm Choice",
+                    "",
+                    "# Implementation Steps",
+                    "",
+                    "# Validation Plan",
+                    "",
+                    "# Assumptions",
+                ]
+            )
+            + "\n",
+            "work/main.py": "\n".join(
+                [
+                    "from pathlib import Path",
+                    "import numpy as np",
+                    "Path('output').mkdir(parents=True, exist_ok=True)",
+                    "np.savez('output/reconstruction.npz', signal=np.array([1.0]))",
+                    "print('network-opt-in')",
+                ]
+            )
+            + "\n"
+        },
+        "entrypoint": "work/main.py",
+        "declared_outputs": ["output/reconstruction.npz"],
+        "assumptions": [],
+        "solver_summary": "network metadata test",
+        "implementation_notes": [
+            "This is a simple task smoke test, so the implementation stays in main.py as an explained deviation."
+        ],
+        "validation_plan": ["run the entrypoint and public self eval"],
+    }
+    config = ExecutorSessionConfig(
+        run_id="run-inspect-network",
+        env_hash="env-1",
+        workspace_root=tmp_path / "workspace",
+        model_config=model,
+        tool_policy={"network_access": True},
+        provider_extras={"mock_inspect_response": json.dumps(response_payload)},
+    )
+    monkeypatch.setenv("TEST_API_KEY", "secret-value")
+
+    record = InspectBridgeAdapter(inspect_available=True).run(bundle, config, [])
+
+    sandbox_payload = json.loads(
+        (tmp_path / "workspace" / "inspect_sandbox.json").read_text(encoding="utf-8")
+    )
+    assert record.metadata["network_access"] is True
+    assert sandbox_payload["network_access"] is True
+    assert record.metadata["default_scientific_layout_present"] is False
+    assert record.metadata["layout_deviation_explained"] is True
+    assert "default scientific multi-file layout not fully adopted" in record.metadata["protocol_warnings"]
+
+
 def test_provider_placeholders_accept_model_config(tmp_path, monkeypatch):
     bundle = make_bundle(tmp_path)
     claude_model = ModelConfig(
@@ -2465,6 +2770,7 @@ def test_inspect_bridge_adapter_returns_timeout_record_for_model_request_timeout
             env_hash="env-1",
             workspace_root=tmp_path / "workspace",
             model_config=model,
+            provider_extras={"inspect_legacy_bridge": True},
         ),
         [],
     )
@@ -2472,3 +2778,84 @@ def test_inspect_bridge_adapter_returns_timeout_record_for_model_request_timeout
     assert record.metadata["timeout_scope"] == "model_request"
     assert record.metadata["effective_model_timeout_seconds"] == 120
     assert "timed out after 120 seconds" in record.stderr
+
+
+def test_inspect_bridge_adapter_runs_native_agent_with_inspect_tools(tmp_path, monkeypatch):
+    pytest.importorskip("inspect_ai")
+    from inspect_ai.model import ModelOutput
+
+    bundle = make_bundle(tmp_path)
+    model = ModelConfig(
+        provider_name="openai-compatible",
+        model_name="Vendor2/Claude-4.5-Sonnet",
+        base_url="https://example.invalid/v1",
+        api_key_env="TEST_API_KEY",
+        temperature=0.0,
+    )
+    create_workspace = """python - <<'PY'
+from pathlib import Path
+
+files = {
+    "output/plan.md": "# Task Understanding\\n\\n## Input/Output Contract\\n\\n## Module Layout\\n\\n## Algorithm Choice\\n\\n## Implementation Steps\\n\\n## Validation Plan\\n\\n## Assumptions\\n",
+    "work/src/__init__.py": "",
+    "work/src/preprocessing.py": "def load_inputs():\\n    return None\\n",
+    "work/src/physics_model.py": "def forward_model(value):\\n    return value\\n",
+    "work/src/solvers.py": "def solve(value):\\n    return value\\n",
+    "work/src/visualization.py": "def summarize(value):\\n    return value\\n",
+    "work/main.py": "from pathlib import Path\\nimport numpy as np\\n\\n\\ndef main():\\n    Path('output').mkdir(parents=True, exist_ok=True)\\n    np.savez('output/reconstruction.npz', reconstruction=np.array([1.0], dtype=np.float32))\\n    print('native-main-ran')\\n\\n\\nif __name__ == '__main__':\\n    main()\\n",
+}
+
+for relative_path, content in files.items():
+    target = Path(relative_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding='utf-8')
+PY"""
+    config = ExecutorSessionConfig(
+        run_id="run-native-inspect",
+        env_hash="env-1",
+        workspace_root=tmp_path / "workspace",
+        model_config=model,
+        provider_extras={
+            "mock_native_inspect_outputs": [
+                ModelOutput.for_tool_call(
+                    model="mockllm/model",
+                    tool_name="bash",
+                    tool_arguments={"command": create_workspace},
+                ),
+                ModelOutput.for_tool_call(
+                    model="mockllm/model",
+                    tool_name="bash",
+                    tool_arguments={"command": "python work/main.py"},
+                ),
+                ModelOutput.for_tool_call(
+                    model="mockllm/model",
+                    tool_name="bash",
+                    tool_arguments={"command": "python evaluation/self_eval.py"},
+                ),
+                ModelOutput.for_tool_call(
+                    model="mockllm/model",
+                    tool_name="submit",
+                    tool_arguments={"answer": "native inspect complete"},
+                ),
+            ]
+        },
+    )
+
+    monkeypatch.setenv("TEST_API_KEY", "secret-value")
+    record = InspectBridgeAdapter(inspect_available=True).run(bundle, config, ["skill-a"])
+
+    assert record.metadata["native_agent_used"] is True
+    assert record.metadata["bridge_mode"] == "inspect_native_agent"
+    assert record.metadata["sdk_backend"] == "inspect_ai_native_local"
+    assert record.metadata["native_tool_trace_present"] is True
+    assert record.metadata["native_command_trace_present"] is True
+    assert record.metadata["public_self_eval_passed_post_run"] is True
+    assert record.metadata["plan_artifact_present"] is True
+    assert record.metadata["default_scientific_layout_present"] is True
+    assert "python work/main.py" in record.metadata["commands_run"]
+    assert "python evaluation/self_eval.py" in record.metadata["commands_run"]
+    assert "work/main.py" in record.metadata["files_written"]
+    assert "output/plan.md" in record.metadata["files_written"]
+    assert (tmp_path / "workspace" / "output" / "plan.md").exists()
+    assert (tmp_path / "workspace" / "output" / "reconstruction.npz").exists()
+    assert "native inspect complete" in record.stdout

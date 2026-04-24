@@ -31,16 +31,18 @@ available on `PATH`.
 
 - `environment.yml`
 - `scripts/create_dev_env.sh`
+- `scripts/run_tests.sh`
+- `scripts/run_task_register.sh`
+- `scripts/run_task_live.sh`
 - `scripts/print_env_info.py`
 
 ## Policy
 
 - run MyEvoSkill development and tests inside this dedicated environment
 - do not treat the dev environment as the task runtime environment
-- a repo-local conda prefix is acceptable when writing to the global conda env
-  path is undesirable
-- the repo-local `./.conda_env` may legitimately include optional bridge
-  dependencies such as `inspect_ai`
+- prefer a named system conda environment such as `myevoskill`
+- the default bootstrap script should create or update a named conda env,
+  not a repo-local `./.conda_env`
 - the repo-local `./.conda_env` may also include `claude-agent-sdk`, but live
   Claude SDK runs additionally require the external `claude` CLI
 - tests must therefore not assume optional packages are absent; missing-package
@@ -67,6 +69,26 @@ export ANTHROPIC_API_KEY="$MYEVOSKILL_CLAUDE_API_KEY"
 # If omitted, Claude Code CLI uses its current default model.
 # export MYEVOSKILL_CLAUDE_MODEL='sonnet'
 ```
+
+## Recommended Workflow
+
+Create or update the development environment:
+
+```bash
+./scripts/create_dev_env.sh
+conda activate myevoskill
+```
+
+Run tests and module entrypoints through the bash wrappers:
+
+```bash
+./scripts/run_tests.sh -q
+./scripts/run_task_register.sh --task-root ../tasks/conventional_ptychography --output-root .
+./scripts/run_task_live.sh --task-id conventional_ptychography --project-root .
+```
+
+The installed console scripts and `python -m ...` entrypoints remain available
+for compatibility, but they are no longer the primary documented workflow.
 
 ## Host Guidance
 

@@ -386,3 +386,110 @@ def test_run_registered_task_live_passes_allow_network_into_tool_policy(
 
     session_config = captured["session_config"]
     assert session_config.tool_policy["network_access"] is True
+
+
+def test_run_registered_task_live_uses_inspect_executor_when_requested(
+    tmp_path, monkeypatch
+):
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True, exist_ok=True)
+    task_root = tmp_path / "tasks" / "demo_task"
+    task_root.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "task_id": "demo_task",
+        "family": "optics",
+        "public_policy": {},
+        "source_task_dir": "../tasks/demo_task",
+    }
+    bundle = SimpleNamespace(root_dir=project_root / "artifacts" / "compiled" / "demo_task")
+    captured: dict[str, object] = {}
+
+    monkeypatch.setenv("OPENAI_API_KEY", "inspect-secret")
+    monkeypatch.setattr(
+        "myevoskill.live_runner.load_registered_manifest",
+        lambda task_id, *, project_root: manifest,
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.resolve_registered_task_root",
+        lambda manifest, *, project_root: task_root,
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.ensure_live_ready_manifest",
+        lambda manifest, *, task_root: None,
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.ensure_manifest_runtime_env",
+        lambda manifest, *, task_root, output_root: {
+            "backend": "venv_pip",
+            "env_hash": "env-1",
+            "requirements_path": str(task_root / "requirements.txt"),
+            "python_executable": str(Path(sys.executable).resolve()),
+            "ready": True,
+            "build_log_path": str(project_root / "artifacts" / "env_cache" / "build.log"),
+            "install_report_path": str(
+                project_root / "artifacts" / "env_cache" / "install_report.json"
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.TaskBundleCompiler.compile",
+        lambda self, *args, **kwargs: bundle,
+    )
+
+    class FakeInspectAdapter:
+        def run(self, bundle_value, session_config, skills):
+            captured["session_config"] = session_config
+            return RunRecord(
+                run_id=session_config.run_id,
+                task_id="demo_task",
+                provider="inspect_bridge",
+                env_hash=session_config.env_hash,
+                skills_active=skills,
+                workspace_root=session_config.workspace_root,
+                model_provider=session_config.model_config.provider_name,
+                model_name=session_config.model_config.model_name,
+                metadata={"protocol_status": "completed"},
+            )
+
+    monkeypatch.setattr("myevoskill.live_runner.InspectBridgeAdapter", FakeInspectAdapter)
+    monkeypatch.setattr(
+        "myevoskill.live_runner.manifest_proxy_spec",
+        lambda record, manifest: {},
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.ProxyVerifier.evaluate",
+        lambda self, record, spec: ProxyFeedback(task_id="demo_task", output_exists=True),
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.evaluate_manifest_run",
+        lambda task_root, record, manifest: JudgeResult(
+            task_id="demo_task",
+            all_metrics_passed=True,
+            metrics_actual={},
+            failed_metrics=[],
+            failure_tags=[],
+        ),
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.write_live_run_logs",
+        lambda log_dir, **kwargs: Path(log_dir),
+    )
+
+    result = run_registered_task_live(
+        "demo_task",
+        project_root=project_root,
+        executor_name="inspect",
+        model_provider="openai-compatible",
+        model_base_url="https://example.invalid/v1",
+        model_api_key_env="OPENAI_API_KEY",
+        model_name="gpt-test",
+        allow_network=True,
+    )
+
+    session_config = captured["session_config"]
+    assert result["executor_name"] == "inspect"
+    assert session_config.model_config.provider_name == "openai-compatible"
+    assert session_config.model_config.base_url == "https://example.invalid/v1"
+    assert session_config.model_config.api_key_env == "OPENAI_API_KEY"
+    assert session_config.model_config.model_name == "gpt-test"
+    assert session_config.tool_policy["network_access"] is True
