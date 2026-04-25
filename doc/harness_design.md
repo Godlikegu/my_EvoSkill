@@ -4,6 +4,50 @@ This document describes the design of the **clean** Claude-Code harness that
 lives under `MyEvoSkill/src/myevoskill/`.  It supersedes the legacy `executor.py`
 and ad-hoc scripts that were quarantined on the `01_feedback_iteration` branch.
 
+## 0. Current module layout (post-cleanup, master @ 46cef74)
+
+```
+src/myevoskill/
+├── __init__.py             re-exports the live API only
+├── cli.py                  register-task | run-task | run-batch
+├── registration.py         deterministic v2-only manifest builder (no LLM)
+├── concurrency/pool.py     run_tasks_parallel
+├── harness/                runner.py + hooks.py + plan_guard.py + prompts.py
+│                           + trajectory.py
+├── judge/bridge.py         JudgeRunner (subprocess) + JudgeFeedback
+├── workspace/              policy.py + builder.py
+└── (judge-adapter API, frozen for tasks/*/evaluation/judge_adapter.py)
+    models.py · judging.py · task_contract.py · task_runtime.py
+    resource_probe.py
+```
+
+The five "judge-adapter API" modules at the bottom of the tree are **frozen**:
+they are imported by every `tasks/*/evaluation/judge_adapter.py` and may only
+change in lock-step with all task adapters.  Everything else above is fair game
+for refactoring.
+
+## 0.1 Registration (`myevoskill.registration`)
+
+`register-task --task-id <id>` is now a pure, deterministic transform; it does
+not call any LLM and does not touch any task workspace.  Inputs are **only**:
+
+* `tasks/<id>/evaluation/task_contract.json` (v2 schema; required)
+* `tasks/<id>/evaluation/judge_adapter.py`   (must exist; not opened)
+
+It produces `registry/tasks/<id>.json`, with:
+
+* `public_policy.allow` / `public_policy.denylist` derived from
+  `files[].visibility` in the contract — anything marked `private` (e.g.
+  `data/ground_truth.npz`, `src/visualization.py`) lands on the denylist
+  automatically, so the agent **cannot** even reference those paths.
+* `runtime_layout.writable_paths` derived from `execution.writable_paths`.
+* `primary_output_path` lifted from `output.path`.
+
+If the contract is missing, the schema is wrong, or `judge_adapter.py` is
+absent, registration **refuses** (`RegistrationError`).  This is the only way a
+task gets registered, and it is what guarantees the harness's filesystem
+boundary is consistent with the contract the task author signed.
+
 The design directly answers the eight problems the user reported:
 
 | # | Reported problem | Where it is fixed |
