@@ -53,14 +53,34 @@ class WorkspaceBuild:
 
 
 def _resolve_task_root(repo_root: Path, manifest: Mapping[str, object]) -> Path:
+    """Resolve the on-disk task directory pointed to by the manifest.
+
+    Manifests written by ``register-task`` use ``source_task_dir`` paths that
+    are relative to the *repository root* (``MyEvoSkill/``), e.g.
+    ``"../tasks/cars_spectroscopy"`` to mean ``<repo_root>/../tasks/...``.
+    We try a few candidate base directories so manifests authored in older
+    layouts still resolve correctly.
+    """
+
     raw = str(manifest.get("source_task_dir") or "")
     if not raw:
         raise ValueError("manifest is missing source_task_dir")
     candidate = Path(raw)
-    if not candidate.is_absolute():
-        # Manifest source_task_dir is relative to MyEvoSkill/registry/tasks/.
-        candidate = (repo_root / "registry" / "tasks" / candidate).resolve()
-    return candidate.resolve()
+    if candidate.is_absolute():
+        return candidate.resolve()
+
+    bases = [
+        repo_root,                          # new layout: relative to MyEvoSkill/
+        repo_root / "registry" / "tasks",   # legacy layout
+        repo_root.parent,                   # in case manifest used "tasks/<id>"
+    ]
+    for base in bases:
+        resolved = (base / candidate).resolve()
+        if resolved.exists():
+            return resolved
+    # Fall back to the new-layout interpretation so the missing-dir error
+    # message points at the most likely intended location.
+    return (repo_root / candidate).resolve()
 
 
 def _read_readme(task_root: Path) -> str:

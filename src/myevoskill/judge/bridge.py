@@ -213,11 +213,24 @@ class JudgeRunner:
     # ------------------------------------------------------------ internals
 
     def _resolve_task_root(self) -> Path:
+        # Mirror :func:`workspace.builder._resolve_task_root` so the harness
+        # and judge always agree on where the task source lives. We try a few
+        # candidate base directories so manifests written by older versions of
+        # ``register-task`` still resolve.
         raw = str(self.manifest.get("source_task_dir") or "")
         candidate = Path(raw)
-        if not candidate.is_absolute():
-            candidate = (self.repo_root / "registry" / "tasks" / candidate).resolve()
-        return candidate.resolve()
+        if candidate.is_absolute():
+            return candidate.resolve()
+        bases = [
+            self.repo_root,
+            self.repo_root / "registry" / "tasks",
+            self.repo_root.parent,
+        ]
+        for base in bases:
+            resolved = (base / candidate).resolve()
+            if resolved.exists():
+                return resolved
+        return (self.repo_root / candidate).resolve()
 
     def _make_feedback(self, raw: Mapping[str, Any]) -> JudgeFeedback:
         all_passed = bool(raw.get("all_metrics_passed"))

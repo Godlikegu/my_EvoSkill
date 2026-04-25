@@ -97,9 +97,30 @@ def _run_one_subprocess(
 ) -> SubprocessOutcome:
     """Spawn one ``python -m myevoskill.cli run`` for *task_id*."""
 
-    # Per-run temp HOME to isolate the claude CLI's history.
+    # Per-run temp HOME to isolate the claude CLI's history. We *seed* the
+    # temp HOME from the user's real ~/.claude so that critical settings such
+    # as ``model`` and ``apiBaseUrl`` (used by 3rd-party Claude gateways) are
+    # preserved, but ``projects/`` and ``sessions/`` start empty so per-run
+    # conversation history is isolated and trivially deletable.
     tmp_home = Path(tempfile.mkdtemp(prefix=f"myevoskill_home_{task_id}_"))
     env = os.environ.copy()
+
+    real_home = Path(os.environ.get("USERPROFILE") or os.environ.get("HOME") or "")
+    real_claude = real_home / ".claude" if real_home else None
+    if real_claude is not None and real_claude.is_dir():
+        dest_claude = tmp_home / ".claude"
+        dest_claude.mkdir(parents=True, exist_ok=True)
+        # Whitelist the small files that hold model / endpoint configuration
+        # (anything else - sessions, projects, caches, plans - is intentionally
+        # NOT copied so we don't leak prior task context).
+        for fname in ("settings.json", "config.json"):
+            src_f = real_claude / fname
+            if src_f.exists() and src_f.is_file():
+                try:
+                    shutil.copy2(src_f, dest_claude / fname)
+                except OSError:
+                    pass
+
     env["HOME"] = str(tmp_home)
     env["USERPROFILE"] = str(tmp_home)  # Windows
     env["PYTHONIOENCODING"] = "utf-8"
