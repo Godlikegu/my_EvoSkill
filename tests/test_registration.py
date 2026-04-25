@@ -168,3 +168,119 @@ def test_missing_output_path_raises(tmp_path: Path):
 
     with pytest.raises(RegistrationError, match="contract.output.path is required"):
         register_task(repo_root=repo_root, task_id="demo", tasks_root=tasks_root)
+
+
+# --------------------------------------------------------- always-hidden paths
+
+
+def _patch_files(task_root: Path, new_files: list[dict]) -> None:
+    """Replace the ``files`` array in the contract while keeping everything else."""
+    contract_path = task_root / "evaluation" / "task_contract.json"
+    data = json.loads(contract_path.read_text(encoding="utf-8"))
+    data["files"] = new_files
+    contract_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def test_public_src_file_is_forced_private(tmp_path: Path):
+    """A task author who marks ``src/foo.py`` as public must NOT leak it.
+
+    The reference solution lives under ``src/``; exposing it would let the
+    agent trivially "hack" the task. The registrar downgrades such files to
+    the denylist and emits a warning.
+    """
+    repo_root = tmp_path / "repo"
+    tasks_root = tmp_path / "tasks"
+    repo_root.mkdir()
+    tasks_root.mkdir()
+    task_root = _write_v2_task(tasks_root, "demo")
+    _patch_files(
+        task_root,
+        [
+            {"id": "readme", "path": "README.md", "visibility": "public", "role": "task_description"},
+            {"id": "raw_data", "path": "data/raw_data.npz", "visibility": "public", "role": "input_data"},
+            # Deliberately mis-declared:
+            {"id": "leaky_src", "path": "src/visualization.py", "visibility": "public", "role": "metric_helper"},
+            {"id": "ground_truth", "path": "data/ground_truth.npz", "visibility": "private", "role": "reference_data"},
+        ],
+    )
+
+    result = register_task(repo_root=repo_root, task_id="demo", tasks_root=tasks_root)
+    pp = result.manifest["public_policy"]
+
+    assert "src/visualization.py" not in pp["public_data_allowlist"]
+    assert "src/visualization.py" in pp["public_data_denylist"]
+    assert any("always-hidden" in w for w in result.warnings)
+
+
+def test_public_notebook_is_forced_private(tmp_path: Path):
+    """``.ipynb`` files are reference notebooks and must never be public."""
+    repo_root = tmp_path / "repo"
+    tasks_root = tmp_path / "tasks"
+    repo_root.mkdir()
+    tasks_root.mkdir()
+    task_root = _write_v2_task(tasks_root, "demo")
+    (task_root / "notebooks").mkdir(exist_ok=True)
+    (task_root / "notebooks" / "demo.ipynb").write_text("{}", encoding="utf-8")
+    _patch_files(
+        task_root,
+        [
+            {"id": "readme", "path": "README.md", "visibility": "public", "role": "task_description"},
+            {"id": "raw_data", "path": "data/raw_data.npz", "visibility": "public", "role": "input_data"},
+            {"id": "leaky_nb", "path": "notebooks/demo.ipynb", "visibility": "public", "role": "task_description"},
+        ],
+    )
+
+    result = register_task(repo_root=repo_root, task_id="demo", tasks_root=tasks_root)
+    pp = result.manifest["public_policy"]
+
+    assert "notebooks/demo.ipynb" not in pp["public_data_allowlist"]
+    assert "notebooks/demo.ipynb" in pp["public_data_denylist"]
+
+
+def test_public_main_py_is_forced_private(tmp_path: Path):
+    """A top-level ``main.py`` is the canonical reference entrypoint."""
+    repo_root = tmp_path / "repo"
+    tasks_root = tmp_path / "tasks"
+    repo_root.mkdir()
+    tasks_root.mkdir()
+    task_root = _write_v2_task(tasks_root, "demo")
+    (task_root / "main.py").write_text("# reference solution\n", encoding="utf-8")
+    _patch_files(
+        task_root,
+        [
+            {"id": "readme", "path": "README.md", "visibility": "public", "role": "task_description"},
+            {"id": "raw_data", "path": "data/raw_data.npz", "visibility": "public", "role": "input_data"},
+            {"id": "leaky_main", "path": "main.py", "visibility": "public", "role": "reference_implementation"},
+        ],
+    )
+
+    result = register_task(repo_root=repo_root, task_id="demo", tasks_root=tasks_root)
+    pp = result.manifest["public_policy"]
+
+    assert "main.py" not in pp["public_data_allowlist"]
+    assert "main.py" in pp["public_data_denylist"]
+
+
+def test_public_plan_dir_is_forced_private(tmp_path: Path):
+    """Author plans under ``plan/`` are private brainstorm; never expose them."""
+    repo_root = tmp_path / "repo"
+    tasks_root = tmp_path / "tasks"
+    repo_root.mkdir()
+    tasks_root.mkdir()
+    task_root = _write_v2_task(tasks_root, "demo")
+    (task_root / "plan").mkdir(exist_ok=True)
+    (task_root / "plan" / "approach.md").write_text("# author plan\n", encoding="utf-8")
+    _patch_files(
+        task_root,
+        [
+            {"id": "readme", "path": "README.md", "visibility": "public", "role": "task_description"},
+            {"id": "raw_data", "path": "data/raw_data.npz", "visibility": "public", "role": "input_data"},
+            {"id": "leaky_plan", "path": "plan/approach.md", "visibility": "public", "role": "notes"},
+        ],
+    )
+
+    result = register_task(repo_root=repo_root, task_id="demo", tasks_root=tasks_root)
+    pp = result.manifest["public_policy"]
+
+    assert "plan/approach.md" not in pp["public_data_allowlist"]
+    assert "plan/approach.md" in pp["public_data_denylist"]

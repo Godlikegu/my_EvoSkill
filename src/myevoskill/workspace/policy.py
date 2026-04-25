@@ -23,13 +23,22 @@ from typing import Iterable, List, Mapping, Sequence
 # regardless of the task. They cover the standard hidden assets and are merged
 # with any task-specific denylist coming from the registry manifest.
 # These cover hidden task assets (ground truth, evaluation harness, reference
-# solutions). They are matched as substrings against tool inputs *in addition
-# to* the workspace-boundary check.  We deliberately do NOT include patterns
-# like ``/main.py`` or ``/src/`` here, because those legitimately occur inside
-# the agent's own writable workspace (e.g. ``work/main.py``).  The workspace
-# builder is responsible for not copying source-task implementation files into
-# the workspace; if it does its job, the agent simply cannot reach them, and
-# we don't need a substring guard.
+# solutions, reference plans, reference notebooks).  They are matched as
+# substrings against tool inputs *in addition to* the workspace-boundary
+# check.
+#
+# Three layers of defence keep the agent away from the reference solution:
+#   1. ``registration.py`` refuses to put files under ``src/``, ``notebooks/``,
+#      ``plan/`` or any ``main.py`` / ``*.ipynb`` into the public allowlist.
+#   2. ``workspace/builder.py`` only copies files that survive (1).
+#   3. ``hooks.make_pre_tool_use_hook`` blocks any tool input whose path
+#      contains a substring listed below, so even if the agent fabricates a
+#      path to ``../tasks/<id>/src/foo.py`` the call is rejected.
+#
+# We accept that the agent may legitimately want a top-level file called
+# ``main.py`` inside its own workspace; the substrings below intentionally
+# anchor on a path-separator (``/main.py``) so they only match references to
+# the *source-task* tree, not files the agent itself creates in its cwd.
 GLOBAL_FORBIDDEN_SUBSTRINGS: tuple[str, ...] = (
     "ground_truth",
     "evaluation/",
@@ -41,6 +50,22 @@ GLOBAL_FORBIDDEN_SUBSTRINGS: tuple[str, ...] = (
     "task_contract.public.json",
     "judge_adapter.py",
     "registration_contract.json",
+    # Reference solution / reference notebooks / reference plans.
+    "/src/",
+    "\\src\\",
+    "/notebooks/",
+    "\\notebooks\\",
+    "/plan/",
+    "\\plan\\",
+    # NOTE: We deliberately do NOT block ``main.py`` at runtime via a substring
+    # match. The contract's ``execution.entrypoint`` for many tasks is
+    # ``work/main.py``, which the agent legitimately creates. Reference
+    # ``main.py`` files under ``tasks/<id>/`` are already (a) excluded from
+    # the workspace by the builder and (b) outside the agent_root, so the
+    # path-prefix check in ``is_inside`` will deny them anyway. ``src/``,
+    # ``notebooks/``, ``plan/`` and ``.ipynb`` are still blocked here as a
+    # defence-in-depth in case a stale workspace ever contained one.
+    ".ipynb",
 )
 
 # Regexes matched against the *full* Bash command. We intentionally use simple,

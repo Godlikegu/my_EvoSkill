@@ -231,3 +231,44 @@ user's machine" requirement.
 All denials are visible to the agent as the SDK `permissionDecisionReason`
 string, **without** revealing thresholds, ground truth contents, or judge
 internals.
+
+## 9. Three-layer defence against reading the reference solution
+
+The agent is expected to discover its own method. The reference solution
+(`tasks/<id>/{src/, notebooks/, plan/, main.py, *.ipynb}`) must therefore be
+unreachable from inside the workspace.  Three independent layers guarantee
+this:
+
+1. **Registration-time hard rejection** (`registration.py`).
+   Author-provided contracts cannot mark `src/`, `notebooks/`, `plan/`,
+   `main.py` or any `*.ipynb` file as `public`. `_is_always_hidden` is
+   consulted *before* the per-file `visibility` flag, so even an honest
+   mistake in the contract is corrected automatically (and a warning is
+   emitted to `runtime_logs/`).
+2. **Build-time copy filter** (`workspace/builder.py`).
+   The workspace builder only copies files that are still on the public
+   allowlist after step (1). Hidden files are never materialised inside the
+   workspace tree.
+3. **Run-time substring guard** (`workspace/policy.py` →
+   `harness/hooks.py`).
+   `GLOBAL_FORBIDDEN_SUBSTRINGS` rejects any tool input whose path contains
+   `/src/`, `/notebooks/`, `/plan/`, `.ipynb`, `ground_truth`,
+   `evaluation/`, `judge_adapter.py`, etc., regardless of how the path was
+   constructed.  This catches paths the agent fabricates (e.g.
+   `../../tasks/<id>/src/foo.py`).
+
+`main.py` is intentionally **not** in the run-time substring denylist:
+the contract's own entrypoint is `work/main.py`, which the agent must be
+free to create.  Reference `tasks/<id>/main.py` is unreachable anyway
+because it sits outside the agent's workspace, and `policy.is_inside`
+denies any path that escapes `agent_root`.
+
+## 10. First-round plan.md authoring
+
+`PLAN_SEED` deliberately ships **without a templated `## Round 1` block**.
+The agent is told (via the system prompt and the first-round user prompt)
+that it must author a fresh `## Round 1` entry containing Hypothesis /
+Change / Verification *before* writing or running any code; the
+`PlanGuard` will refuse `Write` / `Edit` / `Bash` calls while `plan.md` is
+still older than the most recent code modification.  This makes the plan
+a real artefact of the agent's thinking, not a pre-filled stub.

@@ -42,6 +42,38 @@ CONTRACT_PUBLIC_REL = "evaluation/task_contract.public.json"
 JUDGE_ADAPTER_REL = "evaluation/judge_adapter.py"
 
 
+# Files matching any of these are *never* shipped to the agent, regardless of
+# what the task contract says.  They correspond to the reference solution and
+# author plans which would let the agent trivially "hack" the task.
+_ALWAYS_HIDDEN_PREFIXES: tuple[str, ...] = (
+    "src/",
+    "notebooks/",
+    "plan/",
+)
+_ALWAYS_HIDDEN_SUFFIXES: tuple[str, ...] = (
+    "/main.py",
+    ".ipynb",
+)
+
+
+def _is_always_hidden(path: str) -> bool:
+    """Return True iff *path* must never be exposed to the agent."""
+
+    if not path:
+        return False
+    norm = path.strip().lstrip("./").replace("\\", "/").lower()
+    if norm == "main.py":
+        return True
+    for prefix in _ALWAYS_HIDDEN_PREFIXES:
+        if norm.startswith(prefix):
+            return True
+    for suffix in _ALWAYS_HIDDEN_SUFFIXES:
+        if norm.endswith(suffix):
+            return True
+    return False
+
+
+
 # --------------------------------------------------------------------- errors
 
 
@@ -119,6 +151,19 @@ def _build_public_policy(
         visibility = str(entry.get("visibility") or "public").strip().lower()
         role = str(entry.get("role") or "").strip().lower()
         if visibility == "public":
+            # Hard rule first: reference solution / notebooks / author plan
+            # are NEVER allowed to be public, even if the contract says so
+            # (and even if the author miscategorised them as
+            # ``task_description``). Downgrade them to the denylist and emit
+            # a loud warning so the task author can fix the contract.
+            if _is_always_hidden(path):
+                warnings.append(
+                    f"file {path!r} declared public but matches always-hidden "
+                    f"prefix/suffix (src/, notebooks/, plan/, main.py, .ipynb); "
+                    f"forced to private."
+                )
+                denylist.append(path)
+                continue
             # The README is read by the workspace builder via _read_readme.
             # Don't put it in the data allowlist.
             if role == "task_description" or path.lower().endswith("readme.md"):
@@ -312,6 +357,17 @@ def register_task(
 
     warnings: list[str] = []
     public_policy = _build_public_policy(contract, warnings=warnings)
+
+    # Belt-and-braces: even if a future bug allowed an always-hidden path
+    # to slip through ``_build_public_policy``, fail loudly here instead of
+    # silently exposing the reference solution.
+    leaks = [p for p in public_policy["public_data_allowlist"] if _is_always_hidden(p)]
+    if leaks:
+        raise RegistrationError(
+            "internal invariant violated: the following paths must never "
+            "appear in public_data_allowlist (they expose the reference "
+            f"solution): {leaks}"
+        )
     runtime_layout = _build_runtime_layout(contract)
     primary_output = _primary_output_path(contract)
     runtime_env = _detect_runtime_env(

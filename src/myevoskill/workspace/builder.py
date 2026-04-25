@@ -103,9 +103,19 @@ def _sanitise_readme(text: str, readme_policy: Mapping[str, object]) -> str:
 
     # Always strip global forbidden substrings (case-insensitive).
     extra = list(remove_patterns)
+    # Substrings that, while forbidden as *paths*, would clobber too much
+    # legitimate prose if applied line-wise to a README. The README sanitiser
+    # skips them; the runtime PreToolUse hook still enforces them on actual
+    # tool inputs, which is what matters.
+    _README_SKIP = {
+        "/src/", "\\src\\",
+        "/notebooks/", "\\notebooks\\",
+        "/plan/", "\\plan\\",
+        "/main.py", "\\main.py",
+        ".ipynb",
+    }
     for sub in GLOBAL_FORBIDDEN_SUBSTRINGS:
-        # Skip noisy single-token entries that would clobber legitimate prose.
-        if sub in {"/src/", "\\src\\"}:
+        if sub in _README_SKIP:
             continue
         extra.append(re.escape(sub))
 

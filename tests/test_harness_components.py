@@ -47,6 +47,31 @@ def test_policy_blocks_forbidden_substring(tmp_path: Path) -> None:
     assert p.find_forbidden("workspace/work/output.npy") is None
 
 
+def test_policy_blocks_reference_solution_substrings(tmp_path: Path) -> None:
+    """The denylist must cover the entire reference solution: ``src/``,
+    ``notebooks/``, ``plan/`` (author plan, distinct from agent ``plan.md``),
+    ``main.py`` and ``*.ipynb``. These were previously only enforced at
+    registration time; we now enforce them at runtime too in case a stale
+    workspace ever contained one.
+    """
+    p = _policy(tmp_path)
+    # Reference Python source.
+    assert p.find_forbidden("../tasks/demo/src/visualization.py") is not None
+    assert p.find_forbidden("/abs/tasks/demo/src/main.py") is not None
+    # Reference notebooks.
+    assert p.find_forbidden("tasks/demo/notebooks/walkthrough.ipynb") is not None
+    assert p.find_forbidden("anything.ipynb") is not None
+    # Author plan/ folder.
+    assert p.find_forbidden("tasks/demo/plan/approach.md") is not None
+    # Reference entrypoint outside the workspace will be rejected by the
+    # ``is_inside`` boundary check, NOT by a substring match -- the agent's
+    # own ``work/main.py`` entrypoint must remain writable.
+    assert p.find_forbidden("tasks/demo/main.py") is None
+    assert p.find_forbidden("work/main.py") is None
+    # The agent's own plan.md is NOT a reference notebook -- different path.
+    assert p.find_forbidden("plan.md") is None
+
+
 def test_policy_is_inside_writable(tmp_path: Path) -> None:
     p = _policy(tmp_path)
     inside = p.agent_root / "work" / "main.py"
@@ -271,7 +296,7 @@ def test_pre_hook_blocks_code_when_plan_stale(tmp_path: Path) -> None:
             {
                 "tool_name": "Write",
                 "tool_input": {
-                    "file_path": str(policy.agent_root / "work" / "main.py"),
+                    "file_path": str(policy.agent_root / "work" / "solver.py"),
                     "content": "print(1)",
                 },
             },

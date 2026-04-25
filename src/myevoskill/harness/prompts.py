@@ -35,8 +35,10 @@ Workspace contract
   named in `meta_data.json:primary_output_path` (typically `output/...`).
 * The workspace is sandboxed: **anything outside the workspace is off-limits**.
   Filenames containing `ground_truth`, `evaluation/`, `task_contract.json`,
-  `judge_adapter.py`, `main.py`, `src/`, `notebooks/`, or `plan/` are blocked
-  by the harness regardless of where you encounter them. Do not try to
+  `judge_adapter.py`, `src/`, `notebooks/`, or `plan/` are blocked
+  by the harness regardless of where you encounter them. (You may freely
+  create your own ``work/main.py`` -- only *reference* ``main.py`` files
+  under ``tasks/<id>/`` are hidden from you.) Do not try to
   enumerate or guess at hidden files; they are deliberately removed.
 
 Iteration discipline
@@ -72,11 +74,20 @@ def initial_user_prompt(
         f"Workspace: `{workspace_root}` (your cwd)\n"
         f"Primary output: `{primary_output_rel}`\n"
         f"Wall-clock budget: {budget_seconds} seconds total across all rounds.\n\n"
-        "Step 1: read `README.md` and `meta_data.json`.\n"
-        "Step 2: write your initial `plan.md` (Round 1 block).\n"
-        "Step 3: implement, run, and write the primary output file.\n"
-        "When you're done, reply with the single word `READY` so the judge can"
-        " evaluate your output."
+        "Step 1: read `README.md` and `meta_data.json`. Then list `data/` to\n"
+        "        understand what inputs you actually have.\n"
+        "Step 2: open `plan.md` (the harness has seeded a template-only file).\n"
+        "        **Author your Round 1 block from scratch** under the existing\n"
+        "        guidance: a one-line summary, your Hypothesis about what the\n"
+        "        task needs, the single concrete Change you will make, and\n"
+        "        the Verification signal you will inspect. The harness will\n"
+        "        refuse any code edit or `python ...` run while plan.md is\n"
+        "        older than your last code modification, so always update\n"
+        "        plan.md *first*.\n"
+        "Step 3: implement in `work/`, run, and produce the primary output\n"
+        "        file at the path above.\n"
+        "When the output exists, reply with the single word `READY` so the\n"
+        "judge can evaluate it."
     )
 
 

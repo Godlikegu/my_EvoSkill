@@ -22,19 +22,26 @@ CODE_MODIFY_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 CODE_RUN_TOOLS = {"Bash"}
 
 PLAN_FILENAME = "plan.md"
+# The seed file is intentionally a *template only*: it explains the required
+# structure but does NOT pre-fill any "Round 1" entry.  The agent must author
+# its own Round 1 block before it is allowed to edit/run code (enforced by
+# PlanGuard.should_block).  This keeps the trajectory honest -- every plan
+# entry the agent produces is authentically its own reasoning, not a fill-in
+# of a template that was already on disk.
 PLAN_SEED = (
     "# Plan\n\n"
-    "Update this file **before** every coding action. Keep one entry per\n"
-    "iteration with the structure:\n\n"
-    "## Round <N> - <one line summary>\n"
-    "**Hypothesis:** what you think the failure mode was.\n"
-    "**Change:** the *minimal* edit you will make next.\n"
-    "**Verification:** the metric / signal you will inspect after running.\n"
-    "\n---\n\n"
-    "## Round 1 - Initial attempt\n"
-    "**Hypothesis:** TODO  \n"
-    "**Change:** TODO  \n"
-    "**Verification:** TODO  \n"
+    "Update this file **before** every coding action.  Append a new section\n"
+    "for every iteration using the structure below.  The harness refuses to\n"
+    "run or edit code while this file is older than your most recent code\n"
+    "modification.\n\n"
+    "Required structure for every entry:\n\n"
+    "    ## Round <N> - <one line summary>\n"
+    "    **Hypothesis:** what you think is wrong (or, for Round 1, what you\n"
+    "    think the task needs).\n"
+    "    **Change:** the *single* concrete edit you will make next.\n"
+    "    **Verification:** the signal you will inspect after running\n"
+    "    (printed value, output shape, sanity-check on a small slice, ...).\n\n"
+    "Write your Round 1 block below before you touch any code.\n"
 )
 
 
