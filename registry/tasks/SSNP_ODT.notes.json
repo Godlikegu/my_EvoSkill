@@ -1,0 +1,430 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\SSNP_ODT\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "raw_data",
+        "meta_data",
+        "requirements"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "raw_data",
+        "meta_data"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "biology",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative problem statement, public constraints, and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "measurements": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              8,
+              256,
+              256
+            ]
+          }
+        },
+        "id": "raw_data",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public multi-angle intensity measurements used as the reconstruction input.",
+        "visibility": "public"
+      },
+      {
+        "id": "meta_data",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public imaging and volume metadata including voxel size, wavelength, NA, and illumination count.",
+        "visibility": "public"
+      },
+      {
+        "id": "visualization_module",
+        "path": "src/visualization.py",
+        "role": "metric_helper",
+        "semantics": "Reference visualization utilities and scalar metric helpers for NCC and NRMSE.",
+        "visibility": "private"
+      },
+      {
+        "fields": {
+          "delta_n": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              308,
+              256,
+              256
+            ]
+          }
+        },
+        "id": "ground_truth",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference refractive-index-contrast volume used for evaluation.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metrics",
+          "file_id": "visualization_module",
+          "interface": "python_callable",
+          "invocation": {
+            "mode": "kwargs"
+          },
+          "result": {
+            "key": "ncc",
+            "mode": "mapping_key"
+          }
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              308,
+              256,
+              256
+            ],
+            "field": "delta_n",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "output"
+          },
+          "ground_truth": {
+            "expected_shape": [
+              308,
+              256,
+              256
+            ],
+            "field": "delta_n",
+            "file_id": "ground_truth",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc_vs_ref",
+        "threshold": 0.728
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metrics",
+          "file_id": "visualization_module",
+          "interface": "python_callable",
+          "invocation": {
+            "mode": "kwargs"
+          },
+          "result": {
+            "key": "nrmse",
+            "mode": "mapping_key"
+          }
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              308,
+              256,
+              256
+            ],
+            "field": "delta_n",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "output"
+          },
+          "ground_truth": {
+            "expected_shape": [
+              308,
+              256,
+              256
+            ],
+            "field": "delta_n",
+            "file_id": "ground_truth",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse_vs_ref",
+        "threshold": 0.114
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "delta_n",
+          "semantics": "Estimated 3D refractive-index-contrast volume aligned with the hidden reference.",
+          "shape": [
+            1,
+            308,
+            256,
+            256
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "SSNP_ODT",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      ".gitignore",
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "data/sample.tiff",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/comparison.png",
+      "evaluation/reference_outputs/ground_truth_slices.png",
+      "evaluation/reference_outputs/loss_history.npy",
+      "evaluation/reference_outputs/loss_history.png",
+      "evaluation/reference_outputs/measurements.png",
+      "evaluation/reference_outputs/reconstruction_slices.png",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "main.py",
+      "notebooks/SSNP_ODT.ipynb",
+      "oe-30-18-32808.pdf",
+      "parity_diagnostic.py",
+      "parity_test.py",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/__pycache__/visualization.cpython-310.pyc",
+      "src/__pycache__/visualization.cpython-314.pyc",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz",
+      "sample.tiff"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "delta_n": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            308,
+            256,
+            256
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "NA",
+        "description",
+        "n0",
+        "n_angles",
+        "res_um",
+        "ri_contrast_scale",
+        "tiff_scale",
+        "volume_shape",
+        "wavelength_um"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "measurements": {
+          "dtype": "float64",
+          "shape": [
+            1,
+            8,
+            256,
+            256
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\SSNP_ODT\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "ncc": 0.809,
+          "nrmse": 0.104
+        }
+      ],
+      "ncc_boundary": 0.728,
+      "nrmse_boundary": 0.114
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/comparison.png",
+      "reference_outputs/ground_truth_slices.png",
+      "reference_outputs/loss_history.npy",
+      "reference_outputs/loss_history.png",
+      "reference_outputs/measurements.png",
+      "reference_outputs/reconstruction_slices.png"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\SSNP_ODT\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\SSNP_ODT.json",
+  "metric_source_candidates": [
+    "visualization_module",
+    "visualization_module"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "measurements"
+    ],
+    "candidate_sources": [
+      "src/generate_data.py:np.savez"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [
+          "measurements"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": "data/raw_data.npz"
+      },
+      {
+        "fields": [
+          "delta_n"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": "data/ground_truth.npz"
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Biology",
+    "exists": true,
+    "headings": [
+      "SSNP Intensity Diffraction Tomography",
+      "Background",
+      "Problem Description",
+      "SSNP Forward Model",
+      "Inverse Problem",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/ground_truth.npz`",
+      "`data/meta_data.json`",
+      "Illumination Geometry",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "SSNP Intensity Diffraction Tomography"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\SSNP_ODT\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\SSNP_ODT\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\SSNP_ODT.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\e40c70d77fe81e44\\build.log",
+    "env_hash": "e40c70d77fe81e44",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\e40c70d77fe81e44\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\e40c70d77fe81e44\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "SSNP_ODT",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\SSNP_ODT",
+  "vendor_session_ref": {},
+  "warnings": []
+}

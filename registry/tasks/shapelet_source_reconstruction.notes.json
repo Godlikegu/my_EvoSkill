@@ -1,0 +1,614 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\shapelet_source_reconstruction\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "astronomy",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "background_rms": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "beta_decomp": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "beta_model_deconv": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "beta_model_lensing": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "beta_recon_deconv": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "beta_recon_lensing": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "coeff_scale_deconv": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "deltaPix": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "e1": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "e2": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "exp_time": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "fwhm_deconv": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "fwhm_lensing": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "gamma": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "gamma1": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "gamma2": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "high_res_factor": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_max_decomp": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_max_recon": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "numPix": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "source_x": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "source_y": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "theta_E": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "coeff_ngc": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              11476
+            ]
+          },
+          "image_reconstructed": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              264,
+              264
+            ]
+          },
+          "ngc_resized": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              264,
+              264
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "gamma": {
+            "dtype": "float64",
+            "shape": [
+              1
+            ]
+          },
+          "source_image": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              320,
+              320
+            ]
+          },
+          "source_x": {
+            "dtype": "float64",
+            "shape": [
+              1
+            ]
+          },
+          "source_y": {
+            "dtype": "float64",
+            "shape": [
+              1
+            ]
+          },
+          "theta_E": {
+            "dtype": "float64",
+            "shape": [
+              1
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              320,
+              320
+            ],
+            "field": "source_image",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              320,
+              320
+            ],
+            "field": "source_image",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.8597
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              320,
+              320
+            ],
+            "field": "source_image",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              320,
+              320
+            ],
+            "field": "source_image",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.0594
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "source_image",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            320,
+            320
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "shapelet_source_reconstruction",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/deconv_outputs.npz",
+      "evaluation/reference_outputs/fig1_shapelet_decomposition.png",
+      "evaluation/reference_outputs/fig2_lensing_simulation.png",
+      "evaluation/reference_outputs/fig3_source_reconstruction.png",
+      "evaluation/reference_outputs/fig4_deconvolution_setup.png",
+      "evaluation/reference_outputs/fig5_deconvolution_result.png",
+      "evaluation/reference_outputs/lensing_outputs.npz",
+      "evaluation/reference_outputs/meta_data.json",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/test_integration.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/shapelet_source_reconstruction.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "gamma": {
+          "dtype": "float64",
+          "shape": [
+            1
+          ]
+        },
+        "source_image": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            320,
+            320
+          ]
+        },
+        "source_x": {
+          "dtype": "float64",
+          "shape": [
+            1
+          ]
+        },
+        "source_y": {
+          "dtype": "float64",
+          "shape": [
+            1
+          ]
+        },
+        "theta_E": {
+          "dtype": "float64",
+          "shape": [
+            1
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "background_rms",
+        "beta_decomp",
+        "beta_model_deconv",
+        "beta_model_lensing",
+        "beta_recon_deconv",
+        "beta_recon_lensing",
+        "coeff_scale_deconv",
+        "deltaPix",
+        "e1",
+        "e2",
+        "exp_time",
+        "fwhm_deconv",
+        "fwhm_lensing",
+        "gamma",
+        "gamma1",
+        "gamma2",
+        "high_res_factor",
+        "n_max_decomp",
+        "n_max_recon",
+        "numPix",
+        "source_x",
+        "source_y",
+        "theta_E"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "coeff_ngc": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            11476
+          ]
+        },
+        "image_reconstructed": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            264,
+            264
+          ]
+        },
+        "ngc_resized": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            264,
+            264
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\shapelet_source_reconstruction\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "chi2_reduced": 0.9912,
+          "method": "WLS shapelet reconstruction through lensing (n_max=20, beta=0.15, 5x supersampling)",
+          "ncc_vs_ref": 0.9552,
+          "nrmse_vs_ref": 0.054
+        },
+        {
+          "chi2_reduced": 0.9963,
+          "method": "WLS shapelet deconvolution without lensing (n_max=20, beta=0.3, 5x supersampling)",
+          "ncc_vs_ref": 0.7428,
+          "nrmse_vs_ref": 0.2094
+        }
+      ],
+      "ncc_boundary": 0.8597,
+      "nrmse_boundary": 0.0594
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/deconv_outputs.npz",
+      "reference_outputs/fig1_shapelet_decomposition.png",
+      "reference_outputs/fig2_lensing_simulation.png",
+      "reference_outputs/fig3_source_reconstruction.png",
+      "reference_outputs/fig4_deconvolution_setup.png",
+      "reference_outputs/fig5_deconvolution_result.png",
+      "reference_outputs/lensing_outputs.npz",
+      "reference_outputs/meta_data.json",
+      "reference_outputs/metrics.json"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\shapelet_source_reconstruction\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\shapelet_source_reconstruction.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "coeff_ngc",
+      "ngc_square",
+      "ngc_conv",
+      "ngc_resized",
+      "image_reconstructed"
+    ],
+    "candidate_sources": [
+      "src/generate_data.py:np.savez"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [
+          "coeff_ngc",
+          "ngc_square",
+          "ngc_conv",
+          "ngc_resized",
+          "image_reconstructed"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      },
+      {
+        "fields": [
+          "image_hr_nolens",
+          "image_hr_lensed",
+          "image_hr_conv",
+          "image_no_noise",
+          "image_real",
+          "model_lens",
+          "residuals_lens",
+          "source_recon_2d",
+          "param_lens"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      },
+      {
+        "fields": [
+          "image_hr_dc",
+          "image_hr_conv_dc",
+          "image_no_noise_dc",
+          "image_real_dc",
+          "model_dc",
+          "residuals_dc",
+          "source_deconv_2d",
+          "param_dc"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "astronomy",
+    "exists": true,
+    "headings": [
+      "Shapelet Source Reconstruction",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Shapelet Source Reconstruction"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\shapelet_source_reconstruction\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\shapelet_source_reconstruction\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\shapelet_source_reconstruction.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\5891f5305b3719d7\\build.log",
+    "env_hash": "5891f5305b3719d7",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\5891f5305b3719d7\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\5891f5305b3719d7\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "shapelet_source_reconstruction",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\shapelet_source_reconstruction",
+  "vendor_session_ref": {},
+  "warnings": []
+}

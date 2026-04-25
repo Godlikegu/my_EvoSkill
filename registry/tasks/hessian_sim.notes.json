@@ -1,0 +1,647 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\hessian_sim\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_metadata_488OTF_512_tif",
+        "data_metadata_config_json",
+        "data_observation_Simulation_twobeam_noise_NA0_9_tif",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_metadata_488OTF_512_tif",
+        "data_metadata_config_json",
+        "data_observation_Simulation_twobeam_noise_NA0_9_tif",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "biology_super_resolution_microscopy",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "frames_per_timepoint": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "image_size_px": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          },
+          "modality": {
+            "dtype": "<U48",
+            "shape": []
+          },
+          "n_timepoints": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "nangles": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "nphases": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "numerical_aperture": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "otf_model": {
+            "dtype": "<U68",
+            "shape": []
+          },
+          "pixel_size_nm": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "raw_bit_depth": {
+            "dtype": "<U19",
+            "shape": []
+          },
+          "spjg": {
+            "dtype": "int64",
+            "shape": [
+              3
+            ]
+          },
+          "synthetic_otf": {
+            "dtype": "bool",
+            "shape": []
+          },
+          "total_phase_range_rad": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "wavelength_nm": {
+            "dtype": "int64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_metadata_488OTF_512_tif",
+        "path": "data/metadata/488OTF_512.tif",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "background_au": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "beishu_an": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "beishu_re": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "camera_pixel_size_nm": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "description": {
+            "dtype": "<U123",
+            "shape": []
+          },
+          "detection_NA": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "excitation_NA": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "fanwei": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "fluorescence_range_au": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          },
+          "gaussian_noise_sd_au": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "ground_truth": {
+            "dtype": "<U70",
+            "shape": []
+          },
+          "hessian_lambda": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "hessian_mu": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "hessian_n_iter": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "hessian_sigma_z": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "nangles": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "noise_model": {
+            "dtype": "<U70",
+            "shape": []
+          },
+          "nphases": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "objective": {
+            "dtype": "<U33",
+            "shape": []
+          },
+          "phase_regulation": {
+            "dtype": "<U4",
+            "shape": []
+          },
+          "phase_step_ratios": {
+            "dtype": "int64",
+            "shape": [
+              3
+            ]
+          },
+          "specimen_pixel_size_nm": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "synthetic_image_size": {
+            "dtype": "<U46",
+            "shape": []
+          },
+          "wavelength_nm": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "wiener_parameter": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_metadata_config_json",
+        "path": "data/metadata/config.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_observation_Simulation_twobeam_noise_NA0_9_tif",
+        "path": "data/observation/Simulation_twobeam_noise_NA0.9.tif",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "raw_frames": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              72,
+              256,
+              256
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "data": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              12,
+              512,
+              512
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "evaluation/reference_outputs/hessian_sim.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              12,
+              512,
+              512
+            ],
+            "field": "data",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              12,
+              512,
+              512
+            ],
+            "field": "data",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.8808362149410938
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              12,
+              512,
+              512
+            ],
+            "field": "data",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              12,
+              512,
+              512
+            ],
+            "field": "data",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.06867061455691535
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "data",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            12,
+            512,
+            512
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "hessian_sim",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/meta_data.json",
+      "data/metadata/488OTF_512.tif",
+      "data/metadata/config.json",
+      "data/observation/Simulation_twobeam_noise_NA0.9.tif",
+      "data/raw_data.npz",
+      "docs/problem_definition.md",
+      "docs/solution_plan.md",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/fixtures/back_diff.npz",
+      "evaluation/fixtures/dft_conv.npz",
+      "evaluation/fixtures/estimate_modulation_and_phase.npz",
+      "evaluation/fixtures/estimate_sim_parameters.npz",
+      "evaluation/fixtures/forward_diff.npz",
+      "evaluation/fixtures/generate_fixtures.py",
+      "evaluation/fixtures/hessian_denoise.npz",
+      "evaluation/fixtures/pad_to_size.npz",
+      "evaluation/fixtures/physics_model.npz",
+      "evaluation/fixtures/running_average.npz",
+      "evaluation/fixtures/shift_otf.npz",
+      "evaluation/fixtures/tv_denoise.npz",
+      "evaluation/fixtures/wiener_sim_reconstruct.npz",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/comparison.png",
+      "evaluation/reference_outputs/hessian_sim.npz",
+      "evaluation/reference_outputs/line_profiles.png",
+      "evaluation/reference_outputs/running_avg_hessian.npz",
+      "evaluation/reference_outputs/running_avg_wiener.npz",
+      "evaluation/reference_outputs/sim_parameters.npz",
+      "evaluation/reference_outputs/tv_sim.npz",
+      "evaluation/reference_outputs/wiener_sim.npz",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/conftest.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "main.py",
+      "notebook/tutorial.ipynb",
+      "notebooks/hessian_sim.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "results/comparison.png",
+      "results/hessian_vs_tv.png",
+      "results/line_profiles.png",
+      "src/__init__.py",
+      "src/physics.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solver.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "meta_data.json",
+      "metadata/488OTF_512.tif",
+      "metadata/config.json",
+      "observation/Simulation_twobeam_noise_NA0.9.tif",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {},
+      "exists": false
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "frames_per_timepoint",
+        "image_size_px",
+        "modality",
+        "n_timepoints",
+        "nangles",
+        "nphases",
+        "numerical_aperture",
+        "otf_model",
+        "pixel_size_nm",
+        "raw_bit_depth",
+        "spjg",
+        "synthetic_otf",
+        "total_phase_range_rad",
+        "wavelength_nm"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "raw_frames": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            72,
+            256,
+            256
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\hessian_sim\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "Hessian-SIM denoise vs Wiener-SIM reference",
+          "ncc_vs_ref": 0.9787069054901042,
+          "nrmse_vs_ref": 0.06242783141537759
+        },
+        {
+          "method": "TV-SIM denoise vs Wiener-SIM reference",
+          "ncc_vs_ref": 0.9996028817250916,
+          "nrmse_vs_ref": 0.008626522829627326
+        }
+      ],
+      "ncc_boundary": 0.8808362149410938,
+      "nrmse_boundary": 0.06867061455691535
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/comparison.png",
+      "reference_outputs/hessian_sim.npz",
+      "reference_outputs/line_profiles.png",
+      "reference_outputs/running_avg_hessian.npz",
+      "reference_outputs/running_avg_wiener.npz",
+      "reference_outputs/sim_parameters.npz",
+      "reference_outputs/tv_sim.npz",
+      "reference_outputs/wiener_sim.npz"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\hessian_sim\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\hessian_sim.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "data"
+    ],
+    "candidate_sources": [
+      "main.py:np.savez"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [
+          "data"
+        ],
+        "file": "main.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "wiener_sim.npz"
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "hessian_sim.npz"
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "tv_sim.npz"
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "running_avg_wiener.npz"
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "running_avg_hessian.npz"
+      },
+      {
+        "fields": [
+          "zuobiaox",
+          "zuobiaoy",
+          "c6",
+          "angle6"
+        ],
+        "file": "main.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "biology / super-resolution microscopy",
+    "exists": true,
+    "headings": [
+      "Hessian Structured Illumination Microscopy",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/meta_data.json`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Hessian Structured Illumination Microscopy"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\hessian_sim\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\hessian_sim\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\hessian_sim.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\3b10da113c29937a\\build.log",
+    "env_hash": "3b10da113c29937a",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\3b10da113c29937a\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\3b10da113c29937a\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "hessian_sim",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\hessian_sim",
+  "vendor_session_ref": {},
+  "warnings": []
+}

@@ -1,0 +1,532 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\lucky_imaging\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "astronomy",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "bit_depth": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "color_mode": {
+            "dtype": "<U3",
+            "shape": []
+          },
+          "description": {
+            "dtype": "<U66",
+            "shape": []
+          },
+          "fps": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "height": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_channels": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_frames": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "source_file": {
+            "dtype": "<U15",
+            "shape": []
+          },
+          "source_format": {
+            "dtype": "<U3",
+            "shape": []
+          },
+          "width": {
+            "dtype": "int64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "frames": {
+            "dtype": "uint8",
+            "shape": [
+              1,
+              101,
+              960,
+              1280,
+              3
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "stacked": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              954,
+              1275,
+              3
+            ]
+          }
+        },
+        "id": "baseline_reference",
+        "path": "data/baseline_reference.npz",
+        "role": "reference_data",
+        "semantics": "Hidden stacked reference image used for evaluation.",
+        "visibility": "private"
+      },
+      {
+        "fields": {
+          "__array__": {
+            "dtype": "uint8",
+            "shape": [
+              958,
+              1276,
+              3
+            ]
+          }
+        },
+        "id": "best_frame_reference",
+        "path": "evaluation/reference_outputs/best_frame.npy",
+        "role": "reference_data",
+        "semantics": "Hidden best single frame used for sharpness comparison.",
+        "visibility": "private"
+      },
+      {
+        "fields": {
+          "best_frame": {
+            "dtype": "uint8",
+            "shape": [
+              958,
+              1276,
+              3
+            ]
+          }
+        },
+        "id": "best_frame_reference_npz",
+        "path": "evaluation/reference_outputs/task_contract_refs_best_frame.npz",
+        "role": "reference_data",
+        "semantics": "Generated hidden best-frame reference used for metric binding.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              954,
+              1275,
+              3
+            ],
+            "field": "stacked",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              954,
+              1275,
+              3
+            ],
+            "field": "stacked",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.9683
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              954,
+              1275,
+              3
+            ],
+            "field": "stacked",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              954,
+              1275,
+              3
+            ],
+            "field": "stacked",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.0253
+      },
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "best_frame": {
+            "expected_shape": [
+              958,
+              1276,
+              3
+            ],
+            "field": "best_frame",
+            "file_id": "best_frame_reference_npz",
+            "preprocess": "identity",
+            "source": "file"
+          },
+          "stacked": {
+            "expected_shape": [
+              954,
+              1275,
+              3
+            ],
+            "field": "stacked",
+            "preprocess": "identity",
+            "source": "output"
+          }
+        },
+        "name": "sharpness_ratio_vs_best",
+        "threshold": 1.5
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "stacked",
+          "semantics": "Final lucky-imaging stacked output.",
+          "shape": [
+            954,
+            1275,
+            3
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "lucky_imaging",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/baseline_reference.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/best_frame.npy",
+      "evaluation/reference_outputs/global_shifts.npy",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/quality_scores.npy",
+      "evaluation/reference_outputs/simple_mean.npy",
+      "evaluation/reference_outputs/sorted_indices.npy",
+      "evaluation/reference_outputs/stacked.npy",
+      "evaluation/reference_outputs/stacked_raw.npy",
+      "evaluation/reference_outputs/task_contract_refs_best_frame.npz",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "main.py",
+      "notebooks/lucky_imaging.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "baseline_reference.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {},
+      "exists": false
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "bit_depth",
+        "color_mode",
+        "description",
+        "fps",
+        "height",
+        "n_channels",
+        "n_frames",
+        "source_file",
+        "source_format",
+        "width"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "frames": {
+          "dtype": "uint8",
+          "shape": [
+            1,
+            101,
+            960,
+            1280,
+            3
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\lucky_imaging\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary",
+      "sharpness_ratio_vs_best_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "PlanetarySystemStacker full pipeline (reference)",
+          "ncc_vs_ref": 1.0,
+          "nrmse_vs_ref": 0.0,
+          "sharpness_ratio_vs_best": 3.0
+        },
+        {
+          "method": "best single frame (trivial baseline)",
+          "ncc_vs_ref": 0.9683,
+          "nrmse_vs_ref": 0.0253,
+          "sharpness_ratio_vs_best": 1.0
+        }
+      ],
+      "ncc_boundary": 0.9683,
+      "nrmse_boundary": 0.0253,
+      "sharpness_definition": "Laplacian variance of the luminance channel: std(cv2.Laplacian(mono_uint8, cv2.CV_64F)). sharpness_ratio_vs_best = sharpness(output) / sharpness(best_frame), where best_frame is evaluation/reference_outputs/best_frame.npy.",
+      "sharpness_ratio_vs_best_boundary": 1.5
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/best_frame.npy",
+      "reference_outputs/global_shifts.npy",
+      "reference_outputs/metrics.json",
+      "reference_outputs/quality_scores.npy",
+      "reference_outputs/simple_mean.npy",
+      "reference_outputs/sorted_indices.npy",
+      "reference_outputs/stacked.npy",
+      "reference_outputs/stacked_raw.npy",
+      "reference_outputs/task_contract_refs_best_frame.npz"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\lucky_imaging\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\lucky_imaging.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Astronomy",
+    "exists": true,
+    "headings": [
+      "Lucky Imaging: Planetary Surface Reconstruction",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "`raw_data.npz`",
+      "`baseline_reference.npz`",
+      "`meta_data.json`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "** a single reconstructed image at 16-bit dynamic range.",
+    "title": "Lucky Imaging: Planetary Surface Reconstruction"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\lucky_imaging\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\lucky_imaging\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\lucky_imaging.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\2751fcf3bfef413c\\build.log",
+    "env_hash": "2751fcf3bfef413c",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\2751fcf3bfef413c\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\2751fcf3bfef413c\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "lucky_imaging",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\lucky_imaging",
+  "vendor_session_ref": {},
+  "warnings": []
+}

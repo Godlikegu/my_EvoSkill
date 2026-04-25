@@ -1,0 +1,513 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\s2ism\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "biology",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "Nx": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "Nz": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "beta_deg": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "detector_N": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "gamma_deg": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "intensity_filament_range": {
+            "dtype": "float64",
+            "shape": [
+              2
+            ]
+          },
+          "mask_sampling": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_filament": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "na": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "noise_model": {
+            "dtype": "<U7",
+            "shape": []
+          },
+          "optimal_bkg_plane_nm": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "pxsizex_nm": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "radius_filament_nm": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "random_seed": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "refractive_index": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "signal_level": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "wl_em_nm": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "wl_ex_nm": {
+            "dtype": "int64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "measurements": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              201,
+              201,
+              25
+            ]
+          },
+          "psf": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              2,
+              145,
+              145,
+              25
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "ground_truth": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              2,
+              201,
+              201
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              2,
+              201,
+              201
+            ],
+            "field": "ground_truth",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              2,
+              201,
+              201
+            ],
+            "field": "ground_truth",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.809511
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              2,
+              201,
+              201
+            ],
+            "field": "ground_truth",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              2,
+              201,
+              201
+            ],
+            "field": "ground_truth",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.159389
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "ground_truth",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            2,
+            201,
+            201
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "s2ism",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/fixtures/gaussian_2d.npz",
+      "evaluation/fixtures/loss_shifts.npz",
+      "evaluation/fixtures/mirror_matrix.npz",
+      "evaluation/fixtures/partial_conv.npz",
+      "evaluation/fixtures/rect_func.npz",
+      "evaluation/fixtures/rotation_matrix.npz",
+      "evaluation/fixtures/scalar_psf.npz",
+      "evaluation/fixtures/shift_matrix.npz",
+      "evaluation/fixtures/transform_shift_vectors.npz",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/reconstruction.npz",
+      "evaluation/reference_outputs/s2ism_result.png",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/test_generate_data.py",
+      "evaluation/tests/test_parity.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "main.py",
+      "notebooks/s2ism.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "ground_truth": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            2,
+            201,
+            201
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "Nx",
+        "Nz",
+        "beta_deg",
+        "detector_N",
+        "gamma_deg",
+        "intensity_filament_range",
+        "mask_sampling",
+        "n_filament",
+        "na",
+        "noise_model",
+        "optimal_bkg_plane_nm",
+        "pxsizex_nm",
+        "radius_filament_nm",
+        "random_seed",
+        "refractive_index",
+        "signal_level",
+        "wl_em_nm",
+        "wl_ex_nm"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "measurements": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            201,
+            201,
+            25
+          ]
+        },
+        "psf": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            2,
+            145,
+            145,
+            25
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\s2ism\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "s2ISM ML-EM (50 iterations)",
+          "ncc_vs_ref": 0.8994570116433562,
+          "nrmse_vs_ref": 0.1448993456717419
+        },
+        {
+          "method": "ISM sum (confocal-like)",
+          "ncc_vs_ref": 0.518547858783477,
+          "nrmse_vs_ref": 0.4661139910361108
+        }
+      ],
+      "ncc_boundary": 0.809511,
+      "nrmse_boundary": 0.159389
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/reconstruction.npz",
+      "reference_outputs/s2ism_result.png"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\s2ism\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\s2ism.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "reconstruction"
+    ],
+    "candidate_sources": [
+      "main.py:np.savez"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [
+          "reconstruction"
+        ],
+        "file": "main.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      },
+      {
+        "fields": [
+          "measurements",
+          "psf"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      },
+      {
+        "fields": [
+          "ground_truth"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "biology",
+    "exists": true,
+    "headings": [
+      "s2ISM: Scalable Structured Image Scanning Microscopy",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "Reconstructed 3-D object $\\hat{x}$ of shape $(N_z, N_y, N_x)$.",
+    "title": "s2ISM: Scalable Structured Image Scanning Microscopy"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\s2ism\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\s2ism\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\s2ism.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\c03d06be66f7de59\\build.log",
+    "env_hash": "c03d06be66f7de59",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\c03d06be66f7de59\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\c03d06be66f7de59\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "s2ism",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\s2ism",
+  "vendor_session_ref": {},
+  "warnings": []
+}

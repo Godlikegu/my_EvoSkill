@@ -25,12 +25,19 @@ from types import SimpleNamespace
 from typing import Any, AsyncIterator, Callable, Dict, Mapping, Optional, Sequence
 
 from .envs import python_executable_path_entries
+from .judge_runner import invoke_judge_runner
 from .model_provider import (
     ClaudeSDKAdapter,
     CustomHTTPAdapter,
     OpenAICompatibleAdapter,
 )
-from .models import EffectiveRuntimePolicy, ExecutorSessionConfig, RunRecord, TaskBundle
+from .models import (
+    EffectiveRuntimePolicy,
+    ExecutorSessionConfig,
+    JudgeResult,
+    RunRecord,
+    TaskBundle,
+)
 from .task_contract import (
     load_public_task_contract_from_root,
     output_field_map,
@@ -80,12 +87,14 @@ class ClaudeSDKExecutionError(RuntimeError):
         sdk_messages: Optional[list[Any]] = None,
         result_text: str = "",
         diagnostics: Optional[dict[str, Any]] = None,
+        private_state: Optional[dict[str, Any]] = None,
     ) -> None:
         super().__init__(message)
         self.error_type = error_type
         self.sdk_messages = list(sdk_messages or [])
         self.result_text = result_text
         self.diagnostics = dict(diagnostics or {})
+        self.private_state = dict(private_state or {})
 
 
 class ExecutorAdapter(ABC):
@@ -1089,7 +1098,9 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
     NETWORK_ENABLED_ALLOWED_TOOLS = ["WebFetch", "WebSearch"]
     DEFAULT_DISALLOWED_TOOLS = ["WebFetch", "WebSearch", "TodoWrite"]
     SUBMISSION_TOOL_NAMES = ["check_ready", "submit_result"]
+    HIDDEN_JUDGE_TOOL_NAMES = ["submit_result"]
     SUBMISSION_SERVER_NAME = "myevoskill_harness"
+    HIDDEN_JUDGE_SERVER_NAME = "myevoskill_hidden_judge"
     DEFAULT_BASH_ALLOWED_PREFIXES = [
         "python",
         "python3",
@@ -1116,6 +1127,13 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         "pip install",
         "conda ",
     ]
+    WORKSPACE_FEEDBACK_SCOPE = "public_self_check_and_policy_denials"
+    WORKSPACE_HARNESS_FEEDBACK_MODE = "bash_policy_denial_repair"
+    HIDDEN_JUDGE_FEEDBACK_SCOPE = "hidden_judge_pass_fail_and_policy_denials"
+    HIDDEN_JUDGE_HARNESS_FEEDBACK_MODE = "hidden_judge_submit_pass_fail_only"
+    HIDDEN_JUDGE_AGENT_FEEDBACK_MODE = "pass_fail_only"
+    WORKSPACE_PLAN_PATH = "output/plan.md"
+    WORKSPACE_POLICY_REPAIR_INSTRUCTION = "仅在 workspace_root 和允许写入目录内使用 Bash。"
 
     def run(
         self,
@@ -1174,11 +1192,12 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         prompt_mode = self._resolve_workspace_prompt_mode(session_config)
         completion_policy = self._resolve_workspace_completion_policy(session_config)
         self._seed_workspace_scaffold(runtime_paths)
-        self._install_public_self_eval_runtime(
-            task_spec=task_spec,
-            runtime_paths=runtime_paths,
-            tool_policy=tool_policy,
-        )
+        if stop_oracle != "hidden_judge_submit":
+            self._install_public_self_eval_runtime(
+                task_spec=task_spec,
+                runtime_paths=runtime_paths,
+                tool_policy=tool_policy,
+            )
         base_prompt = self._build_workspace_agent_prompt(
             task_bundle,
             active_skills,
@@ -1207,8 +1226,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         transcript_lines = [
             f"provider={self.provider_name}",
             "sdk_backend=claude_sdk",
-            "feedback_scope=none",
-            "harness_feedback_mode=none",
+            f"feedback_scope={self._workspace_feedback_scope(stop_oracle)}",
+            f"harness_feedback_mode={self._workspace_harness_feedback_mode(stop_oracle)}",
             f"agent_stop_policy={self._agent_stop_policy(stop_oracle)}",
             f"stop_oracle={stop_oracle}",
             f"workspace_prompt_mode={prompt_mode}",
@@ -1241,10 +1260,14 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         final_files_written: list[str] = []
         commands_run: list[str] = []
         workspace_write_violations: list[dict[str, Any]] = []
+        workspace_policy_denials: list[dict[str, Any]] = []
         iteration_count = 0
         trajectory_rounds: list[dict[str, Any]] = []
         final_error_info: dict[str, Any] = {}
         final_submission_state = self._empty_submission_state()
+        private_submission_state = self._empty_private_submission_state()
+        final_hidden_judge_result: Optional[JudgeResult] = None
+        final_plan_feedback: Optional[dict[str, Any]] = None
         run_failure_reason = ""
         output_contract_satisfied_post_run = False
         entrypoint_run_seen_in_trace = False
@@ -1252,6 +1275,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         final_provider_session_id = session_config.run_id
         execution_deadline = time.monotonic() + max(1, int(policy.execution_budget_seconds))
         round_index = 1
+        previous_feedback: Optional[dict[str, Any]] = None
+        previous_summary: Optional[dict[str, Any]] = None
 
         while configured_max_iterations is None or round_index <= configured_max_iterations:
             remaining_budget_seconds = max(
@@ -1275,7 +1300,12 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 min(int(policy.model_timeout_seconds), remaining_budget_seconds),
             )
             iteration_count = round_index
-            round_prompt = base_prompt
+            round_prompt = self._compose_workspace_sdk_round_prompt(
+                base_prompt=base_prompt,
+                round_index=round_index,
+                previous_feedback=previous_feedback,
+                previous_summary=previous_summary,
+            )
             (workspace / f"agent_prompt_round_{round_index}.txt").write_text(
                 round_prompt,
                 encoding="utf-8",
@@ -1301,6 +1331,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             response_error: Optional[ClaudeSDKExecutionError] = None
             try:
                 response_payload, response_metadata = self._generate_workspace_sdk_response(
+                    task_bundle=task_bundle,
                     session_config=session_config,
                     task_spec=task_spec,
                     runtime_paths=runtime_paths,
@@ -1340,36 +1371,84 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             sdk_diagnostics = dict(response_metadata.get("sdk_diagnostics", {}))
             raw_result_text = str(response_metadata.get("raw_response_text", ""))
             vendor_session_ref = dict(response_metadata.get("vendor_session_ref", {}))
+            round_private_submission_state = self._merge_private_submission_state(
+                self._empty_private_submission_state(),
+                response_metadata.pop("private_submission_state", {}),
+            )
             if response_error is not None:
                 sdk_messages = list(response_error.sdk_messages)
                 sdk_diagnostics = dict(response_error.diagnostics)
                 raw_result_text = str(response_error.result_text or "")
                 vendor_session_ref = dict(sdk_diagnostics.get("vendor_session_ref", {}))
+                round_private_submission_state = self._merge_private_submission_state(
+                    round_private_submission_state,
+                    getattr(response_error, "private_state", {}),
+                )
+            private_submission_state = self._merge_private_submission_state(
+                private_submission_state,
+                round_private_submission_state,
+            )
+            latest_private_judge_result = self._latest_private_judge_result(round_private_submission_state)
+            if latest_private_judge_result is not None:
+                final_hidden_judge_result = latest_private_judge_result
+            sanitized_sdk_messages = self._sanitize_workspace_visible_payload(
+                sdk_messages,
+                workspace_root=workspace,
+            )
+            sanitized_sdk_diagnostics = self._sanitize_workspace_visible_payload(
+                sdk_diagnostics,
+                workspace_root=workspace,
+            )
+            sanitized_vendor_session_ref = self._sanitize_workspace_visible_payload(
+                vendor_session_ref,
+                workspace_root=workspace,
+            )
+            sanitized_raw_result_text = self._sanitize_workspace_visible_payload(
+                raw_result_text,
+                workspace_root=workspace,
+            )
 
-            round_trace["sdk_messages"] = list(sdk_messages)
-            round_trace["vendor_session_ref"] = dict(vendor_session_ref)
-            round_trace["raw_result_text"] = raw_result_text
+            round_trace["sdk_messages"] = list(sanitized_sdk_messages)
+            round_trace["vendor_session_ref"] = dict(sanitized_vendor_session_ref)
+            round_trace["raw_result_text"] = sanitized_raw_result_text
             if sdk_diagnostics:
-                round_trace["claude_diagnostics"] = dict(sdk_diagnostics)
+                round_trace["claude_diagnostics"] = dict(sanitized_sdk_diagnostics)
             (workspace / f"sdk_messages_round_{round_index}.json").write_text(
-                json.dumps(sdk_messages, indent=2, sort_keys=True),
+                json.dumps(sanitized_sdk_messages, indent=2, sort_keys=True),
                 encoding="utf-8",
             )
             if sdk_diagnostics:
                 (workspace / f"claude_sdk_diagnostics_round_{round_index}.json").write_text(
-                    json.dumps(sdk_diagnostics, indent=2, sort_keys=True),
+                    json.dumps(sanitized_sdk_diagnostics, indent=2, sort_keys=True),
                     encoding="utf-8",
                 )
-            final_submission_state = self._resolve_submission_state(
+            round_submission_state = self._resolve_submission_state(
                 response_metadata=response_metadata,
                 sdk_diagnostics=sdk_diagnostics,
             )
-            round_trace["submission_state"] = dict(final_submission_state)
-            if stop_oracle == "submit_tool":
+            final_submission_state = self._merge_submission_state(
+                final_submission_state,
+                round_submission_state,
+            )
+            round_trace["submission_state"] = dict(round_submission_state)
+            round_policy_denials = self._extract_denied_bash_attempts(
+                sdk_diagnostics.get("hook_events", []),
+                workspace_root=workspace,
+                tool_policy=tool_policy,
+            )
+            if round_policy_denials:
+                workspace_policy_denials.extend(round_policy_denials)
+                round_trace["workspace_policy_denials"] = list(round_policy_denials)
+                (workspace / f"workspace_policy_denials_round_{round_index}.json").write_text(
+                    json.dumps({"policy_denials": round_policy_denials}, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
+            if stop_oracle in {"submit_tool", "hidden_judge_submit"}:
                 self._write_submission_artifacts(
                     workspace=workspace,
                     round_index=round_index,
-                    submission_state=final_submission_state,
+                    submission_state=round_submission_state,
+                    stop_oracle=stop_oracle,
                 )
 
             if readonly_mutations:
@@ -1413,6 +1492,13 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             if response_payload is not None:
                 round_commands = list(dict.fromkeys(round_commands + list(response_payload["commands_run"])))
             invalid_commands = self._validate_bash_commands(round_commands, workspace, tool_policy)
+            handled_denials, invalid_commands = self._split_handled_bash_policy_violations(
+                invalid_commands,
+                round_policy_denials,
+            )
+            if handled_denials and "workspace_policy_denials" not in round_trace:
+                round_trace["workspace_policy_denials"] = list(round_policy_denials)
+            round_commands = self._filter_denied_bash_commands(round_commands, round_policy_denials)
             if invalid_commands:
                 workspace_write_violations.extend(invalid_commands)
                 (workspace / f"workspace_write_violations_round_{round_index}.json").write_text(
@@ -1445,6 +1531,19 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             commands_run.extend(round_commands)
             round_trace["files_written"] = list(final_files_written)
             round_trace["commands_run"] = list(round_commands)
+            round_plan_feedback = self._evaluate_workspace_plan_requirement(
+                sdk_messages=sdk_messages,
+                workspace_root=workspace,
+                files_written=final_files_written,
+                submission_state=final_submission_state,
+            )
+            final_plan_feedback = dict(round_plan_feedback) if round_plan_feedback is not None else None
+            if round_plan_feedback is not None:
+                round_trace["workspace_plan_feedback"] = dict(round_plan_feedback)
+                (workspace / f"workspace_plan_feedback_round_{round_index}.json").write_text(
+                    json.dumps(round_plan_feedback, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
             (workspace / f"files_written_round_{round_index}.json").write_text(
                 json.dumps(final_files_written, indent=2),
                 encoding="utf-8",
@@ -1469,9 +1568,32 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             )
             if entrypoint_tool_result is not None:
                 round_trace["entrypoint_tool_result"] = dict(entrypoint_tool_result)
+            can_retry_after_round = (
+                configured_max_iterations is None or round_index < configured_max_iterations
+            )
+
+            if round_plan_feedback is not None and can_retry_after_round:
+                transcript_lines.extend(
+                    [
+                        "protocol_status=repair_pending",
+                        f"commands_run={json.dumps(round_commands, sort_keys=True)}",
+                        f"workspace_plan_feedback={json.dumps(round_plan_feedback, sort_keys=True)}",
+                        "",
+                    ]
+                )
+                round_trace["protocol_status"] = "repair_pending"
+                round_trace["error_type"] = "workspace_plan_required"
+                round_trace["error_message"] = (
+                    "workspace agent must update output/plan.md before code edits or solver execution"
+                )
+                previous_feedback = dict(round_plan_feedback)
+                previous_summary = dict(response_payload or {})
+                round_index += 1
+                continue
 
             if (
                 response_error is not None
+                and stop_oracle != "hidden_judge_submit"
                 and completion_policy == "main_success_output_contract"
                 and entrypoint_tool_result is not None
                 and entrypoint_tool_result.get("succeeded", False)
@@ -1522,6 +1644,85 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 protocol_failure_reason = self._normalize_protocol_failure_reason(
                     response_error.error_type
                 )
+                if (
+                    stop_oracle == "hidden_judge_submit"
+                    and not bool(final_submission_state.get("submission_attempted", False))
+                    and can_retry_after_round
+                    and protocol_failure_reason not in {"sdk_error", "request_timeout"}
+                ):
+                    submission_feedback = self._build_hidden_judge_submission_required_feedback()
+                    transcript_lines.extend(
+                        [
+                            "protocol_status=repair_pending",
+                            f"protocol_failure_reason={protocol_failure_reason}",
+                            f"commands_run={json.dumps(round_commands, sort_keys=True)}",
+                            "submission_status=not_submitted",
+                            "",
+                        ]
+                    )
+                    round_trace["protocol_status"] = "repair_pending"
+                    round_trace["protocol_failure_reason"] = protocol_failure_reason
+                    round_trace["sdk_result"] = dict(sdk_diagnostics.get("sdk_result", {}))
+                    round_trace["error_type"] = "hidden_judge_not_submitted"
+                    round_trace["error_message"] = str(response_error)
+                    round_trace["repair_feedback"] = dict(submission_feedback)
+                    previous_feedback = submission_feedback
+                    previous_summary = dict(response_payload or {})
+                    round_index += 1
+                    continue
+                if (
+                    stop_oracle == "hidden_judge_submit"
+                    and self._hidden_judge_submission_failed(final_submission_state)
+                    and can_retry_after_round
+                    and protocol_failure_reason not in {"sdk_error", "request_timeout"}
+                ):
+                    hidden_judge_feedback = self._build_hidden_judge_retry_feedback()
+                    transcript_lines.extend(
+                        [
+                            "protocol_status=repair_pending",
+                            f"protocol_failure_reason={protocol_failure_reason}",
+                            f"commands_run={json.dumps(round_commands, sort_keys=True)}",
+                            "submission_status=fail",
+                            "",
+                        ]
+                    )
+                    round_trace["protocol_status"] = "repair_pending"
+                    round_trace["protocol_failure_reason"] = protocol_failure_reason
+                    round_trace["sdk_result"] = dict(sdk_diagnostics.get("sdk_result", {}))
+                    round_trace["error_type"] = "hidden_judge_fail"
+                    round_trace["error_message"] = str(response_error)
+                    round_trace["repair_feedback"] = dict(hidden_judge_feedback)
+                    previous_feedback = hidden_judge_feedback
+                    previous_summary = self._latest_submission_request_summary(final_submission_state)
+                    round_index += 1
+                    continue
+                if (
+                    round_policy_denials
+                    and can_retry_after_round
+                    and protocol_failure_reason not in {"sdk_error", "request_timeout"}
+                ):
+                    denial_feedback = self._build_workspace_policy_feedback(
+                        round_policy_denials
+                    )
+                    transcript_lines.extend(
+                        [
+                            "protocol_status=repair_pending",
+                            f"protocol_failure_reason={protocol_failure_reason}",
+                            f"commands_run={json.dumps(round_commands, sort_keys=True)}",
+                            f"workspace_policy_denials={json.dumps(round_policy_denials, sort_keys=True)}",
+                            "",
+                        ]
+                    )
+                    round_trace["protocol_status"] = "repair_pending"
+                    round_trace["protocol_failure_reason"] = protocol_failure_reason
+                    round_trace["sdk_result"] = dict(sdk_diagnostics.get("sdk_result", {}))
+                    round_trace["error_type"] = "bash_policy_denial"
+                    round_trace["error_message"] = str(response_error)
+                    round_trace["repair_feedback"] = dict(denial_feedback)
+                    previous_feedback = denial_feedback
+                    previous_summary = dict(response_payload or {})
+                    round_index += 1
+                    continue
                 response_metadata = self._build_sdk_failure_metadata(
                     sdk_messages=sdk_messages,
                     bridge_mode="workspace_claude_sdk",
@@ -1595,6 +1796,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                         str(response_error),
                     ),
                     runtime_seconds=final_runtime,
+                    judge_result=final_hidden_judge_result,
                     metadata={
                         "execution_mode": session_config.execution_mode,
                         "returncode": final_completed.returncode,
@@ -1612,8 +1814,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                             self._all_allowed_tools(stop_oracle, tool_policy=tool_policy)
                         ),
                         "tool_policy_summary": self._summarize_tool_policy(tool_policy),
-                        "feedback_scope": "none",
-                        "harness_feedback_mode": "none",
+                        "feedback_scope": self._workspace_feedback_scope(stop_oracle),
+                        "harness_feedback_mode": self._workspace_harness_feedback_mode(stop_oracle),
                         "agent_stop_policy": self._agent_stop_policy(stop_oracle),
                         "stop_oracle": stop_oracle,
                         "workspace_prompt_mode": prompt_mode,
@@ -1633,9 +1835,18 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                         "public_self_check_status": final_self_check,
                         "post_run_audit": final_self_check,
                         "workspace_write_violations": workspace_write_violations,
+                        "workspace_policy_denials": list(workspace_policy_denials),
+                        "hidden_judge_feedback_mode": (
+                            self.HIDDEN_JUDGE_AGENT_FEEDBACK_MODE
+                            if stop_oracle == "hidden_judge_submit"
+                            else ""
+                        ),
+                        "final_hidden_judge_passed_post_run": self._hidden_judge_submission_passed(
+                            final_submission_state
+                        ),
                         **(
-                            self._submission_metadata(final_submission_state)
-                            if stop_oracle == "submit_tool"
+                            self._submission_metadata(final_submission_state, stop_oracle=stop_oracle)
+                            if stop_oracle in {"submit_tool", "hidden_judge_submit"}
                             else {}
                         ),
                         **protocol_metadata,
@@ -1676,7 +1887,34 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 str(response_metadata.get("sdk_completion_source", "") or "")
                 == "external_output_contract"
             )
-            if external_completion_source:
+            hidden_judge_passed = self._hidden_judge_submission_passed(final_submission_state)
+            hidden_judge_failed = self._hidden_judge_submission_failed(final_submission_state)
+            if stop_oracle == "hidden_judge_submit":
+                if entrypoint_tool_result is not None:
+                    final_completed = subprocess.CompletedProcess(
+                        ["python", "work/main.py"],
+                        int(entrypoint_tool_result.get("returncode", 0) or 0),
+                        str(entrypoint_tool_result.get("stdout", "") or ""),
+                        str(entrypoint_tool_result.get("stderr", "") or ""),
+                    )
+                else:
+                    final_completed = subprocess.CompletedProcess(["python", "work/main.py"], 1, "", "")
+                final_timed_out = False
+                final_runtime = 0.0
+                final_self_check = self._evaluate_workspace_completion(
+                    task_spec=task_spec,
+                    runtime_paths=runtime_paths,
+                    completed=final_completed,
+                    timed_out=final_timed_out,
+                    entrypoint="work/main.py",
+                    env=env,
+                    timeout_seconds=max(
+                        1,
+                        max(0, int(execution_deadline - time.monotonic())),
+                    ),
+                    completion_policy="main_success_output_contract",
+                )
+            elif external_completion_source:
                 if entrypoint_tool_result is None or not entrypoint_tool_result.get("succeeded", False):
                     raise RuntimeError(
                         "external_output_contract completion requires a successful `python work/main.py` trace"
@@ -1735,27 +1973,35 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 final_completed_stderr,
                 encoding="utf-8",
             )
-            (workspace / "post_run_audit.json").write_text(
-                json.dumps(final_self_check, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
-            (workspace / f"public_self_eval_round_{round_index}.json").write_text(
-                json.dumps(final_self_check, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
-            (workspace / f"public_self_eval_stdout_round_{round_index}.log").write_text(
-                str(final_self_check.get("public_self_eval_stdout", "") or ""),
-                encoding="utf-8",
-            )
-            (workspace / f"public_self_eval_stderr_round_{round_index}.log").write_text(
-                str(final_self_check.get("public_self_eval_stderr", "") or ""),
-                encoding="utf-8",
-            )
+            if stop_oracle != "hidden_judge_submit":
+                (workspace / "post_run_audit.json").write_text(
+                    json.dumps(final_self_check, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
+                (workspace / f"public_self_eval_round_{round_index}.json").write_text(
+                    json.dumps(final_self_check, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
+                (workspace / f"public_self_eval_stdout_round_{round_index}.log").write_text(
+                    str(final_self_check.get("public_self_eval_stdout", "") or ""),
+                    encoding="utf-8",
+                )
+                (workspace / f"public_self_eval_stderr_round_{round_index}.log").write_text(
+                    str(final_self_check.get("public_self_eval_stderr", "") or ""),
+                    encoding="utf-8",
+                )
             round_trace["post_run_audit"] = dict(final_self_check)
             round_trace["public_self_check"] = dict(final_self_check)
             round_trace["returncode"] = final_completed.returncode
             output_contract_satisfied_post_run = bool(final_self_check.get("self_check_passed"))
-            if final_timed_out:
+            if stop_oracle == "hidden_judge_submit":
+                if hidden_judge_passed:
+                    run_failure_reason = ""
+                elif hidden_judge_failed:
+                    run_failure_reason = "hidden_judge_fail"
+                else:
+                    run_failure_reason = "hidden_judge_not_submitted"
+            elif final_timed_out:
                 run_failure_reason = "entrypoint_timeout"
             elif final_completed.returncode != 0:
                 run_failure_reason = "entrypoint_failed"
@@ -1765,6 +2011,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 run_failure_reason = "output_contract_failed"
             else:
                 run_failure_reason = ""
+            if round_plan_feedback is not None:
+                run_failure_reason = "workspace_plan_required"
             run_status = "succeeded" if not run_failure_reason else "failed"
             transcript_lines.extend(
                 [
@@ -1777,6 +2025,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     f"returncode={final_completed.returncode}",
                     f"public_self_eval_passed_post_run={bool(final_self_check.get('public_self_eval_passed', False))}",
                     f"output_contract_satisfied_post_run={output_contract_satisfied_post_run}",
+                    f"final_hidden_judge_passed_post_run={hidden_judge_passed}",
                     f"run_status={run_status}",
                     f"run_failure_reason={run_failure_reason}",
                     "",
@@ -1795,14 +2044,94 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             sdk_signaled_completion = (
                 str(response_metadata.get("sdk_completion_source", "") or "") == "result_message"
             )
+            if stop_oracle == "hidden_judge_submit":
+                if not bool(final_submission_state.get("submission_attempted", False)) and can_retry_after_round:
+                    submission_feedback = self._build_hidden_judge_submission_required_feedback()
+                    transcript_lines.extend(
+                        [
+                            "protocol_status=repair_pending",
+                            f"commands_run={json.dumps(round_commands, sort_keys=True)}",
+                            "submission_status=not_submitted",
+                            "",
+                        ]
+                    )
+                    round_trace["error_type"] = "hidden_judge_not_submitted"
+                    round_trace["error_message"] = (
+                        "workspace agent returned a summary without calling submit_result(...)"
+                    )
+                    round_trace["repair_feedback"] = dict(submission_feedback)
+                    previous_feedback = submission_feedback
+                    previous_summary = dict(response_payload)
+                    round_index += 1
+                    continue
+                if hidden_judge_failed and can_retry_after_round:
+                    hidden_judge_feedback = self._build_hidden_judge_retry_feedback()
+                    transcript_lines.extend(
+                        [
+                            "protocol_status=repair_pending",
+                            f"commands_run={json.dumps(round_commands, sort_keys=True)}",
+                            "submission_status=fail",
+                            "",
+                        ]
+                    )
+                    round_trace["error_type"] = "hidden_judge_fail"
+                    round_trace["error_message"] = (
+                        "workspace agent submitted to the hidden judge and received fail"
+                    )
+                    round_trace["repair_feedback"] = dict(hidden_judge_feedback)
+                    previous_feedback = hidden_judge_feedback
+                    previous_summary = (
+                        self._latest_submission_request_summary(final_submission_state)
+                        or dict(response_payload)
+                    )
+                    round_index += 1
+                    continue
+                if hidden_judge_passed:
+                    break
+                if sdk_signaled_completion:
+                    break
+                round_index += 1
+                continue
+            if round_policy_denials and not output_contract_satisfied_post_run and can_retry_after_round:
+                denial_feedback = self._build_workspace_policy_feedback(round_policy_denials)
+                transcript_lines.extend(
+                    [
+                        "protocol_status=repair_pending",
+                        f"commands_run={json.dumps(round_commands, sort_keys=True)}",
+                        f"workspace_policy_denials={json.dumps(round_policy_denials, sort_keys=True)}",
+                        "",
+                    ]
+                )
+                round_trace["error_type"] = "bash_policy_denial"
+                round_trace["error_message"] = (
+                    "workspace agent hit recoverable Bash policy denials and will retry"
+                )
+                round_trace["repair_feedback"] = dict(denial_feedback)
+                previous_feedback = denial_feedback
+                previous_summary = dict(response_payload)
+                round_index += 1
+                continue
             if sdk_signaled_completion or output_contract_satisfied_post_run:
                 break
             round_index += 1
 
-        if not final_self_check.get("self_check_passed") and not final_error_info:
+        final_hidden_judge_passed_post_run = self._hidden_judge_submission_passed(
+            final_submission_state
+        )
+        final_run_succeeded = (
+            final_hidden_judge_passed_post_run
+            if stop_oracle == "hidden_judge_submit"
+            else bool(final_self_check.get("self_check_passed"))
+        )
+        final_run_succeeded = final_run_succeeded and final_plan_feedback is None
+        if not final_run_succeeded and not final_error_info:
             final_error_info = {
                 "error_type": run_failure_reason or "post_run_output_audit_failed",
-                "message": "workspace agent returned a summary but the post-run output audit failed",
+                "message": (
+                    "workspace agent did not update output/plan.md before making changes"
+                    if final_plan_feedback is not None
+                    else "workspace agent returned a summary but the post-run output audit failed"
+                ),
             }
         self._write_workspace_trajectory_artifacts(
             workspace=workspace,
@@ -1810,7 +2139,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             model_provider=session_config.model_config.provider_name,
             model_name=resolved_model_name,
             trajectory_rounds=trajectory_rounds,
-            final_status=("success" if final_self_check.get("self_check_passed") else "failed"),
+            final_status=("success" if final_run_succeeded else "failed"),
             final_error_info=final_error_info,
         )
         transcript_path.write_text("\n".join(transcript_lines) + "\n", encoding="utf-8")
@@ -1835,6 +2164,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             stdout=final_completed_stdout,
             stderr=final_completed_stderr,
             runtime_seconds=final_runtime,
+            judge_result=final_hidden_judge_result,
             metadata={
                 "execution_mode": session_config.execution_mode,
                 "returncode": final_completed.returncode,
@@ -1867,8 +2197,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     self._all_allowed_tools(stop_oracle, tool_policy=tool_policy)
                 ),
                 "tool_policy_summary": self._summarize_tool_policy(tool_policy),
-                "feedback_scope": "none",
-                "harness_feedback_mode": "none",
+                "feedback_scope": self._workspace_feedback_scope(stop_oracle),
+                "harness_feedback_mode": self._workspace_harness_feedback_mode(stop_oracle),
                 "agent_stop_policy": self._agent_stop_policy(stop_oracle),
                 "stop_oracle": stop_oracle,
                 "workspace_prompt_mode": prompt_mode,
@@ -1884,15 +2214,22 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "public_self_eval_passed_post_run": bool(
                     final_self_check.get("public_self_eval_passed", False)
                 ),
+                "final_hidden_judge_passed_post_run": final_hidden_judge_passed_post_run,
+                "hidden_judge_feedback_mode": (
+                    self.HIDDEN_JUDGE_AGENT_FEEDBACK_MODE
+                    if stop_oracle == "hidden_judge_submit"
+                    else ""
+                ),
                 "output_contract_satisfied_post_run": output_contract_satisfied_post_run,
                 "run_status": run_status,
                 "run_failure_reason": run_failure_reason,
                 "public_self_check_status": final_self_check,
                 "post_run_audit": final_self_check,
                 "workspace_write_violations": workspace_write_violations,
+                "workspace_policy_denials": list(workspace_policy_denials),
                 **(
-                    self._submission_metadata(final_submission_state)
-                    if stop_oracle == "submit_tool"
+                    self._submission_metadata(final_submission_state, stop_oracle=stop_oracle)
+                    if stop_oracle in {"submit_tool", "hidden_judge_submit"}
                     else {}
                 ),
                 **protocol_metadata,
@@ -1902,11 +2239,15 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     timeout_scope="solver_execution" if final_timed_out else "",
                 ),
                 "prompt_contract_version": self.WORKSPACE_PROMPT_VERSION,
-                "command_history_summary": [
-                    "workspace_sdk_agent",
-                    "workspace_run",
-                    "workspace_public_self_eval",
-                ],
+                "command_history_summary": (
+                    ["workspace_sdk_agent", "workspace_run"]
+                    if stop_oracle == "hidden_judge_submit"
+                    else [
+                        "workspace_sdk_agent",
+                        "workspace_run",
+                        "workspace_public_self_eval",
+                    ]
+                ),
                 **final_metadata,
             },
         )
@@ -3050,6 +3391,60 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
 
         return _callback
 
+    def _sanitize_workspace_visible_payload(
+        self,
+        value: Any,
+        *,
+        workspace_root: Path,
+    ) -> Any:
+        workspace_root = Path(workspace_root).resolve()
+        workspace_root_win = str(workspace_root)
+        workspace_root_posix = workspace_root.as_posix()
+        replacements = [
+            (workspace_root_win + "\\", ".\\"),
+            (workspace_root_win + "/", "./"),
+            (workspace_root_win, "."),
+            (workspace_root_posix + "/", "./"),
+            (workspace_root_posix, "."),
+        ]
+        if isinstance(value, Mapping):
+            return {
+                key: self._sanitize_workspace_visible_payload(item, workspace_root=workspace_root)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [
+                self._sanitize_workspace_visible_payload(item, workspace_root=workspace_root)
+                for item in value
+            ]
+        if isinstance(value, tuple):
+            return tuple(
+                self._sanitize_workspace_visible_payload(item, workspace_root=workspace_root)
+                for item in value
+            )
+        if isinstance(value, str):
+            sanitized = value
+            for source, target in replacements:
+                sanitized = sanitized.replace(source, target)
+            return sanitized
+        return value
+
+    def _workspace_prompt_root_label(self) -> str:
+        return "."
+
+    def _workspace_prompt_plan_rule_items(self) -> list[str]:
+        return [
+            f"Before any code edits or solver runs in this round, create or update `{self.WORKSPACE_PLAN_PATH}` in the workspace output directory.",
+            f"On later rounds, revise `{self.WORKSPACE_PLAN_PATH}` first so it reflects the new repair plan before making more changes.",
+            f"Keep `{self.WORKSPACE_PLAN_PATH}` short and concrete: planned steps, expected outputs, and the next validation you will run.",
+        ]
+
+    def _workspace_prompt_plan_workflow_items(self) -> list[str]:
+        return [
+            f"Create or update `{self.WORKSPACE_PLAN_PATH}` first with the plan for this round.",
+            "Then make the planned code or execution changes.",
+        ]
+
     def _build_workspace_agent_prompt(
         self,
         task_bundle: TaskBundle,
@@ -3074,7 +3469,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
 
         inline_public_content = prompt_mode == "inline_public_content"
         external_output_contract = (
-            completion_policy == "main_success_output_contract" and stop_oracle != "submit_tool"
+            completion_policy == "main_success_output_contract"
+            and stop_oracle not in {"submit_tool", "hidden_judge_submit"}
         )
         readme = (
             task_bundle.readme_public_path.read_text(encoding="utf-8")
@@ -3102,6 +3498,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "Absolute or relative paths are both acceptable when they resolve inside the "
             "workspace; write targets must stay under `work/`, `output/`, or `checkpoints/`."
         )
+        workspace_root_label = self._workspace_prompt_root_label()
         write_tool_workflow = (
             "Create and update the solver under `work/src/*.py` plus `work/main.py`, "
             "preferably with the `Write` tool."
@@ -3113,7 +3510,66 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         )
         network_rule_items = self._workspace_network_research_rule_items(network_access_enabled)
         network_workflow_items = self._workspace_network_workflow_items(network_access_enabled)
-        if stop_oracle == "submit_tool":
+        plan_rule_items = self._workspace_prompt_plan_rule_items()
+        plan_workflow_items = self._workspace_prompt_plan_workflow_items()
+        if stop_oracle == "hidden_judge_submit":
+            important_rules = [
+                "STOP CONDITION: After `python work/main.py` succeeds and you have a candidate output, call `submit_result(...)`. If it returns `{ \"status\": \"fail\" }`, keep debugging locally and try again. If it returns `{ \"status\": \"pass\" }`, immediately return the final structured summary and stop all further tool use.",
+                *self._number_prompt_items(
+                    [
+                        "Read `README_public.md` first and treat it as the authoritative task specification.",
+                        "Use relative paths from the current workspace root; do not guess hardcoded absolute paths.",
+                        *self._render_output_requirements(output_contract),
+                        "Use only packages already available in `requirements.txt`.",
+                        "Explore public inputs with tools instead of assuming file contents.",
+                        *network_rule_items,
+                        *plan_rule_items,
+                        "You may write only under `work/`, `output/`, and `checkpoints/`.",
+                        write_tool_rule,
+                        bash_usage_rule,
+                        bash_boundary_rule,
+                        path_boundary_rule,
+                        "Do not modify public inputs such as `README_public.md`, `requirements.txt`, `data/`, `evaluation/`, or `public_bundle/`.",
+                        "Run the solver from the workspace root with `python work/main.py`.",
+                        "If `python work/main.py` fails, debug locally within the same session and rerun it as needed.",
+                        "Use `submit_result(...)` as the authoritative hidden-judge stop oracle. It returns only `{ \"status\": \"pass\" }` or `{ \"status\": \"fail\" }`.",
+                        "A hidden-judge `fail` does not include metric details, tags, or reasons. Diagnose locally from the workspace and retry.",
+                        "Do not stop after a hidden-judge `fail`; keep iterating until `submit_result(...)` returns `{ \"status\": \"pass\" }` or the harness budget ends.",
+                        "Use `submit_result(...)` with keys: `solver_summary`, `declared_outputs`, `assumptions`, `files_written`, `commands_run`.",
+                        "After `submit_result(...)` returns `{ \"status\": \"pass\" }`, return the same structured summary and stop immediately.",
+                        "Organize the solver as a multi-file workspace project under `work/src/*.py` plus `work/main.py`.",
+                    ]
+                ),
+            ]
+            workflow_lines = self._number_prompt_items(
+                [
+                    "Read `README_public.md`, then inspect the public data and metadata you need.",
+                    *network_workflow_items,
+                    *plan_workflow_items,
+                    write_tool_workflow,
+                    "Run `python work/main.py` from the workspace root.",
+                    "If the run fails, debug locally in this same session and rerun `python work/main.py`.",
+                    "When you have a candidate output, call `submit_result(...)` immediately.",
+                    "If `submit_result(...)` returns `{ \"status\": \"fail\" }`, continue debugging locally and resubmit after making changes.",
+                    "If `submit_result(...)` returns `{ \"status\": \"pass\" }`, immediately return the structured summary and stop.",
+                ]
+            )
+            intro_lines = [
+                "You are operating inside a constrained Claude workspace harness.",
+                "Your job is to complete the workspace contract and stop cleanly, not to keep improving the science indefinitely.",
+                "The harness exposes a hidden-judge submission tool that returns only pass or fail.",
+                "If the hidden judge returns fail, continue iterating locally in this same workspace session.",
+                f"workspace_root={workspace_root_label}",
+                f"cwd={workspace_root_label}",
+                "README_public.md is the authoritative task specification narrative, and task_contract.public.json is the authoritative interface contract.",
+                "Use relative paths first from the current workspace root.",
+                "Explore the workspace with the provided tools instead of assuming file contents.",
+                f"Active skills: {', '.join(active_skills) if active_skills else '(none)'}",
+                f"Writable roots: {', '.join(tool_policy['write_roots'])}",
+                f"Public files: {', '.join(listed_files)}",
+                "Available harness tools: `submit_result(...)`",
+            ]
+        elif stop_oracle == "submit_tool":
             important_rules = [
                 "STOP CONDITION: After `python work/main.py` succeeds and the required output artifacts exist, your next step must be `check_ready()`, not more analysis or optimization. When `check_ready()` returns `ready=true`, call `submit_result(...)`. If `submit_result(...)` is accepted, immediately return the final structured summary and stop all further tool use.",
                 *self._number_prompt_items(
@@ -3124,6 +3580,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                         "Use only packages already available in `requirements.txt`.",
                         "Explore public inputs with tools instead of assuming file contents.",
                         *network_rule_items,
+                        *plan_rule_items,
                         "You may write only under `work/`, `output/`, and `checkpoints/`.",
                         write_tool_rule,
                         bash_usage_rule,
@@ -3145,6 +3602,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 [
                     "Read `README_public.md`, then inspect the public data and metadata you need.",
                     *network_workflow_items,
+                    *plan_workflow_items,
                     write_tool_workflow,
                     "Run `python work/main.py` from the workspace root.",
                     "If the run fails, debug locally in this same session and rerun `python work/main.py`.",
@@ -3159,8 +3617,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "Your job is to complete the workspace contract and stop cleanly, not to keep improving the science indefinitely.",
                 "The harness, via `check_ready()` and `submit_result(...)`, decides when the task is complete.",
                 "If `python work/main.py` succeeds and the required outputs exist, do not keep researching or refining before calling `check_ready()`.",
-                f"workspace_root={workspace_root}",
-                f"cwd={workspace_root}",
+                f"workspace_root={workspace_root_label}",
+                f"cwd={workspace_root_label}",
                 "README_public.md is the authoritative task specification narrative, and task_contract.public.json is the authoritative interface contract.",
                 "Use relative paths first from the current workspace root.",
                 "Explore the workspace with the provided tools instead of assuming file contents.",
@@ -3180,6 +3638,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                         "Use only packages already available in `requirements.txt`.",
                         "Explore public inputs with tools instead of assuming file contents.",
                         *network_rule_items,
+                        *plan_rule_items,
                         "You may write only under `work/`, `output/`, and `checkpoints/`.",
                         write_tool_rule,
                         bash_usage_rule,
@@ -3198,6 +3657,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 [
                     "Read `README_public.md`, then inspect the public data and metadata you need.",
                     *network_workflow_items,
+                    *plan_workflow_items,
                     write_tool_workflow,
                     "Run `python work/main.py` from the workspace root.",
                     "If the run fails, debug locally in this same session and rerun `python work/main.py`.",
@@ -3209,8 +3669,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "Your job is to complete the workspace contract and stop cleanly, not to keep improving the science indefinitely.",
                 "The harness decides completion from `python work/main.py` plus the required output artifacts.",
                 "If `python work/main.py` succeeds and the required outputs exist, your next action must be to return the final structured summary, not more analysis or optimization.",
-                f"workspace_root={workspace_root}",
-                f"cwd={workspace_root}",
+                f"workspace_root={workspace_root_label}",
+                f"cwd={workspace_root_label}",
                 "README_public.md is the authoritative task specification narrative, and task_contract.public.json is the authoritative interface contract.",
                 "Use relative paths first from the current workspace root.",
                 "Explore the workspace with the provided tools instead of assuming file contents.",
@@ -3229,6 +3689,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                         "Use only packages already available in `requirements.txt`.",
                         "Explore public inputs with tools instead of assuming file contents.",
                         *network_rule_items,
+                        *plan_rule_items,
                         "You may write only under `work/`, `output/`, and `checkpoints/`.",
                         write_tool_rule,
                         bash_usage_rule,
@@ -3248,6 +3709,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 [
                     "Read `README_public.md`, then inspect the public data and metadata you need.",
                     *network_workflow_items,
+                    *plan_workflow_items,
                     write_tool_workflow,
                     "Run `python work/main.py` from the workspace root.",
                     "If the run fails, debug locally in this same session and rerun `python work/main.py`.",
@@ -3261,8 +3723,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 "Your job is to complete the workspace contract and stop cleanly, not to keep improving the science indefinitely.",
                 "The harness-generated file `evaluation/self_eval.py` is the public completion oracle.",
                 "If `python work/main.py` succeeds, your next action must be `python evaluation/self_eval.py`, not more analysis or optimization.",
-                f"workspace_root={workspace_root}",
-                f"cwd={workspace_root}",
+                f"workspace_root={workspace_root_label}",
+                f"cwd={workspace_root_label}",
                 "README_public.md is the authoritative task specification narrative, and task_contract.public.json is the authoritative interface contract.",
                 "Use relative paths first from the current workspace root.",
                 "Explore the workspace with the provided tools instead of assuming file contents.",
@@ -3460,9 +3922,122 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             ]
         )
 
+    def _compose_workspace_sdk_round_prompt(
+        self,
+        *,
+        base_prompt: str,
+        round_index: int,
+        previous_feedback: Optional[dict[str, Any]],
+        previous_summary: Optional[dict[str, Any]],
+    ) -> str:
+        if round_index == 1 or previous_feedback is None:
+            return base_prompt
+        feedback_text = json.dumps(previous_feedback, indent=2, sort_keys=True, ensure_ascii=False)
+        summary_text = json.dumps(previous_summary or {}, indent=2, sort_keys=True, ensure_ascii=False)
+        if str(previous_feedback.get("failure_mode", "") or "") == "workspace_plan_required":
+            return "\n".join(
+                [
+                    base_prompt,
+                    "",
+                    f"Round {round_index} repair instructions:",
+                    "The previous attempt did not update the required workspace execution plan before making changes.",
+                    f"Update `{self.WORKSPACE_PLAN_PATH}` first in this round, then continue with code or execution changes.",
+                    "Keep the plan concise and actionable, then follow it.",
+                    "",
+                    "Previous summary:",
+                    summary_text,
+                    "",
+                    "Plan feedback:",
+                    feedback_text,
+                ]
+            )
+        if str(previous_feedback.get("submission_status", "") or "") == "not_submitted":
+            return "\n".join(
+                [
+                    base_prompt,
+                    "",
+                    f"Round {round_index} repair instructions:",
+                    "The previous attempt ended without calling `submit_result(...)`.",
+                    "After you have a candidate output, you must call `submit_result(...)` before stopping.",
+                    "",
+                    "Previous summary:",
+                    summary_text,
+                    "",
+                    "Submission feedback:",
+                    feedback_text,
+                ]
+            )
+        if str(previous_feedback.get("submission_status", "") or "") == "fail":
+            return "\n".join(
+                [
+                    base_prompt,
+                    "",
+                    f"Round {round_index} repair instructions:",
+                    "The previous candidate was submitted to the hidden judge and returned fail.",
+                    "No hidden metric details or failure reasons are available.",
+                    "Use the prior summary plus local workspace evidence to diagnose, repair, and resubmit.",
+                    "Call `submit_result(...)` again after producing a revised candidate output.",
+                    "Do not use or speculate about hidden judge results.",
+                    "",
+                    "Previous summary:",
+                    summary_text,
+                    "",
+                    "Submission feedback:",
+                    feedback_text,
+                ]
+            )
+        return "\n".join(
+            [
+                base_prompt,
+                "",
+                f"Round {round_index} repair instructions:",
+                "The previous attempt hit harness Bash policy denials before execution completed.",
+                "Use the feedback below to repair the workspace while preserving valid behavior.",
+                "Keep Bash activity inside the workspace root and writable roots only.",
+                "Return a full replacement file set for work/.",
+                "Do not use or speculate about hidden judge results.",
+                "",
+                "Previous summary:",
+                summary_text,
+                "",
+                "Policy denial feedback:",
+                feedback_text,
+            ]
+        )
+
+    def _build_workspace_policy_feedback(
+        self,
+        policy_denials: Sequence[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return {
+            "self_check_passed": False,
+            "failure_mode": "bash_policy_denial",
+            "policy_denials": [dict(item) for item in policy_denials],
+            "repair_instruction": self.WORKSPACE_POLICY_REPAIR_INSTRUCTION,
+        }
+
+    def _build_hidden_judge_retry_feedback(self) -> dict[str, Any]:
+        return {"submission_status": "fail"}
+
+    def _build_hidden_judge_submission_required_feedback(self) -> dict[str, Any]:
+        return {
+            "submission_status": "not_submitted",
+            "repair_instruction": "After producing a candidate output, call submit_result(...) before stopping.",
+        }
+
+    def _build_workspace_plan_feedback(self) -> dict[str, Any]:
+        return {
+            "failure_mode": "workspace_plan_required",
+            "required_plan_path": self.WORKSPACE_PLAN_PATH,
+            "repair_instruction": (
+                f"Create or update `{self.WORKSPACE_PLAN_PATH}` first in each round before code edits or solver execution."
+            ),
+        }
+
     def _generate_workspace_sdk_response(
         self,
         *,
+        task_bundle: TaskBundle,
         session_config: ExecutorSessionConfig,
         task_spec: dict[str, Any],
         runtime_paths: dict[str, Path],
@@ -3486,6 +4061,10 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 self._empty_submission_state(),
                 payload.get("submission_state"),
             )
+            private_submission_state = self._merge_private_submission_state(
+                self._empty_private_submission_state(),
+                payload.get("private_submission_state"),
+            )
             if payload.get("mock_execution_error"):
                 diagnostics = dict(payload.get("sdk_diagnostics") or {})
                 if "sdk_result" not in diagnostics and payload.get("sdk_result_metadata") is not None:
@@ -3497,6 +4076,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     sdk_messages=list(payload.get("sdk_messages") or []),
                     result_text=str(payload.get("result_text") or ""),
                     diagnostics=diagnostics,
+                    private_state=private_submission_state,
                 )
             summary = self._coerce_sdk_summary(payload)
             diagnostics = dict(payload.get("sdk_diagnostics") or {})
@@ -3520,6 +4100,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 submission_state=submission_state,
             )
             metadata["vendor_session_ref"] = dict(payload.get("vendor_session_ref") or {})
+            metadata["private_submission_state"] = dict(private_submission_state)
             return summary, metadata
 
         if importlib.util.find_spec("claude_agent_sdk") is None:
@@ -3531,6 +4112,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         system_prompt = self._build_workspace_system_prompt(tool_policy, stop_oracle=stop_oracle)
         result = asyncio.run(
             self._execute_claude_sdk_query(
+                task_bundle=task_bundle,
                 session_config=session_config,
                 workspace=workspace,
                 prompt=prompt,
@@ -3557,6 +4139,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             completion_source=str(result.get("completion_source", "result_message") or "result_message"),
         )
         metadata["vendor_session_ref"] = result.get("vendor_session_ref", {})
+        metadata["private_submission_state"] = dict(result.get("private_submission_state") or {})
         return summary, metadata
 
     def _is_claude_result_message(self, message: Any, result_message_type: Any = None) -> bool:
@@ -3819,9 +4402,64 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "Notification": [_make_hook("Notification")],
         }
 
+    def build_workspace_sdk_hooks(
+        self,
+        hook_events: list[dict[str, Any]],
+        *,
+        workspace_root: Path,
+        tool_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        hooks = dict(self._build_claude_sdk_hooks(hook_events))
+        workspace_root = Path(workspace_root).resolve()
+
+        async def _pretool_bash_callback(input_data, tool_use_id, _context):
+            event_payload = self._json_safe(input_data)
+            command = str((event_payload or {}).get("tool_input", {}).get("command", "") or "").strip()
+            violations = self._validate_bash_commands([command], workspace_root, tool_policy)
+            event_record = {
+                "hook_event_name": "PreToolUse",
+                "tool_use_id": str(tool_use_id or ""),
+                "tool_name": "Bash",
+                "command": command,
+                "input": event_payload,
+                "violations": [dict(item) for item in violations],
+            }
+            if not violations:
+                event_record["permission_decision"] = "allow"
+                hook_events.append(event_record)
+                return {
+                    "continue_": True,
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                    },
+                }
+            detail = (
+                "workspace Bash command blocked by harness policy; keep commands inside "
+                f"workspace_root and writable roots only. violations: {self._format_workspace_violations(violations)}"
+            )
+            event_record["permission_decision"] = "deny"
+            event_record["permission_decision_reason"] = detail
+            hook_events.append(event_record)
+            return {
+                "continue_": True,
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": detail,
+                },
+                "systemMessage": detail,
+            }
+
+        pretool_hooks = list(hooks.get("PreToolUse", []))
+        pretool_hooks.append(_make_sdk_hook_matcher(matcher="Bash", hooks=[_pretool_bash_callback]))
+        hooks["PreToolUse"] = pretool_hooks
+        return hooks
+
     async def _execute_claude_sdk_query(
         self,
         *,
+        task_bundle: TaskBundle,
         session_config: ExecutorSessionConfig,
         task_spec: dict[str, Any],
         runtime_paths: dict[str, Path],
@@ -3840,6 +4478,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
 
         hook_events: list[dict[str, Any]] = []
         submission_state = self._empty_submission_state()
+        private_submission_state = self._empty_private_submission_state()
         mcp_servers: dict[str, Any] = {}
         if stop_oracle == "submit_tool":
             mcp_servers = self._build_submission_mcp_servers(
@@ -3849,6 +4488,15 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 tool_policy=tool_policy,
                 readonly_before=readonly_before,
                 submission_state=submission_state,
+            )
+        elif stop_oracle == "hidden_judge_submit":
+            mcp_servers = self._build_hidden_judge_submission_mcp_servers(
+                task_bundle=task_bundle,
+                session_config=session_config,
+                task_spec=task_spec,
+                workspace=workspace,
+                submission_state=submission_state,
+                private_submission_state=private_submission_state,
             )
         options_kwargs = self._build_claude_sdk_options_kwargs(
             session_config=session_config,
@@ -3862,7 +4510,11 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         claude_session_id = self._new_claude_session_id()
         options_kwargs["session_id"] = claude_session_id
         options_kwargs["continue_conversation"] = False
-        options_kwargs["hooks"] = self._build_claude_sdk_hooks(hook_events)
+        options_kwargs["hooks"] = self.build_workspace_sdk_hooks(
+            hook_events,
+            workspace_root=workspace,
+            tool_policy=tool_policy,
+        )
         options = ClaudeAgentOptions(**options_kwargs)
         resolved_model_name = self._resolved_model_name(session_config)
         if resolved_model_name:
@@ -3876,6 +4528,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             completion_policy=completion_policy,
             timeout_seconds=model_timeout_seconds,
         )
+        if stop_oracle == "hidden_judge_submit":
+            external_completion_callback = None
         result: Optional[dict[str, Any]] = None
         pending_error: Optional[ClaudeSDKExecutionError] = None
         vendor_session_ref: dict[str, Any] = {
@@ -3907,6 +4561,10 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     sdk_messages=exc.sdk_messages,
                     result_text=exc.result_text,
                     diagnostics=diagnostics,
+                    private_state=self._merge_private_submission_state(
+                        private_submission_state,
+                        getattr(exc, "private_state", {}),
+                    ),
                 )
             except Exception as exc:
                 vendor_session_ref = self._build_vendor_session_ref(
@@ -3924,6 +4582,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                         "sdk_result": self._extract_sdk_result_metadata(None),
                         "submission_state": dict(self._merge_submission_state({}, submission_state)),
                     },
+                    private_state=dict(private_submission_state),
                 )
             else:
                 if result is not None and "vendor_session_ref" not in result:
@@ -3944,6 +4603,7 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                     result["submission_state"] = dict(
                         self._merge_submission_state({}, submission_state)
                     )
+                    result["private_submission_state"] = dict(private_submission_state)
 
         session_cleanup = self._delete_claude_session_history(
             str(vendor_session_ref.get("session_id", "") or ""),
@@ -3968,6 +4628,12 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         result["vendor_session_ref"] = vendor_session_ref
         result.setdefault("sdk_diagnostics", {})
         result["sdk_diagnostics"]["vendor_session_ref"] = vendor_session_ref
+        result["private_submission_state"] = dict(
+            self._merge_private_submission_state(
+                result.get("private_submission_state"),
+                private_submission_state,
+            )
+        )
         return result
 
     def _build_workspace_system_prompt(
@@ -3984,7 +4650,33 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             else "Prohibited external side effects still include package or environment installation, version control operations, privilege escalation, system or service control, and killing processes."
         )
         network_lines = self._workspace_system_network_lines(network_access_enabled)
-        if stop_oracle == "submit_tool":
+        if stop_oracle == "hidden_judge_submit":
+            append_lines = [
+                "You are an execution agent inside a harness, not an open-ended research assistant.",
+                "Work only inside the provided runtime workspace.",
+                "Your primary objective is to complete the workspace contract and stop cleanly.",
+                "README_public.md is the authoritative task specification narrative, and task_contract.public.json is the authoritative interface contract. Read both first.",
+                "Prefer relative paths from the current working directory instead of guessed absolute paths.",
+                "Use the preconfigured `python` from the workspace environment; do not switch interpreters.",
+                "Allowed write roots: " + ", ".join(tool_policy["write_roots"]),
+                "Prefer the `Write` tool for creating or editing source files under work/; use Bash mainly for running programs, inspection, debugging, and workspace-local file operations.",
+                "Read-only roots: " + ", ".join(tool_policy["read_roots"]),
+                "Any Bash command that stays inside the workspace, respects read-only roots, and avoids prohibited external side effects is allowed.",
+                "Absolute or relative paths are acceptable when they resolve inside the workspace; writes must stay under "
+                + ", ".join(tool_policy["write_roots"])
+                + ".",
+                prohibited_side_effects_line,
+                *network_lines,
+                "The hidden judge is available only through `submit_result(...)` and returns only pass or fail.",
+                f"Before any code edits or solver runs in a round, update `{self.WORKSPACE_PLAN_PATH}` first.",
+                f"On later rounds, revise `{self.WORKSPACE_PLAN_PATH}` before making more changes.",
+                "Use the workspace tools to debug locally within this same session if `python work/main.py` fails.",
+                "When you have a candidate output, call `submit_result(...)` with the final structured summary.",
+                "If `submit_result(...)` returns `{ \"status\": \"fail\" }`, continue debugging locally and try again.",
+                "If `submit_result(...)` returns `{ \"status\": \"pass\" }`, immediately return ONLY the structured summary and stop all further tool use.",
+                "Do not expect hidden metrics, failure tags, or any other judge detail.",
+            ]
+        elif stop_oracle == "submit_tool":
             append_lines = [
                 "You are an execution agent inside a harness, not an open-ended research assistant.",
                 "Work only inside the provided runtime workspace.",
@@ -4002,6 +4694,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 prohibited_side_effects_line,
                 *network_lines,
                 "Hidden judge signals are not available.",
+                f"Before any code edits or solver runs in a round, update `{self.WORKSPACE_PLAN_PATH}` first.",
+                f"On later rounds, revise `{self.WORKSPACE_PLAN_PATH}` before making more changes.",
                 "Use the workspace tools to debug locally within this same session if `python work/main.py` fails.",
                 "Use `check_ready()` as the authoritative public completion oracle before stopping.",
                 "If `python work/main.py` succeeds and the required outputs exist, your next action must be `check_ready()`, not more analysis, parameter sweeps, plotting, or model refinement.",
@@ -4027,6 +4721,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 prohibited_side_effects_line,
                 *network_lines,
                 "Hidden judge signals are not available.",
+                f"Before any code edits or solver runs in a round, update `{self.WORKSPACE_PLAN_PATH}` first.",
+                f"On later rounds, revise `{self.WORKSPACE_PLAN_PATH}` before making more changes.",
                 "Use the workspace tools to debug locally within this same session if `python work/main.py` fails.",
                 "Use `python evaluation/self_eval.py` as the authoritative public completion oracle before stopping.",
                 "If `python work/main.py` succeeds, your next action must be `python evaluation/self_eval.py`, not more analysis, parameter sweeps, plotting, or model refinement.",
@@ -4083,6 +4779,8 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             allowed_tools.extend(self.NETWORK_ENABLED_ALLOWED_TOOLS)
         if stop_oracle == "submit_tool":
             allowed_tools.extend(self.SUBMISSION_TOOL_NAMES)
+        elif stop_oracle == "hidden_judge_submit":
+            allowed_tools.extend(self.HIDDEN_JUDGE_TOOL_NAMES)
         return list(dict.fromkeys(allowed_tools))
 
     def _all_disallowed_tools(self, *, tool_policy: Optional[dict[str, Any]] = None) -> list[str]:
@@ -4106,17 +4804,31 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "self_eval": "public_self_eval",
             "submit_tool": "submit_tool",
             "submit": "submit_tool",
+            "hidden_judge_submit": "hidden_judge_submit",
+            "hidden_submit": "hidden_judge_submit",
         }
         if normalized not in aliases:
             raise RuntimeError(
-                "workspace_stop_oracle must be one of: public_self_eval, submit_tool"
+                "workspace_stop_oracle must be one of: public_self_eval, submit_tool, hidden_judge_submit"
             )
         return aliases[normalized]
 
     def _agent_stop_policy(self, stop_oracle: str) -> str:
+        if stop_oracle == "hidden_judge_submit":
+            return "submit_hidden_judge_until_pass"
         if stop_oracle == "submit_tool":
             return "submit_tool"
         return "run_self_eval_then_summary"
+
+    def _workspace_feedback_scope(self, stop_oracle: str) -> str:
+        if stop_oracle == "hidden_judge_submit":
+            return self.HIDDEN_JUDGE_FEEDBACK_SCOPE
+        return self.WORKSPACE_FEEDBACK_SCOPE
+
+    def _workspace_harness_feedback_mode(self, stop_oracle: str) -> str:
+        if stop_oracle == "hidden_judge_submit":
+            return self.HIDDEN_JUDGE_HARNESS_FEEDBACK_MODE
+        return self.WORKSPACE_HARNESS_FEEDBACK_MODE
 
     def _empty_submission_state(self) -> dict[str, Any]:
         return {
@@ -4124,10 +4836,33 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             "submission_accepted": False,
             "submission_rejection_reasons": [],
             "submission_id": "",
+            "submission_attempt_count": 0,
+            "last_submission_status": "",
             "check_ready_calls": [],
             "submit_result_calls": [],
             "submission_events": [],
         }
+
+    def _empty_private_submission_state(self) -> dict[str, Any]:
+        return {
+            "judge_results": [],
+        }
+
+    def _merge_json_safe_event_lists(
+        self,
+        base_items: Sequence[Any],
+        incoming_items: Sequence[Any],
+    ) -> list[Any]:
+        merged: list[Any] = []
+        seen: set[str] = set()
+        for item in [*(base_items or []), *(incoming_items or [])]:
+            safe_item = self._json_safe(item)
+            marker = json.dumps(safe_item, sort_keys=True, ensure_ascii=False)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            merged.append(safe_item)
+        return merged
 
     def _merge_submission_state(
         self,
@@ -4154,10 +4889,32 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         )
         merged["submission_rejection_reasons"] = list(dict.fromkeys(rejection_reasons))
         for field_name in ("check_ready_calls", "submit_result_calls", "submission_events"):
-            merged[field_name] = [
-                self._json_safe(item)
-                for item in incoming_state.get(field_name, merged.get(field_name, [])) or []
-            ]
+            merged[field_name] = self._merge_json_safe_event_lists(
+                list(merged.get(field_name, []) or []),
+                list(incoming_state.get(field_name, []) or []),
+            )
+        merged["submission_attempt_count"] = max(
+            int(merged.get("submission_attempt_count", 0) or 0),
+            int(incoming_state.get("submission_attempt_count", 0) or 0),
+            len(list(merged.get("submit_result_calls", []) or [])),
+        )
+        merged["last_submission_status"] = str(
+            incoming_state.get("last_submission_status", merged.get("last_submission_status", "")) or ""
+        )
+        return merged
+
+    def _merge_private_submission_state(
+        self,
+        base_state: Optional[dict[str, Any]],
+        incoming_state: Any,
+    ) -> dict[str, Any]:
+        merged = dict(base_state or self._empty_private_submission_state())
+        if not isinstance(incoming_state, dict):
+            return merged
+        merged["judge_results"] = self._merge_json_safe_event_lists(
+            list(merged.get("judge_results", []) or []),
+            list(incoming_state.get("judge_results", []) or []),
+        )
         return merged
 
     def _resolve_submission_state(
@@ -4169,15 +4926,24 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         state = self._merge_submission_state({}, sdk_diagnostics.get("submission_state"))
         return self._merge_submission_state(state, response_metadata.get("submission_state"))
 
-    def _submission_metadata(self, submission_state: dict[str, Any]) -> dict[str, Any]:
+    def _submission_metadata(
+        self,
+        submission_state: dict[str, Any],
+        *,
+        stop_oracle: str,
+    ) -> dict[str, Any]:
         return {
-            "stop_oracle": "submit_tool",
+            "stop_oracle": stop_oracle,
             "submission_attempted": bool(submission_state.get("submission_attempted", False)),
             "submission_accepted": bool(submission_state.get("submission_accepted", False)),
             "submission_rejection_reasons": list(
                 submission_state.get("submission_rejection_reasons", [])
             ),
             "submission_id": str(submission_state.get("submission_id", "") or ""),
+            "submission_attempt_count": int(submission_state.get("submission_attempt_count", 0) or 0),
+            "last_submission_status": str(
+                submission_state.get("last_submission_status", "") or ""
+            ),
         }
 
     def _write_submission_artifacts(
@@ -4186,12 +4952,15 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
         workspace: Path,
         round_index: int,
         submission_state: dict[str, Any],
+        stop_oracle: str,
     ) -> None:
-        for filename, field_name in (
-            (f"check_ready_calls_round_{round_index}.json", "check_ready_calls"),
+        artifact_fields = [
             (f"submit_result_calls_round_{round_index}.json", "submit_result_calls"),
             (f"submission_events_round_{round_index}.json", "submission_events"),
-        ):
+        ]
+        if stop_oracle == "submit_tool":
+            artifact_fields.insert(0, (f"check_ready_calls_round_{round_index}.json", "check_ready_calls"))
+        for filename, field_name in artifact_fields:
             (workspace / filename).write_text(
                 json.dumps(
                     list(submission_state.get(field_name, [])),
@@ -4200,6 +4969,121 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 ),
                 encoding="utf-8",
             )
+
+    def _serialize_judge_result(self, result: JudgeResult) -> dict[str, Any]:
+        return {
+            "task_id": result.task_id,
+            "all_metrics_passed": bool(result.all_metrics_passed),
+            "metrics_actual": dict(result.metrics_actual),
+            "failed_metrics": list(result.failed_metrics),
+            "failure_tags": list(result.failure_tags),
+        }
+
+    def _deserialize_judge_result(self, payload: Any) -> Optional[JudgeResult]:
+        if not isinstance(payload, dict):
+            return None
+        task_id = str(payload.get("task_id", "") or "").strip()
+        if not task_id:
+            return None
+        return JudgeResult(
+            task_id=task_id,
+            all_metrics_passed=bool(payload.get("all_metrics_passed", False)),
+            metrics_actual=dict(payload.get("metrics_actual") or {}),
+            failed_metrics=list(payload.get("failed_metrics") or []),
+            failure_tags=list(payload.get("failure_tags") or []),
+        )
+
+    def _latest_private_judge_result(
+        self,
+        private_submission_state: Optional[dict[str, Any]],
+    ) -> Optional[JudgeResult]:
+        state = dict(private_submission_state or {})
+        judge_results = list(state.get("judge_results", []) or [])
+        if not judge_results:
+            return None
+        return self._deserialize_judge_result(judge_results[-1])
+
+    def _latest_submission_request_summary(
+        self,
+        submission_state: Optional[dict[str, Any]],
+    ) -> dict[str, Any]:
+        state = dict(submission_state or {})
+        submit_calls = list(state.get("submit_result_calls", []) or [])
+        if not submit_calls:
+            return {}
+        latest_call = dict(submit_calls[-1] or {})
+        request_payload = latest_call.get("request")
+        return dict(request_payload) if isinstance(request_payload, dict) else {}
+
+    def _hidden_judge_submission_failed(
+        self,
+        submission_state: Optional[dict[str, Any]],
+    ) -> bool:
+        state = dict(submission_state or {})
+        return (
+            int(state.get("submission_attempt_count", 0) or 0) > 0
+            and str(state.get("last_submission_status", "") or "") == "fail"
+            and not bool(state.get("submission_accepted", False))
+        )
+
+    def _hidden_judge_submission_passed(
+        self,
+        submission_state: Optional[dict[str, Any]],
+    ) -> bool:
+        state = dict(submission_state or {})
+        return bool(state.get("submission_accepted", False)) and (
+            str(state.get("last_submission_status", "") or "") == "pass"
+        )
+
+    def _build_hidden_judge_manifest(self, task_spec: Mapping[str, Any]) -> dict[str, Any]:
+        spec = dict(task_spec or {})
+        return {
+            "task_id": str(spec.get("task_id", "") or ""),
+            "family": str(spec.get("family", "") or ""),
+            "primary_output_path": str(spec.get("primary_output_path", "") or ""),
+            "task_contract_path": str(spec.get("task_contract_path", "") or ""),
+            "judge_adapter_path": str(spec.get("judge_adapter_path", "") or ""),
+            "runtime_env": dict(spec.get("runtime_env") or {}),
+        }
+
+    def _run_hidden_judge(
+        self,
+        *,
+        task_bundle: TaskBundle,
+        task_spec: Mapping[str, Any],
+        run_id: str,
+        workspace: Path,
+        summary: dict[str, Any],
+    ) -> JudgeResult:
+        manifest = self._build_hidden_judge_manifest(task_spec)
+        judge_path = task_bundle.hidden_bundle_dir / str(manifest.get("judge_adapter_path", "") or "")
+        if not judge_path.exists():
+            raise FileNotFoundError(f"hidden judge adapter not found: {judge_path}")
+        payload = invoke_judge_runner(
+            _task_python_executable(task_bundle),
+            mode="evaluate",
+            payload={
+                "judge_path": str(judge_path.resolve()),
+                "task_root": str(task_bundle.hidden_bundle_dir.resolve()),
+                "manifest": manifest,
+                "run_record": {
+                    "run_id": run_id,
+                    "task_id": task_bundle.task_id,
+                    "provider": self.provider_name,
+                    "env_hash": str((task_spec.get("runtime_env") or {}).get("env_hash", "") or ""),
+                    "skills_active": [],
+                    "workspace_root": str(Path(workspace).resolve()),
+                    "metadata": {
+                        "submitted_summary": self._json_safe(summary),
+                    },
+                },
+            },
+        )
+        result_payload = dict(payload.get("judge_result") or {})
+        result = self._deserialize_judge_result(result_payload)
+        if result is None:
+            raise RuntimeError("hidden judge runner returned an invalid judge_result payload")
+        return result
 
     def _resolve_missing_result_failure_reason(
         self,
@@ -4375,6 +5259,74 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             tools=[check_ready, submit_result],
         )
         return {self.SUBMISSION_SERVER_NAME: server}
+
+    def _build_hidden_judge_submission_mcp_servers(
+        self,
+        *,
+        task_bundle: TaskBundle,
+        session_config: ExecutorSessionConfig,
+        task_spec: dict[str, Any],
+        workspace: Path,
+        submission_state: dict[str, Any],
+        private_submission_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        from claude_agent_sdk import create_sdk_mcp_server, tool
+
+        @tool(
+            "submit_result",
+            "Submit the current candidate output to the hidden judge. The response is only pass or fail.",
+            self._workspace_summary_schema(),
+        )
+        async def submit_result(args):
+            try:
+                normalized_summary = self._coerce_sdk_summary(args)
+            except RuntimeError as exc:
+                return self._build_submission_tool_result(
+                    {"error": str(exc)},
+                    is_error=True,
+                )
+
+            judge_result = self._run_hidden_judge(
+                task_bundle=task_bundle,
+                task_spec=task_spec,
+                run_id=session_config.run_id,
+                workspace=workspace,
+                summary=normalized_summary,
+            )
+            submission_state["submission_attempted"] = True
+            submission_state["submission_attempt_count"] = int(
+                submission_state.get("submission_attempt_count", 0) or 0
+            ) + 1
+            attempt_index = int(submission_state["submission_attempt_count"])
+            status = "pass" if judge_result.all_metrics_passed else "fail"
+            submission_state["last_submission_status"] = status
+            response_payload = {"status": status}
+            submission_state["submission_accepted"] = bool(judge_result.all_metrics_passed)
+            if judge_result.all_metrics_passed:
+                submission_state["submission_rejection_reasons"] = []
+                submission_state["submission_id"] = f"hidden-submit-{attempt_index}"
+            else:
+                submission_state["submission_id"] = ""
+            call_record = {
+                "tool": "submit_result",
+                "attempt_index": attempt_index,
+                "request": self._json_safe(normalized_summary),
+                "response": response_payload,
+            }
+            submission_state["submit_result_calls"].append(self._json_safe(call_record))
+            submission_state["submission_events"].append(self._json_safe(call_record))
+            private_submission_state["judge_results"] = self._merge_json_safe_event_lists(
+                list(private_submission_state.get("judge_results", []) or []),
+                [self._serialize_judge_result(judge_result)],
+            )
+            return self._build_submission_tool_result(response_payload)
+
+        server = create_sdk_mcp_server(
+            name=self.HIDDEN_JUDGE_SERVER_NAME,
+            version="1.0.0",
+            tools=[submit_result],
+        )
+        return {self.HIDDEN_JUDGE_SERVER_NAME: server}
 
     def _coerce_sdk_summary(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
@@ -5136,27 +6088,6 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
                 'if __name__ == "__main__":\n'
                 '    main()\n'
             ),
-            "work/src/__init__.py": '"""Workspace solver package."""\n',
-            "work/src/preprocessing.py": (
-                '"""Preprocessing scaffold."""\n\n'
-                'def load_inputs():\n'
-                '    raise NotImplementedError\n'
-            ),
-            "work/src/physics_model.py": (
-                '"""Physics model scaffold."""\n\n'
-                'def build_model():\n'
-                '    raise NotImplementedError\n'
-            ),
-            "work/src/solvers.py": (
-                '"""Solver scaffold."""\n\n'
-                'def solve():\n'
-                '    raise NotImplementedError\n'
-            ),
-            "work/src/visualization.py": (
-                '"""Visualization scaffold."""\n\n'
-                'def summarize():\n'
-                '    return None\n'
-            ),
         }
         runtime_root = runtime_paths["runtime_root"]
         for relative_path, content in scaffold_files.items():
@@ -5252,6 +6183,215 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
 
         _walk(sdk_messages)
         return list(dict.fromkeys(commands))
+
+    def _extract_denied_bash_attempts(
+        self,
+        hook_events: Sequence[dict[str, Any]],
+        *,
+        workspace_root: Path,
+        tool_policy: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        attempts: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, tuple[tuple[str, str, str, str, str], ...]]] = set()
+        for raw_event in hook_events:
+            if not isinstance(raw_event, Mapping):
+                continue
+            if str(raw_event.get("hook_event_name", "") or "") != "PreToolUse":
+                continue
+            if str(raw_event.get("permission_decision", "") or "").lower() != "deny":
+                continue
+            tool_name = str(raw_event.get("tool_name", "") or "").strip().lower()
+            input_payload = raw_event.get("input")
+            if not tool_name and isinstance(input_payload, Mapping):
+                tool_name = str(input_payload.get("tool_name", "") or "").strip().lower()
+            if tool_name and tool_name != "bash":
+                continue
+            command = str(raw_event.get("command", "") or "").strip()
+            if not command and isinstance(input_payload, Mapping):
+                tool_input = input_payload.get("tool_input")
+                if isinstance(tool_input, Mapping):
+                    command = str(tool_input.get("command", "") or "").strip()
+            violations = raw_event.get("violations")
+            if not isinstance(violations, Sequence) or isinstance(violations, (str, bytes)):
+                violations = self._validate_bash_commands([command], workspace_root, tool_policy)
+            normalized_violations = self._dedupe_workspace_violations(
+                [dict(item) for item in violations if isinstance(item, Mapping)]
+            )
+            violation_key = tuple(
+                self._workspace_violation_identity(item) for item in normalized_violations
+            )
+            dedupe_key = (
+                str(raw_event.get("tool_use_id", "") or ""),
+                command,
+                violation_key,
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            attempts.append(
+                {
+                    "hook_event_name": "PreToolUse",
+                    "tool_use_id": str(raw_event.get("tool_use_id", "") or ""),
+                    "tool_name": "Bash",
+                    "command": command,
+                    "permission_decision": "deny",
+                    "permission_decision_reason": str(
+                        raw_event.get("permission_decision_reason", "") or ""
+                    ),
+                    "violations": normalized_violations,
+                }
+            )
+        return attempts
+
+    def _filter_denied_bash_commands(
+        self,
+        commands: Sequence[str],
+        denied_attempts: Sequence[dict[str, Any]],
+    ) -> list[str]:
+        denied_commands = {
+            self._normalize_shell_command(item.get("command", ""))
+            for item in denied_attempts
+            if str(item.get("command", "") or "").strip()
+        }
+        filtered: list[str] = []
+        for command in commands:
+            normalized = self._normalize_shell_command(command)
+            if normalized and normalized in denied_commands:
+                continue
+            filtered.append(str(command))
+        return list(dict.fromkeys(filtered))
+
+    def _normalize_workspace_relative_path(
+        self,
+        path_value: Any,
+        *,
+        workspace_root: Path,
+        current_dir: Optional[Path] = None,
+    ) -> str:
+        text = self._strip_matching_quotes(str(path_value or "").strip())
+        if not text:
+            return ""
+        path_ref = self._resolve_workspace_path_reference(
+            text,
+            current_dir=(current_dir or workspace_root),
+            workspace_root=workspace_root,
+        )
+        if not path_ref.get("inside_workspace", False):
+            return ""
+        return Path(str(path_ref.get("relative_path", "") or "")).as_posix()
+
+    def _workspace_plan_actions(
+        self,
+        sdk_messages: Sequence[Any],
+        *,
+        workspace_root: Path,
+    ) -> list[dict[str, Any]]:
+        actions: list[dict[str, Any]] = []
+        workspace_root = Path(workspace_root).resolve()
+        entrypoint_command = self._normalize_shell_command(self._workspace_entrypoint_command())
+        for message in sdk_messages:
+            for entry in self._extract_tool_use_entries(message):
+                tool_name = str(entry.get("name", "") or "").strip()
+                tool_input = dict(entry.get("input") or {})
+                if tool_name == "Write":
+                    file_path = self._normalize_workspace_relative_path(
+                        tool_input.get("file_path", ""),
+                        workspace_root=workspace_root,
+                    )
+                    if file_path:
+                        actions.append({"tool": "Write", "kind": "write", "target": file_path})
+                elif tool_name == "Bash":
+                    command = str(tool_input.get("command", "") or "").strip()
+                    if not command:
+                        continue
+                    if self._normalize_shell_command(command) == entrypoint_command:
+                        actions.append(
+                            {
+                                "tool": "Bash",
+                                "kind": "run",
+                                "target": self._workspace_entrypoint_command(),
+                            }
+                        )
+                        continue
+                    for segment in self._split_shell_segments(command):
+                        for effect in self._extract_segment_path_effects(segment):
+                            if str(effect.get("mode", "") or "") != "write":
+                                continue
+                            target = self._normalize_workspace_relative_path(
+                                effect.get("path", ""),
+                                workspace_root=workspace_root,
+                            )
+                            if not target or target in {"work", "work/src", "output", "checkpoints"}:
+                                continue
+                            actions.append(
+                                {
+                                    "tool": "Bash",
+                                    "kind": "write",
+                                    "target": target,
+                                    "command": command,
+                                }
+                            )
+                            break
+                elif tool_name == "submit_result":
+                    actions.append({"tool": "submit_result", "kind": "submit", "target": "submit_result"})
+        return actions
+
+    def _evaluate_workspace_plan_requirement(
+        self,
+        *,
+        sdk_messages: Sequence[Any],
+        workspace_root: Path,
+        files_written: Sequence[str],
+        submission_state: Mapping[str, Any],
+    ) -> Optional[dict[str, Any]]:
+        normalized_files_written = [
+            Path(str(item or "")).as_posix()
+            for item in files_written
+            if str(item or "").strip()
+        ]
+        actions = self._workspace_plan_actions(sdk_messages, workspace_root=workspace_root)
+        requires_plan = bool(
+            actions
+            or normalized_files_written
+            or bool(submission_state.get("submission_attempted", False))
+        )
+        if not requires_plan:
+            return None
+        if self.WORKSPACE_PLAN_PATH not in normalized_files_written:
+            return self._build_workspace_plan_feedback()
+        first_material_action = next(
+            (
+                action
+                for action in actions
+                if action.get("kind") in {"write", "run", "submit"}
+            ),
+            None,
+        )
+        if first_material_action is None:
+            return None
+        if first_material_action.get("kind") == "write" and (
+            str(first_material_action.get("target", "") or "") == self.WORKSPACE_PLAN_PATH
+        ):
+            return None
+        return self._build_workspace_plan_feedback()
+
+    def _split_handled_bash_policy_violations(
+        self,
+        violations: Sequence[dict[str, Any]],
+        denied_attempts: Sequence[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        handled_keys = {
+            self._workspace_violation_identity(violation)
+            for attempt in denied_attempts
+            for violation in attempt.get("violations", [])
+            if isinstance(violation, Mapping)
+        }
+        handled: list[dict[str, Any]] = []
+        unhandled: list[dict[str, Any]] = []
+        for violation in violations:
+            target = handled if self._workspace_violation_identity(violation) in handled_keys else unhandled
+            target.append(dict(violation))
+        return self._dedupe_workspace_violations(handled), self._dedupe_workspace_violations(unhandled)
 
     def _validate_bash_commands(
         self,
@@ -5403,6 +6543,18 @@ class ClaudeWorkspaceAdapter(InspectBridgeAdapter):
             seen.add(key)
             unique.append(dict(item))
         return unique
+
+    def _workspace_violation_identity(
+        self,
+        violation: Mapping[str, Any],
+    ) -> tuple[str, str, str, str, str]:
+        return (
+            str(violation.get("command", "") or ""),
+            str(violation.get("segment", "") or ""),
+            str(violation.get("category", "") or ""),
+            str(violation.get("path", "") or ""),
+            str(violation.get("detail", "") or ""),
+        )
 
     def _format_workspace_violations(
         self,

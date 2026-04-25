@@ -1,0 +1,688 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\plane_wave_ultrasound\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "medicine",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "dataset_1": {
+            "dtype": "object",
+            "shape": []
+          },
+          "dataset_2": {
+            "dtype": "object",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "RF_cysts": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              1536,
+              128,
+              7
+            ]
+          },
+          "RF_fibers": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              2688,
+              128,
+              7
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "bmode_cysts": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              1536,
+              128
+            ]
+          },
+          "bmode_fibers": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              2688,
+              128
+            ]
+          }
+        },
+        "id": "baseline_reference",
+        "path": "data/baseline_reference.npz",
+        "role": "reference_data",
+        "semantics": "Hidden B-mode references used for evaluation.",
+        "visibility": "private"
+      },
+      {
+        "fields": {
+          "x": {
+            "dtype": "float64",
+            "shape": [
+              128
+            ]
+          },
+          "z": {
+            "dtype": "float64",
+            "shape": [
+              2688
+            ]
+          }
+        },
+        "id": "fibers_axes",
+        "path": "evaluation/reference_outputs/task_contract_refs_fibers_axes.npz",
+        "role": "reference_data",
+        "semantics": "Generated hidden coordinate vectors for the fibers phantom.",
+        "visibility": "private"
+      },
+      {
+        "fields": {
+          "x": {
+            "dtype": "float64",
+            "shape": [
+              128
+            ]
+          },
+          "z": {
+            "dtype": "float64",
+            "shape": [
+              1536
+            ]
+          }
+        },
+        "id": "cysts_axes",
+        "path": "evaluation/reference_outputs/task_contract_refs_cysts_axes.npz",
+        "role": "reference_data",
+        "semantics": "Generated hidden coordinate vectors for the cysts phantom.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "bmode": {
+            "expected_shape": [
+              1536,
+              128
+            ],
+            "field": "bmode_cysts",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "cyst_centers": {
+            "expected_shape": [
+              2,
+              2
+            ],
+            "field": "",
+            "preprocess": "identity",
+            "source": "value",
+            "value": [
+              [
+                -0.01,
+                0.02
+              ],
+              [
+                0.007,
+                0.023
+              ]
+            ]
+          },
+          "x": {
+            "expected_shape": [
+              128
+            ],
+            "field": "x",
+            "file_id": "cysts_axes",
+            "preprocess": "identity",
+            "source": "file"
+          },
+          "z": {
+            "expected_shape": [
+              1536
+            ],
+            "field": "z",
+            "file_id": "cysts_axes",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.9
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "bmode": {
+            "expected_shape": [
+              1536,
+              128
+            ],
+            "field": "bmode_cysts",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "cyst_centers": {
+            "expected_shape": [
+              2,
+              2
+            ],
+            "field": "",
+            "preprocess": "identity",
+            "source": "value",
+            "value": [
+              [
+                -0.01,
+                0.02
+              ],
+              [
+                0.007,
+                0.023
+              ]
+            ]
+          },
+          "x": {
+            "expected_shape": [
+              128
+            ],
+            "field": "x",
+            "file_id": "cysts_axes",
+            "preprocess": "identity",
+            "source": "file"
+          },
+          "z": {
+            "expected_shape": [
+              1536
+            ],
+            "field": "z",
+            "file_id": "cysts_axes",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.1
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "bmode": {
+            "expected_shape": [
+              2688,
+              128
+            ],
+            "field": "bmode_fibers",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "x": {
+            "expected_shape": [
+              128
+            ],
+            "field": "x",
+            "file_id": "fibers_axes",
+            "preprocess": "identity",
+            "source": "file"
+          },
+          "z": {
+            "expected_shape": [
+              2688
+            ],
+            "field": "z",
+            "file_id": "fibers_axes",
+            "preprocess": "identity",
+            "source": "file"
+          },
+          "z_targets": {
+            "expected_shape": [
+              8
+            ],
+            "field": "",
+            "preprocess": "identity",
+            "source": "value",
+            "value": [
+              0.01,
+              0.02,
+              0.03,
+              0.04,
+              0.05,
+              0.06,
+              0.07,
+              0.08
+            ]
+          }
+        },
+        "name": "psf_fwhm_mm_mean",
+        "threshold": 2.458
+      },
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "bmode": {
+            "expected_shape": [
+              1536,
+              128
+            ],
+            "field": "bmode_cysts",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "cyst_centers": {
+            "expected_shape": [
+              2,
+              2
+            ],
+            "field": "",
+            "preprocess": "identity",
+            "source": "value",
+            "value": [
+              [
+                -0.01,
+                0.02
+              ],
+              [
+                0.007,
+                0.023
+              ]
+            ]
+          },
+          "x": {
+            "expected_shape": [
+              128
+            ],
+            "field": "x",
+            "file_id": "cysts_axes",
+            "preprocess": "identity",
+            "source": "file"
+          },
+          "z": {
+            "expected_shape": [
+              1536
+            ],
+            "field": "z",
+            "file_id": "cysts_axes",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "cnr_mean",
+        "threshold": 0.256
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "bmode_fibers",
+          "semantics": "Estimated B-mode image for the fibers phantom.",
+          "shape": [
+            2688,
+            128
+          ]
+        },
+        {
+          "dtype": "float32",
+          "name": "bmode_cysts",
+          "semantics": "Estimated B-mode image for the cysts phantom.",
+          "shape": [
+            1536,
+            128
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "plane_wave_ultrasound",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "Stolts_f-k_migration_for_plane_wave_ultrasound_imaging.pdf",
+      "data/baseline_reference.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/before_after_migration.png",
+      "evaluation/reference_outputs/bmode_comparison.png",
+      "evaluation/reference_outputs/bmode_cysts.npy",
+      "evaluation/reference_outputs/bmode_fibers.npy",
+      "evaluation/reference_outputs/compound_cysts.npy",
+      "evaluation/reference_outputs/compound_fibers.npy",
+      "evaluation/reference_outputs/task_contract_refs_cysts_axes.npz",
+      "evaluation/reference_outputs/task_contract_refs_fibers_axes.npz",
+      "evaluation/reference_outputs/x_cysts.npy",
+      "evaluation/reference_outputs/x_fibers.npy",
+      "evaluation/reference_outputs/z_cysts.npy",
+      "evaluation/reference_outputs/z_fibers.npy",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/conftest.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/plane_wave_ultrasound.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "baseline_reference.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {},
+      "exists": false
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "dataset_1",
+        "dataset_2"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "RF_cysts": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            1536,
+            128,
+            7
+          ]
+        },
+        "RF_fibers": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            2688,
+            128,
+            7
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\plane_wave_ultrasound\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "cnr_mean_boundary",
+      "ncc_boundary",
+      "nrmse_boundary",
+      "psf_fwhm_mm_mean_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "cnr": {
+            "cyst_1": 0.518,
+            "cyst_2": 0.05,
+            "mean": 0.284
+          },
+          "method": "Stolt f-k coherent compounding (7 angles)",
+          "ncc_cysts_vs_ref": 1.0,
+          "ncc_fibers_vs_ref": 0.9998,
+          "nrmse_cysts_vs_ref": 0.0726,
+          "nrmse_fibers_vs_ref": 0.0389,
+          "psf_fwhm_mm": {
+            "mean": 2.235,
+            "z_10mm": 2.682,
+            "z_20mm": 2.682,
+            "z_30mm": 1.49,
+            "z_40mm": 1.49,
+            "z_50mm": 1.788,
+            "z_60mm": 3.576,
+            "z_70mm": 2.086,
+            "z_80mm": 2.086
+          }
+        }
+      ],
+      "cnr_mean_boundary": 0.256,
+      "ncc_boundary": 0.9,
+      "nrmse_boundary": 0.1,
+      "psf_fwhm_mm_mean_boundary": 2.458
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/before_after_migration.png",
+      "reference_outputs/bmode_comparison.png",
+      "reference_outputs/bmode_cysts.npy",
+      "reference_outputs/bmode_fibers.npy",
+      "reference_outputs/compound_cysts.npy",
+      "reference_outputs/compound_fibers.npy",
+      "reference_outputs/task_contract_refs_cysts_axes.npz",
+      "reference_outputs/task_contract_refs_fibers_axes.npz",
+      "reference_outputs/x_cysts.npy",
+      "reference_outputs/x_fibers.npy",
+      "reference_outputs/z_cysts.npy",
+      "reference_outputs/z_fibers.npy"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\plane_wave_ultrasound\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\plane_wave_ultrasound.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Medicine",
+    "exists": true,
+    "headings": [
+      "Plane Wave Ultrasound Imaging (Stolt's f-k Migration)",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/baseline_reference.npz`",
+      "`data/meta_data.json`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "** A focused B-mode image of shape ($N_{t}, N_{x}$), with sufficient lateral resolution to resolve individual wire targets (≲ 1 mm FWHM) and sufficient contrast to distinguish circular cyst inclusions from surrounding tissue.",
+    "title": "Plane Wave Ultrasound Imaging (Stolt's f-k Migration)"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\plane_wave_ultrasound\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\plane_wave_ultrasound\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\plane_wave_ultrasound.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\bc842d5fd07ada81\\build.log",
+    "env_hash": "bc842d5fd07ada81",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\bc842d5fd07ada81\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\bc842d5fd07ada81\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "plane_wave_ultrasound",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\plane_wave_ultrasound",
+  "vendor_session_ref": {},
+  "warnings": []
+}

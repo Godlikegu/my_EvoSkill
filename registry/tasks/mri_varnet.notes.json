@@ -1,0 +1,404 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_varnet\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "raw_data",
+        "meta_data",
+        "requirements"
+      ],
+      "readable_files": [
+        "readme",
+        "raw_data",
+        "meta_data",
+        "requirements"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "medicine",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative problem statement, public constraints, and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "id": "raw_data",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public undersampled multi-coil k-space observations.",
+        "visibility": "public"
+      },
+      {
+        "id": "meta_data",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public scan parameters and target image metadata.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "image": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              320,
+              320
+            ]
+          }
+        },
+        "id": "ground_truth",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference RSS image used for evaluation.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_helper",
+        "path": "src/visualization.py",
+        "role": "metric_helper",
+        "semantics": "Task metric adapter and legacy visualization metrics.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metrics",
+          "file_id": "metric_helper",
+          "interface": "python_callable",
+          "invocation": {
+            "mode": "kwargs"
+          },
+          "result": {
+            "key": "ncc",
+            "mode": "mapping_key"
+          }
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              320,
+              320
+            ],
+            "field": "reconstruction",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              320,
+              320
+            ],
+            "field": "image",
+            "file_id": "ground_truth",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc_vs_ref",
+        "threshold": 0.8995
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metrics",
+          "file_id": "metric_helper",
+          "interface": "python_callable",
+          "invocation": {
+            "mode": "kwargs"
+          },
+          "result": {
+            "key": "nrmse",
+            "mode": "mapping_key"
+          }
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              320,
+              320
+            ],
+            "field": "reconstruction",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              320,
+              320
+            ],
+            "field": "image",
+            "file_id": "ground_truth",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse_vs_ref",
+        "threshold": 0.02
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "reconstruction",
+          "semantics": "Reconstructed magnitude image.",
+          "shape": [
+            1,
+            320,
+            320
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "mri_varnet",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      ".gitignore",
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/__pycache__/judge_adapter.cpython-314.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/fixtures/input_center_crop.npz",
+      "evaluation/fixtures/input_fft_roundtrip.npz",
+      "evaluation/fixtures/input_metrics.npz",
+      "evaluation/fixtures/input_metrics_diff.npz",
+      "evaluation/fixtures/input_rss.npz",
+      "evaluation/fixtures/input_zero_filled_recon.npz",
+      "evaluation/fixtures/output_center_crop.npz",
+      "evaluation/fixtures/output_data_shapes.npz",
+      "evaluation/fixtures/output_fft_roundtrip.npz",
+      "evaluation/fixtures/output_mask.npz",
+      "evaluation/fixtures/output_metrics_diff.npz",
+      "evaluation/fixtures/output_metrics_perfect.npz",
+      "evaluation/fixtures/output_rss.npz",
+      "evaluation/fixtures/output_zero_filled_recon.npz",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/error_maps.png",
+      "evaluation/reference_outputs/mask.npy",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/reconstruction_comparison.png",
+      "evaluation/reference_outputs/varnet_reconstruction.npz",
+      "evaluation/reference_outputs/zerofill.npz",
+      "evaluation/registration_contract.draft.json",
+      "evaluation/registration_contract.json",
+      "evaluation/registration_input.json",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/mri_varnet.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/__pycache__/visualization.cpython-314.pyc",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "image": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            320,
+            320
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "acceleration",
+        "acquisition",
+        "center_fraction",
+        "image_shape",
+        "kspace_shape",
+        "n_coils",
+        "n_slices"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "kspace_imag": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            15,
+            640,
+            368
+          ]
+        },
+        "kspace_real": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            15,
+            640,
+            368
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_varnet\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "End-to-End VarNet (12 cascades, 4x equispaced, knee multicoil)",
+          "ncc_vs_ref": 0.9994,
+          "nrmse_vs_ref": 0.0127
+        }
+      ],
+      "ncc_boundary": 0.8995,
+      "nrmse_boundary": 0.02
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/error_maps.png",
+      "reference_outputs/mask.npy",
+      "reference_outputs/metrics.json",
+      "reference_outputs/reconstruction_comparison.png",
+      "reference_outputs/varnet_reconstruction.npz",
+      "reference_outputs/zerofill.npz"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_varnet\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\mri_varnet.json",
+  "metric_source_candidates": [
+    "metric_helper",
+    "metric_helper"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Medicine",
+    "exists": true,
+    "headings": [
+      "MRI End-to-End Variational Network (VarNet) Reconstruction",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/ground_truth.npz",
+      "data/varnet_knee_state_dict.pt",
+      "data/meta_data.json",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "Reconstructed magnitude image $(320, 320)$ float32.",
+    "title": "MRI End-to-End Variational Network (VarNet) Reconstruction"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_varnet\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_varnet\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\mri_varnet.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\70357fddca185c16\\build.log",
+    "env_hash": "70357fddca185c16",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\70357fddca185c16\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\70357fddca185c16\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "mri_varnet",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_varnet",
+  "vendor_session_ref": {},
+  "warnings": []
+}

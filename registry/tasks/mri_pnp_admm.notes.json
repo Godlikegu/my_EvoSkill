@@ -1,0 +1,502 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_pnp_admm\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz",
+        "data_RealSN_DnCNN_noise15_pth"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz",
+        "data_RealSN_DnCNN_noise15_pth"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "medicine",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "image_dtype": {
+            "dtype": "<U17",
+            "shape": []
+          },
+          "image_shape": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          },
+          "image_source": {
+            "dtype": "<U42",
+            "shape": []
+          },
+          "mask_names": {
+            "dtype": "<U9",
+            "shape": [
+              3
+            ]
+          },
+          "n_masks": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "primary_mask": {
+            "dtype": "<U6",
+            "shape": []
+          },
+          "sampling_rate_percent": {
+            "dtype": "int64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "mask_cartesian": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              256,
+              256
+            ]
+          },
+          "mask_radial": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              256,
+              256
+            ]
+          },
+          "mask_random": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              256,
+              256
+            ]
+          },
+          "noises_imag": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              256,
+              256
+            ]
+          },
+          "noises_real": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              256,
+              256
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_RealSN_DnCNN_noise15_pth",
+        "path": "data/RealSN_DnCNN_noise15.pth",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "image": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              256,
+              256
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              256,
+              256
+            ],
+            "field": "image",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              256,
+              256
+            ],
+            "field": "image",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.8954
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              256,
+              256
+            ],
+            "field": "image",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              256,
+              256
+            ],
+            "field": "image",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.0365
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "image",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            256,
+            256
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "mri_pnp_admm",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/RealSN_DnCNN_noise15.pth",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/fixtures/denoiser/denoiser_io.npz",
+      "evaluation/fixtures/physics_model/forward_model.npz",
+      "evaluation/fixtures/physics_model/proximal.npz",
+      "evaluation/fixtures/preprocessing/shapes.npz",
+      "evaluation/fixtures/visualization/metrics_test.npz",
+      "evaluation/generate_fixtures.py",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/error_maps.png",
+      "evaluation/reference_outputs/ground_truth.npy",
+      "evaluation/reference_outputs/mask.png",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/pnp_admm_reconstruction.npz",
+      "evaluation/reference_outputs/psnr_convergence.png",
+      "evaluation/reference_outputs/psnr_history.npy",
+      "evaluation/reference_outputs/reconstruction_comparison.png",
+      "evaluation/reference_outputs/zerofill.npz",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/test_denoiser.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/mri_pnp_admm.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/denoiser.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz",
+      "RealSN_DnCNN_noise15.pth"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "image": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            256,
+            256
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "image_dtype",
+        "image_shape",
+        "image_source",
+        "mask_names",
+        "n_masks",
+        "primary_mask",
+        "sampling_rate_percent"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "mask_cartesian": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            256,
+            256
+          ]
+        },
+        "mask_radial": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            256,
+            256
+          ]
+        },
+        "mask_random": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            256,
+            256
+          ]
+        },
+        "noises_imag": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            256,
+            256
+          ]
+        },
+        "noises_real": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            256,
+            256
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_pnp_admm\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "PnP-ADMM (RealSN-DnCNN sigma=15, alpha=2.0, 100 iters, Random 30% mask)",
+          "ncc_vs_ref": 0.9949,
+          "nrmse_vs_ref": 0.0332
+        }
+      ],
+      "ncc_boundary": 0.8954,
+      "nrmse_boundary": 0.0365
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/error_maps.png",
+      "reference_outputs/ground_truth.npy",
+      "reference_outputs/mask.png",
+      "reference_outputs/metrics.json",
+      "reference_outputs/pnp_admm_reconstruction.npz",
+      "reference_outputs/psnr_convergence.png",
+      "reference_outputs/psnr_history.npy",
+      "reference_outputs/reconstruction_comparison.png",
+      "reference_outputs/zerofill.npz"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_pnp_admm\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\mri_pnp_admm.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Medicine",
+    "exists": true,
+    "headings": [
+      "MRI PnP-ADMM Reconstruction with Spectrally-Normalized Denoiser",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/ground_truth.npz",
+      "data/RealSN_DnCNN_noise15.pth",
+      "data/meta_data.json",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "Reconstructed image $\\hat{x} \\in \\mathbb{R}^{256 \\times 256}$.",
+    "title": "MRI PnP-ADMM Reconstruction with Spectrally-Normalized Denoiser"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_pnp_admm\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_pnp_admm\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\mri_pnp_admm.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\c46c4e5b715dce1e\\build.log",
+    "env_hash": "c46c4e5b715dce1e",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\c46c4e5b715dce1e\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\c46c4e5b715dce1e\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "mri_pnp_admm",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_pnp_admm",
+  "vendor_session_ref": {},
+  "warnings": []
+}

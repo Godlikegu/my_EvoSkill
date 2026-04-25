@@ -1,0 +1,512 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_FWI_original\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "earth_science",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_meta_data",
+        "path": "data/meta_data",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "acquisition": {
+            "dtype": "object",
+            "shape": []
+          },
+          "inversion": {
+            "dtype": "object",
+            "shape": []
+          },
+          "model": {
+            "dtype": "<U33",
+            "shape": []
+          },
+          "preprocessing": {
+            "dtype": "object",
+            "shape": []
+          },
+          "reference": {
+            "dtype": "object",
+            "shape": []
+          },
+          "time": {
+            "dtype": "object",
+            "shape": []
+          },
+          "velocity": {
+            "dtype": "object",
+            "shape": []
+          },
+          "wavelet": {
+            "dtype": "object",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "dt": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "dx": {
+            "dtype": "float32",
+            "shape": []
+          },
+          "factor": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "freq": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "init_sigma": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "n_receivers": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_shots": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "nt": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "observed_data": {
+            "dtype": "float32",
+            "shape": [
+              10,
+              93,
+              1350
+            ]
+          },
+          "receiver_depth": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "source_depth": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "v_init": {
+            "dtype": "float32",
+            "shape": [
+              461,
+              151
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "v_true": {
+            "dtype": "float32",
+            "shape": [
+              461,
+              151
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              461,
+              151
+            ],
+            "field": "v_true",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              461,
+              151
+            ],
+            "field": "v_true",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "velocity_nrmse",
+        "threshold": 0.081
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "v_true",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            461,
+            151
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "seismic_FWI_original",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/data_comparison_shot0.png",
+      "evaluation/reference_outputs/loss_curve.png",
+      "evaluation/reference_outputs/losses.npy",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/observed_shot0.png",
+      "evaluation/reference_outputs/pred_data.npy",
+      "evaluation/reference_outputs/v_inv.npy",
+      "evaluation/reference_outputs/velocity_models.png",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_reference_outputs.py",
+      "evaluation/tests/test_solvers.py",
+      "main.py",
+      "notebooks/seismic_FWI_original.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "v_true": {
+          "dtype": "float32",
+          "shape": [
+            461,
+            151
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "acquisition",
+        "inversion",
+        "model",
+        "preprocessing",
+        "reference",
+        "time",
+        "velocity",
+        "wavelet"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "dt": {
+          "dtype": "float64",
+          "shape": []
+        },
+        "dx": {
+          "dtype": "float32",
+          "shape": []
+        },
+        "factor": {
+          "dtype": "int64",
+          "shape": []
+        },
+        "freq": {
+          "dtype": "float64",
+          "shape": []
+        },
+        "init_sigma": {
+          "dtype": "float64",
+          "shape": []
+        },
+        "n_receivers": {
+          "dtype": "int64",
+          "shape": []
+        },
+        "n_shots": {
+          "dtype": "int64",
+          "shape": []
+        },
+        "nt": {
+          "dtype": "int64",
+          "shape": []
+        },
+        "observed_data": {
+          "dtype": "float32",
+          "shape": [
+            10,
+            93,
+            1350
+          ]
+        },
+        "receiver_depth": {
+          "dtype": "int64",
+          "shape": []
+        },
+        "source_depth": {
+          "dtype": "int64",
+          "shape": []
+        },
+        "v_init": {
+          "dtype": "float32",
+          "shape": [
+            461,
+            151
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_FWI_original\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "velocity_nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "FWI gradient descent (deepwave, 800 epochs)",
+          "velocity_nrmse": 0.0733
+        }
+      ],
+      "velocity_nrmse_boundary": 0.081
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/data_comparison_shot0.png",
+      "reference_outputs/loss_curve.png",
+      "reference_outputs/losses.npy",
+      "reference_outputs/metrics.json",
+      "reference_outputs/observed_shot0.png",
+      "reference_outputs/pred_data.npy",
+      "reference_outputs/v_inv.npy",
+      "reference_outputs/velocity_models.png"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_FWI_original\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\seismic_FWI_original.json",
+  "metric_source_candidates": [
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "v_true",
+      "v_init",
+      "observed_data",
+      "dx",
+      "n_shots",
+      "n_receivers",
+      "nt",
+      "dt",
+      "freq"
+    ],
+    "candidate_sources": [
+      "src/generate_data.py:np.savez"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [
+          "v_true",
+          "v_init",
+          "observed_data",
+          "dx",
+          "n_shots",
+          "n_receivers",
+          "nt",
+          "dt",
+          "freq"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "src/generate_data.py",
+        "kind": "np.save",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Earth Science",
+    "exists": true,
+    "headings": [
+      "Seismic Full Waveform Inversion (From-Scratch PyTorch Implementation)",
+      "Background",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/ground_truth.npz`",
+      "`data/meta_data.json`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Seismic Full Waveform Inversion (From-Scratch PyTorch Implementation)"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_FWI_original\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_FWI_original\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\seismic_FWI_original.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\b5742771f40415b2\\build.log",
+    "env_hash": "b5742771f40415b2",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\b5742771f40415b2\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\b5742771f40415b2\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "seismic_FWI_original",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_FWI_original",
+  "vendor_session_ref": {},
+  "warnings": []
+}

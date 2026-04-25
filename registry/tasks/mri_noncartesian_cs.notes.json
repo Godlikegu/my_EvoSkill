@@ -1,0 +1,505 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_noncartesian_cs\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz",
+        "data_wavelet_filters_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz",
+        "data_wavelet_filters_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "medicine",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "data_source": {
+            "dtype": "<U21",
+            "shape": []
+          },
+          "image_size": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          },
+          "n_coils": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_readout": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_spokes": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "noise_std": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "trajectory_type": {
+            "dtype": "<U19",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "coil_maps": {
+            "dtype": "complex64",
+            "shape": [
+              1,
+              4,
+              128,
+              128
+            ]
+          },
+          "coord": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              8192,
+              2
+            ]
+          },
+          "kdata": {
+            "dtype": "complex64",
+            "shape": [
+              1,
+              4,
+              8192
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "db4_dec_hi": {
+            "dtype": "float64",
+            "shape": [
+              8
+            ]
+          },
+          "db4_dec_lo": {
+            "dtype": "float64",
+            "shape": [
+              8
+            ]
+          },
+          "db4_rec_hi": {
+            "dtype": "float64",
+            "shape": [
+              8
+            ]
+          },
+          "db4_rec_lo": {
+            "dtype": "float64",
+            "shape": [
+              8
+            ]
+          },
+          "haar_dec_hi": {
+            "dtype": "float64",
+            "shape": [
+              2
+            ]
+          },
+          "haar_dec_lo": {
+            "dtype": "float64",
+            "shape": [
+              2
+            ]
+          },
+          "haar_rec_hi": {
+            "dtype": "float64",
+            "shape": [
+              2
+            ]
+          },
+          "haar_rec_lo": {
+            "dtype": "float64",
+            "shape": [
+              2
+            ]
+          }
+        },
+        "id": "data_wavelet_filters_npz",
+        "path": "data/wavelet_filters.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "phantom": {
+            "dtype": "complex64",
+            "shape": [
+              1,
+              128,
+              128
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "phantom",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "phantom",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.8899
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "phantom",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "phantom",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.0407
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "complex64",
+          "name": "phantom",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            128,
+            128
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "mri_noncartesian_cs",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "data/wavelet_filters.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/fixtures/physics_model/input_multicoil_forward.npz",
+      "evaluation/fixtures/physics_model/input_nufft_forward.npz",
+      "evaluation/fixtures/physics_model/output_dcf.npz",
+      "evaluation/fixtures/physics_model/output_gridding.npz",
+      "evaluation/fixtures/physics_model/output_multicoil_forward.npz",
+      "evaluation/fixtures/physics_model/output_nufft_adjoint.npz",
+      "evaluation/fixtures/physics_model/output_nufft_forward.npz",
+      "evaluation/fixtures/solvers/input_l1wav.npz",
+      "evaluation/fixtures/visualization/input_metrics.npz",
+      "evaluation/fixtures/visualization/output_metrics.npz",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/error_maps.png",
+      "evaluation/reference_outputs/gridding_reconstruction.npz",
+      "evaluation/reference_outputs/l1wav_reconstruction.npz",
+      "evaluation/reference_outputs/metrics_detail.json",
+      "evaluation/reference_outputs/radial_trajectory.png",
+      "evaluation/reference_outputs/reconstruction_comparison.png",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "generate_and_run.py",
+      "generate_fixtures.py",
+      "main.py",
+      "notebooks/mri_noncartesian_cs.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz",
+      "wavelet_filters.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "phantom": {
+          "dtype": "complex64",
+          "shape": [
+            1,
+            128,
+            128
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "data_source",
+        "image_size",
+        "n_coils",
+        "n_readout",
+        "n_spokes",
+        "noise_std",
+        "trajectory_type"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "coil_maps": {
+          "dtype": "complex64",
+          "shape": [
+            1,
+            4,
+            128,
+            128
+          ]
+        },
+        "coord": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            8192,
+            2
+          ]
+        },
+        "kdata": {
+          "dtype": "complex64",
+          "shape": [
+            1,
+            4,
+            8192
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_noncartesian_cs\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "L1-Wavelet CS (lambda=5e-5, 100 iter, radial NUFFT)",
+          "ncc_vs_ref": 0.9887,
+          "nrmse_vs_ref": 0.037
+        }
+      ],
+      "ncc_boundary": 0.8899,
+      "nrmse_boundary": 0.0407
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/error_maps.png",
+      "reference_outputs/gridding_reconstruction.npz",
+      "reference_outputs/l1wav_reconstruction.npz",
+      "reference_outputs/metrics_detail.json",
+      "reference_outputs/radial_trajectory.png",
+      "reference_outputs/reconstruction_comparison.png"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_noncartesian_cs\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\mri_noncartesian_cs.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "medicine",
+    "exists": true,
+    "headings": [
+      "Non-Cartesian MRI Reconstruction with L1-Wavelet Compressed Sensing",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "** Reconstructed complex image $\\hat{x} \\in \\mathbb{C}^{H \\times W}$.",
+    "title": "Non-Cartesian MRI Reconstruction with L1-Wavelet Compressed Sensing"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_noncartesian_cs\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_noncartesian_cs\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\mri_noncartesian_cs.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\a6cb0789fb17ab20\\build.log",
+    "env_hash": "a6cb0789fb17ab20",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\a6cb0789fb17ab20\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\a6cb0789fb17ab20\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "mri_noncartesian_cs",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_noncartesian_cs",
+  "vendor_session_ref": {},
+  "warnings": []
+}

@@ -1,228 +1,369 @@
 {
   "attempt_count": 0,
   "attempt_summaries": [],
-  "completion_source": "confirmed_contract",
-  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\cars_spectroscopy\\evaluation\\registration_contract.json",
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\cars_spectroscopy\\evaluation\\task_contract.json",
   "contract": {
-    "execution_conventions": {
+    "execution": {
       "entrypoint": "work/main.py",
       "read_first": [
-        "README_public.md"
+        "readme",
+        "raw_data",
+        "meta_data",
+        "requirements"
       ],
-      "readable_paths": [
-        "README_public.md",
-        "data/raw_data.npz",
-        "data/meta_data.json",
-        "requirements.txt"
+      "readable_files": [
+        "readme",
+        "raw_data",
+        "meta_data",
+        "requirements"
       ],
       "writable_paths": [
-        "work",
-        "output",
-        "checkpoints"
+        "work/",
+        "output/",
+        "checkpoints/"
       ]
     },
     "family": "chemistry",
-    "judge_contract": {
-      "metrics": [
-        {
-          "callable": "compute_metrics",
-          "description": "Cosine similarity between reconstructed spectrum and hidden reference spectrum.",
-          "inputs": {
-            "params_pred": {
-              "temperature": {
-                "output_field": "estimated_temperature_K",
-                "scalar_index": 0
-              }
-            },
-            "params_true": {
-              "temperature": {
-                "field": "temperature",
-                "resource_path": "data/ground_truth.npz",
-                "scalar_index": 0
-              }
-            },
-            "y_pred": {
-              "output_field": "reconstructed_spectrum"
-            },
-            "y_true": {
-              "field": "measurements",
-              "index": 0,
-              "resource_path": "data/raw_data.npz"
-            }
-          },
-          "kind": "script",
-          "name": "ncc_vs_ref",
-          "pass_condition": {
-            "operator": ">=",
-            "threshold": 0.898525
-          },
-          "result_key": "ncc",
-          "source_path": "src/visualization.py"
-        },
-        {
-          "callable": "compute_metrics",
-          "description": "NRMSE between reconstructed spectrum and hidden reference spectrum.",
-          "inputs": {
-            "params_pred": {
-              "temperature": {
-                "output_field": "estimated_temperature_K",
-                "scalar_index": 0
-              }
-            },
-            "params_true": {
-              "temperature": {
-                "field": "temperature",
-                "resource_path": "data/ground_truth.npz",
-                "scalar_index": 0
-              }
-            },
-            "y_pred": {
-              "output_field": "reconstructed_spectrum"
-            },
-            "y_true": {
-              "field": "measurements",
-              "index": 0,
-              "resource_path": "data/raw_data.npz"
-            }
-          },
-          "kind": "script",
-          "name": "nrmse_vs_ref",
-          "pass_condition": {
-            "operator": "<=",
-            "threshold": 0.020064
-          },
-          "result_key": "nrmse",
-          "source_path": "src/visualization.py"
-        },
-        {
-          "callable": "compute_metrics",
-          "description": "Absolute temperature error against the hidden ground truth.",
-          "inputs": {
-            "params_pred": {
-              "temperature": {
-                "output_field": "estimated_temperature_K",
-                "scalar_index": 0
-              }
-            },
-            "params_true": {
-              "temperature": {
-                "field": "temperature",
-                "resource_path": "data/ground_truth.npz",
-                "scalar_index": 0
-              }
-            },
-            "y_pred": {
-              "output_field": "reconstructed_spectrum"
-            },
-            "y_true": {
-              "field": "measurements",
-              "index": 0,
-              "resource_path": "data/raw_data.npz"
-            }
-          },
-          "kind": "script",
-          "name": "temperature_error_K",
-          "pass_condition": {
-            "operator": "<=",
-            "threshold": 50.0
-          },
-          "result_key": "temperature_error_K",
-          "source_path": "src/visualization.py"
-        }
-      ]
-    },
-    "output_contract": {
-      "format": "npz",
-      "numeric_fields": [
-        "estimated_temperature_K",
-        "reconstructed_spectrum",
-        "nu_axis"
-      ],
-      "path": "output/reconstruction.npz",
-      "required_fields": [
-        "estimated_temperature_K",
-        "reconstructed_spectrum",
-        "nu_axis"
-      ],
-      "same_shape_fields": [
-        "reconstructed_spectrum",
-        "nu_axis"
-      ]
-    },
-    "resources": [
+    "files": [
       {
-        "authority": "authoritative",
+        "id": "readme",
         "path": "README.md",
         "role": "task_description",
-        "semantics": "Task description and public constraints for the solver.",
+        "semantics": "Authoritative problem statement, public constraints, and method hints.",
         "visibility": "public"
       },
       {
-        "authority": "authoritative",
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "measurements": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              200
+            ]
+          },
+          "nu_axis": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              200
+            ]
+          }
+        },
+        "id": "raw_data",
         "path": "data/raw_data.npz",
-        "role": "public_input_data",
-        "semantics": "Public observation data available to the execution agent.",
+        "role": "input_data",
+        "semantics": "Public measured spectrum and wavenumber axis.",
         "visibility": "public"
       },
       {
-        "authority": "authoritative",
+        "id": "meta_data",
         "path": "data/meta_data.json",
-        "role": "public_metadata",
-        "semantics": "Public physical parameters, constants, and experiment configuration.",
+        "role": "metadata",
+        "semantics": "Public spectroscopy metadata and physical constants.",
         "visibility": "public"
       },
       {
-        "authority": "authoritative",
-        "path": "evaluation/metrics.json",
-        "role": "hidden_metric_config",
-        "semantics": "Metric threshold configuration used by the hidden judge.",
-        "visibility": "private"
-      },
-      {
-        "authority": "authoritative",
+        "fields": {
+          "spectrum": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              200
+            ]
+          },
+          "temperature": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ]
+          }
+        },
+        "id": "ground_truth",
         "path": "data/ground_truth.npz",
-        "role": "hidden_reference",
-        "semantics": "Hidden ground-truth reference used for metric evaluation.",
+        "role": "reference_data",
+        "semantics": "Hidden reference spectrum and temperature used for evaluation.",
         "visibility": "private"
       },
       {
-        "authority": "supplementary",
-        "path": "evaluation/reference_outputs/inversion_result.png",
-        "role": "hidden_reference",
-        "semantics": "Hidden reference output retained for offline evaluation or parity checks.",
-        "visibility": "private"
-      },
-      {
-        "authority": "supplementary",
-        "path": "evaluation/reference_outputs/reconstruction.npz",
-        "role": "hidden_reference",
-        "semantics": "Hidden reference output retained for offline evaluation or parity checks.",
-        "visibility": "private"
-      },
-      {
-        "authority": "supplementary",
+        "id": "metric_helper",
         "path": "src/visualization.py",
         "role": "metric_helper",
-        "semantics": "Task-private Python source that defines or computes evaluation metrics.",
-        "visibility": "private"
-      },
-      {
-        "authority": "supplementary",
-        "path": "main.py",
-        "role": "metric_helper",
-        "semantics": "Task-private Python source that defines or computes evaluation metrics.",
+        "semantics": "Task metric adapter and legacy visualization metrics.",
         "visibility": "private"
       }
     ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metrics",
+          "file_id": "metric_helper",
+          "interface": "python_callable",
+          "invocation": {
+            "mode": "kwargs"
+          },
+          "result": {
+            "key": "ncc",
+            "mode": "mapping_key"
+          }
+        },
+        "inputs": {
+          "params_pred": {
+            "expected_shape": [
+              1
+            ],
+            "source": "value",
+            "value": {
+              "temperature": {
+                "expected_shape": [],
+                "field": "estimated_temperature_K",
+                "preprocess": "identity",
+                "selectors": {
+                  "index": 0
+                },
+                "source": "output"
+              }
+            }
+          },
+          "params_true": {
+            "expected_shape": [
+              1
+            ],
+            "source": "value",
+            "value": {
+              "temperature": {
+                "expected_shape": [],
+                "field": "temperature",
+                "file_id": "ground_truth",
+                "preprocess": "identity",
+                "selectors": {
+                  "index": 0
+                },
+                "source": "file"
+              }
+            }
+          },
+          "y_pred": {
+            "expected_shape": [
+              200
+            ],
+            "field": "reconstructed_spectrum",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "y_true": {
+            "expected_shape": [
+              200
+            ],
+            "field": "measurements",
+            "file_id": "raw_data",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc_vs_ref",
+        "threshold": 0.898525
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metrics",
+          "file_id": "metric_helper",
+          "interface": "python_callable",
+          "invocation": {
+            "mode": "kwargs"
+          },
+          "result": {
+            "key": "nrmse",
+            "mode": "mapping_key"
+          }
+        },
+        "inputs": {
+          "params_pred": {
+            "expected_shape": [
+              1
+            ],
+            "source": "value",
+            "value": {
+              "temperature": {
+                "expected_shape": [],
+                "field": "estimated_temperature_K",
+                "preprocess": "identity",
+                "selectors": {
+                  "index": 0
+                },
+                "source": "output"
+              }
+            }
+          },
+          "params_true": {
+            "expected_shape": [
+              1
+            ],
+            "source": "value",
+            "value": {
+              "temperature": {
+                "expected_shape": [],
+                "field": "temperature",
+                "file_id": "ground_truth",
+                "preprocess": "identity",
+                "selectors": {
+                  "index": 0
+                },
+                "source": "file"
+              }
+            }
+          },
+          "y_pred": {
+            "expected_shape": [
+              200
+            ],
+            "field": "reconstructed_spectrum",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "y_true": {
+            "expected_shape": [
+              200
+            ],
+            "field": "measurements",
+            "file_id": "raw_data",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse_vs_ref",
+        "threshold": 0.020064
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metrics",
+          "file_id": "metric_helper",
+          "interface": "python_callable",
+          "invocation": {
+            "mode": "kwargs"
+          },
+          "result": {
+            "key": "temperature_error_K",
+            "mode": "mapping_key"
+          }
+        },
+        "inputs": {
+          "params_pred": {
+            "expected_shape": [
+              1
+            ],
+            "source": "value",
+            "value": {
+              "temperature": {
+                "expected_shape": [],
+                "field": "estimated_temperature_K",
+                "preprocess": "identity",
+                "selectors": {
+                  "index": 0
+                },
+                "source": "output"
+              }
+            }
+          },
+          "params_true": {
+            "expected_shape": [
+              1
+            ],
+            "source": "value",
+            "value": {
+              "temperature": {
+                "expected_shape": [],
+                "field": "temperature",
+                "file_id": "ground_truth",
+                "preprocess": "identity",
+                "selectors": {
+                  "index": 0
+                },
+                "source": "file"
+              }
+            }
+          },
+          "y_pred": {
+            "expected_shape": [
+              200
+            ],
+            "field": "reconstructed_spectrum",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "y_true": {
+            "expected_shape": [
+              200
+            ],
+            "field": "measurements",
+            "file_id": "raw_data",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "temperature_error_K",
+        "threshold": 50.0
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float64",
+          "name": "estimated_temperature_K",
+          "semantics": "Estimated temperature parameter.",
+          "shape": [
+            1
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "reconstructed_spectrum",
+          "semantics": "Reconstructed spectrum.",
+          "shape": [
+            200
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "nu_axis",
+          "semantics": "Wavenumber axis aligned with the reconstructed spectrum.",
+          "shape": [
+            200
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
     "runtime_policy": {
       "execution_budget_seconds": 240,
       "model_timeout_seconds": 600
     },
-    "task_id": "cars_spectroscopy"
+    "task_id": "cars_spectroscopy",
+    "version": 2
   },
   "contract_generation": {
     "agent_summary": "",
-    "completion_source": "confirmed_contract",
+    "completion_source": "task_contract",
     "open_questions": [],
     "source_files": [
       "README.md",
@@ -242,6 +383,8 @@
       "evaluation/registration_contract.draft.json",
       "evaluation/registration_contract.json",
       "evaluation/registration_input.json",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
       "evaluation/tests/__init__.py",
       "evaluation/tests/test_parity.py",
       "evaluation/tests/test_physics_model.py",
@@ -253,6 +396,8 @@
       "plan/design.md",
       "requirements.txt",
       "src/__init__.py",
+      "src/__pycache__/__init__.cpython-314.pyc",
+      "src/__pycache__/preprocessing.cpython-314.pyc",
       "src/__pycache__/visualization.cpython-310.pyc",
       "src/__pycache__/visualization.cpython-312.pyc",
       "src/generate_data.py",
@@ -333,7 +478,7 @@
     }
   },
   "declared_inputs_used": [],
-  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\cars_spectroscopy\\evaluation\\registration_contract.draft.json",
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\cars_spectroscopy\\evaluation\\task_contract.json",
   "evaluation_summary": {
     "exists": true,
     "metric_threshold_keys": [
@@ -367,7 +512,7 @@
     "validation_checks": [
       "judge_importable",
       "judge_callable_present",
-      "judge_metrics_match_manifest",
+      "judge_metrics_match_task_contract",
       "judge_contract_path_match_manifest",
       "judge_ready_marker_present"
     ]
@@ -376,7 +521,9 @@
   "judge_recommendations": {},
   "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\cars_spectroscopy.json",
   "metric_source_candidates": [
-    "src/visualization.py"
+    "metric_helper",
+    "metric_helper",
+    "metric_helper"
   ],
   "missing_items": [],
   "output_detection": {
@@ -449,106 +596,18 @@
     "title": "CARS Spectroscopy Temperature Inversion"
   },
   "registration_input": {
-    "evaluation_logic_resources": [
-      {
-        "authority": "supplementary",
-        "notes": "Reference pipeline that loads data, runs the inversion, computes metrics, and writes evaluation artifacts.",
-        "path": "main.py"
-      },
-      {
-        "authority": "supplementary",
-        "notes": "Defines compute_metrics used by the reference evaluation flow.",
-        "path": "src/visualization.py"
-      }
-    ],
-    "execution_hints": {
-      "read_first": [
-        "README.md",
-        "main.py",
-        "src/visualization.py"
-      ],
-      "suggested_entrypoint": "main.py",
-      "suggested_output_path": "output/reconstruction.npz"
-    },
-    "family": "chemistry",
-    "hidden_metric_config_resources": [
-      {
-        "authority": "authoritative",
-        "notes": "Thresholds for hidden metric pass/fail decisions.",
-        "path": "evaluation/metrics.json"
-      }
-    ],
-    "hidden_reference_resources": [
-      {
-        "authority": "authoritative",
-        "notes": "Hidden reference spectrum and physical ground-truth parameters.",
-        "path": "data/ground_truth.npz"
-      },
-      {
-        "authority": "supplementary",
-        "notes": "Reference reconstruction artifacts produced by the baseline pipeline.",
-        "path": "evaluation/reference_outputs/reconstruction.npz"
-      }
-    ],
-    "pass_metrics": [
-      {
-        "callable": "compute_metrics",
-        "description": "Cosine similarity between the reconstructed spectrum and the hidden reference spectrum.",
-        "kind": "script",
-        "name": "ncc_vs_ref",
-        "operator": ">=",
-        "result_key": "ncc",
-        "source_path": "src/visualization.py",
-        "threshold": 0.898525
-      },
-      {
-        "callable": "compute_metrics",
-        "description": "Normalized RMSE between the reconstructed spectrum and the hidden reference spectrum.",
-        "kind": "script",
-        "name": "nrmse_vs_ref",
-        "operator": "<=",
-        "result_key": "nrmse",
-        "source_path": "src/visualization.py",
-        "threshold": 0.020064
-      },
-      {
-        "callable": "compute_metrics",
-        "description": "Absolute temperature error in Kelvin relative to the hidden ground truth.",
-        "kind": "script",
-        "name": "temperature_error_K",
-        "operator": "<=",
-        "result_key": "temperature_error_K",
-        "source_path": "src/visualization.py",
-        "threshold": 50.0
-      }
-    ],
-    "public_eval_resources": [],
-    "public_input_resources": [
-      {
-        "authority": "authoritative",
-        "notes": "Measured noisy CARS spectra and wavenumber axis available to the solver.",
-        "path": "data/raw_data.npz"
-      }
-    ],
-    "public_metadata_resources": [
-      {
-        "authority": "authoritative",
-        "notes": "Physical parameters, spectral range, instrument settings, and experiment configuration.",
-        "path": "data/meta_data.json"
-      }
-    ],
-    "task_description_resources": [
-      {
-        "authority": "authoritative",
-        "notes": "Primary task description and public constraints.",
-        "path": "README.md"
-      }
-    ],
-    "task_id": "cars_spectroscopy"
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\cars_spectroscopy\\evaluation\\task_contract.json"
   },
-  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\cars_spectroscopy\\evaluation\\registration_input.json",
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\cars_spectroscopy\\evaluation\\task_contract.json",
   "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\cars_spectroscopy.notes.json",
   "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\f1c8277095561b5e\\build.log",
+    "env_hash": "f1c8277095561b5e",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\f1c8277095561b5e\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\f1c8277095561b5e\\Scripts\\python.exe",
+    "status": "ready"
+  },
   "task_id": "cars_spectroscopy",
   "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\cars_spectroscopy",
   "vendor_session_ref": {},

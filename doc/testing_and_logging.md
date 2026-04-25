@@ -65,6 +65,8 @@ Each run writes a dedicated log directory containing:
   - `agent_summary_round_N.json`
   - `files_written_round_N.json`
   - `commands_run_round_N.json`
+  - `submit_result_calls_round_N.json` when a submission stop oracle is active
+  - `submission_events_round_N.json` when a submission stop oracle is active
   - `public_self_eval_round_N.json`
   - `public_self_eval_stdout_round_N.log`
   - `public_self_eval_stderr_round_N.log`
@@ -75,6 +77,8 @@ Each run writes a dedicated log directory containing:
   - runtime evaluator assets:
     - `evaluation/self_eval.py`
     - `evaluation/self_eval_spec.json`
+    - note: these public self-eval artifacts are absent when the run uses
+      `workspace_stop_oracle = "hidden_judge_submit"`
 - trajectory artifacts for every run result, including success, timeout, `max_turns`,
   permission failures, and judge failures:
   - `trajectory_native.jsonl`

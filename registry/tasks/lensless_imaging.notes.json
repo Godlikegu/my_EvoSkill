@@ -1,0 +1,467 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\lensless_imaging\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz",
+        "data_tape_rgb_png",
+        "data_thumbs_up_rgb_png"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz",
+        "data_tape_rgb_png",
+        "data_thumbs_up_rgb_png"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "physics",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "channels": {
+            "dtype": "<U1",
+            "shape": [
+              3
+            ]
+          },
+          "diffuser": {
+            "dtype": "<U26",
+            "shape": []
+          },
+          "downsample_factor": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "downsampled_resolution": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          },
+          "dtype": {
+            "dtype": "<U7",
+            "shape": []
+          },
+          "n_channels": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "normalization": {
+            "dtype": "<U71",
+            "shape": []
+          },
+          "object_distance_cm": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "pixel_size_um": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "sensor": {
+            "dtype": "<U30",
+            "shape": []
+          },
+          "sensor_resolution": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          },
+          "sensor_size_mm": {
+            "dtype": "float64",
+            "shape": [
+              2
+            ]
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "measurement": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              760,
+              1014,
+              3
+            ]
+          },
+          "psf": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              760,
+              1014,
+              3
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_tape_rgb_png",
+        "path": "data/tape_rgb.png",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_thumbs_up_rgb_png",
+        "path": "data/thumbs_up_rgb.png",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "reconstruction": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              760,
+              1014,
+              3
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/baseline_reference.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              760,
+              1014,
+              3
+            ],
+            "field": "reconstruction",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              760,
+              1014,
+              3
+            ],
+            "field": "reconstruction",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.9
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              760,
+              1014,
+              3
+            ],
+            "field": "reconstruction",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              760,
+              1014,
+              3
+            ],
+            "field": "reconstruction",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.1
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "reconstruction",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            760,
+            1014,
+            3
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "lensless_imaging",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "10.21105.joss.04747.pdf",
+      "README.md",
+      "algorithm_guide.pdf",
+      "data/baseline_reference.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "data/tape_rgb.png",
+      "data/thumbs_up_rgb.png",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/overview.png",
+      "evaluation/reference_outputs/reconstruction.npy",
+      "evaluation/reference_outputs/reconstruction_display.png",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "main.py",
+      "notebooks/lensless_imaging.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "baseline_reference.npz",
+      "meta_data.json",
+      "raw_data.npz",
+      "tape_rgb.png",
+      "thumbs_up_rgb.png"
+    ],
+    "ground_truth": {
+      "arrays": {},
+      "exists": false
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "channels",
+        "diffuser",
+        "downsample_factor",
+        "downsampled_resolution",
+        "dtype",
+        "n_channels",
+        "normalization",
+        "object_distance_cm",
+        "pixel_size_um",
+        "sensor",
+        "sensor_resolution",
+        "sensor_size_mm"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "measurement": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            760,
+            1014,
+            3
+          ]
+        },
+        "psf": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            760,
+            1014,
+            3
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\lensless_imaging\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "ADMM (300 iters, mu1=1e-6, mu2=1e-5, mu3=4e-5, tau=1e-4)",
+          "ncc_vs_ref": 1.0,
+          "nrmse_vs_ref": 0.0,
+          "reprojection_nrmse": 0.66
+        }
+      ],
+      "ncc_boundary": 0.9,
+      "nrmse_boundary": 0.1
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/metrics.json",
+      "reference_outputs/overview.png",
+      "reference_outputs/reconstruction.npy",
+      "reference_outputs/reconstruction_display.png"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\lensless_imaging\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\lensless_imaging.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Physics",
+    "exists": true,
+    "headings": [
+      "Lensless Imaging",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "raw_data.npz",
+      "baseline_reference.npz",
+      "meta_data.json",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Lensless Imaging"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\lensless_imaging\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\lensless_imaging\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\lensless_imaging.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\38015952ec696232\\build.log",
+    "env_hash": "38015952ec696232",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\38015952ec696232\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\38015952ec696232\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "lensless_imaging",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\lensless_imaging",
+  "vendor_session_ref": {},
+  "warnings": []
+}

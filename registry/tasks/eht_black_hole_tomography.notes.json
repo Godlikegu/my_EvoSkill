@@ -1,0 +1,802 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_tomography\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "astronomy",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_meta_data",
+        "path": "data/meta_data",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "batch_size": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "emission_resolution": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "fov_M": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "hotspot_std_M": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "inclination_deg": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "lr_final": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "lr_init": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "measurement_type": {
+            "dtype": "<U5",
+            "shape": []
+          },
+          "n_frames": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_iters": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "net_depth": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "net_width": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "ngeo": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "noise_std": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "num_alpha": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "num_beta": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "orbit_radius_M": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "posenc_deg": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "r_isco_M": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "rmax_M": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "rmin_M": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "spin": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "t_obs_M": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "z_width_M": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "Omega": {
+            "dtype": "float32",
+            "shape": [
+              48,
+              48,
+              80
+            ]
+          },
+          "fov_M": {
+            "dtype": "float32",
+            "shape": []
+          },
+          "g_doppler": {
+            "dtype": "float32",
+            "shape": [
+              48,
+              48,
+              80
+            ]
+          },
+          "images_noisy": {
+            "dtype": "float32",
+            "shape": [
+              40,
+              48,
+              48
+            ]
+          },
+          "r_observer": {
+            "dtype": "float32",
+            "shape": []
+          },
+          "ray_Sigma": {
+            "dtype": "float32",
+            "shape": [
+              48,
+              48,
+              80
+            ]
+          },
+          "ray_dtau": {
+            "dtype": "float32",
+            "shape": [
+              48,
+              48,
+              80
+            ]
+          },
+          "ray_r": {
+            "dtype": "float32",
+            "shape": [
+              48,
+              48,
+              80
+            ]
+          },
+          "ray_t_geo": {
+            "dtype": "float32",
+            "shape": [
+              48,
+              48,
+              80
+            ]
+          },
+          "ray_theta": {
+            "dtype": "float32",
+            "shape": [
+              48,
+              48,
+              80
+            ]
+          },
+          "ray_x": {
+            "dtype": "float32",
+            "shape": [
+              48,
+              48,
+              80
+            ]
+          },
+          "ray_y": {
+            "dtype": "float32",
+            "shape": [
+              48,
+              48,
+              80
+            ]
+          },
+          "ray_z": {
+            "dtype": "float32",
+            "shape": [
+              48,
+              48,
+              80
+            ]
+          },
+          "t_frames": {
+            "dtype": "float32",
+            "shape": [
+              40
+            ]
+          },
+          "t_injection": {
+            "dtype": "float32",
+            "shape": []
+          },
+          "t_start_obs": {
+            "dtype": "float32",
+            "shape": []
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "emission_3d": {
+            "dtype": "float32",
+            "shape": [
+              64,
+              64,
+              64
+            ]
+          },
+          "images": {
+            "dtype": "float32",
+            "shape": [
+              40,
+              48,
+              48
+            ]
+          },
+          "rot_axis": {
+            "dtype": "float32",
+            "shape": [
+              3
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              64,
+              64,
+              64
+            ],
+            "field": "emission_3d",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              64,
+              64,
+              64
+            ],
+            "field": "emission_3d",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.9
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              64,
+              64,
+              64
+            ],
+            "field": "emission_3d",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              64,
+              64,
+              64
+            ],
+            "field": "emission_3d",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.001
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "emission_3d",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            64,
+            64,
+            64
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "eht_black_hole_tomography",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "CVPR2022_main.pdf",
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/generate_fixtures.py",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/emission_3d.npy",
+      "evaluation/reference_outputs/loss_history.npy",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/model_state_dict.pt",
+      "evaluation/reference_outputs/pred_images.npy",
+      "evaluation/reference_outputs/rot_axis.npy",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "generate_reference_outputs.py",
+      "main.py",
+      "notebooks/eht_black_hole_tomography.ipynb",
+      "output/emission_slices.png",
+      "output/lightcurve.png",
+      "output/loss_curve.png",
+      "output/loss_history.npy",
+      "output/metrics.json",
+      "output/movie_comparison.png",
+      "output/pred_images.npy",
+      "output/reconstruction.npy",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "s41550-024-02238-3.pdf",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "emission_3d": {
+          "dtype": "float32",
+          "shape": [
+            64,
+            64,
+            64
+          ]
+        },
+        "images": {
+          "dtype": "float32",
+          "shape": [
+            40,
+            48,
+            48
+          ]
+        },
+        "rot_axis": {
+          "dtype": "float32",
+          "shape": [
+            3
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "batch_size",
+        "emission_resolution",
+        "fov_M",
+        "hotspot_std_M",
+        "inclination_deg",
+        "lr_final",
+        "lr_init",
+        "measurement_type",
+        "n_frames",
+        "n_iters",
+        "net_depth",
+        "net_width",
+        "ngeo",
+        "noise_std",
+        "num_alpha",
+        "num_beta",
+        "orbit_radius_M",
+        "posenc_deg",
+        "r_isco_M",
+        "rmax_M",
+        "rmin_M",
+        "spin",
+        "t_obs_M",
+        "z_width_M"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "Omega": {
+          "dtype": "float32",
+          "shape": [
+            48,
+            48,
+            80
+          ]
+        },
+        "fov_M": {
+          "dtype": "float32",
+          "shape": []
+        },
+        "g_doppler": {
+          "dtype": "float32",
+          "shape": [
+            48,
+            48,
+            80
+          ]
+        },
+        "images_noisy": {
+          "dtype": "float32",
+          "shape": [
+            40,
+            48,
+            48
+          ]
+        },
+        "r_observer": {
+          "dtype": "float32",
+          "shape": []
+        },
+        "ray_Sigma": {
+          "dtype": "float32",
+          "shape": [
+            48,
+            48,
+            80
+          ]
+        },
+        "ray_dtau": {
+          "dtype": "float32",
+          "shape": [
+            48,
+            48,
+            80
+          ]
+        },
+        "ray_r": {
+          "dtype": "float32",
+          "shape": [
+            48,
+            48,
+            80
+          ]
+        },
+        "ray_t_geo": {
+          "dtype": "float32",
+          "shape": [
+            48,
+            48,
+            80
+          ]
+        },
+        "ray_theta": {
+          "dtype": "float32",
+          "shape": [
+            48,
+            48,
+            80
+          ]
+        },
+        "ray_x": {
+          "dtype": "float32",
+          "shape": [
+            48,
+            48,
+            80
+          ]
+        },
+        "ray_y": {
+          "dtype": "float32",
+          "shape": [
+            48,
+            48,
+            80
+          ]
+        },
+        "ray_z": {
+          "dtype": "float32",
+          "shape": [
+            48,
+            48,
+            80
+          ]
+        },
+        "t_frames": {
+          "dtype": "float32",
+          "shape": [
+            40
+          ]
+        },
+        "t_injection": {
+          "dtype": "float32",
+          "shape": []
+        },
+        "t_start_obs": {
+          "dtype": "float32",
+          "shape": []
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_tomography\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "BH-NeRF",
+          "ncc": 0.9998,
+          "nrmse": 0.00055
+        }
+      ],
+      "ncc_boundary": 0.9,
+      "nrmse_boundary": 0.001
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/emission_3d.npy",
+      "reference_outputs/loss_history.npy",
+      "reference_outputs/metrics.json",
+      "reference_outputs/model_state_dict.pt",
+      "reference_outputs/pred_images.npy",
+      "reference_outputs/rot_axis.npy"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_tomography\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\eht_black_hole_tomography.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "ray_x",
+      "ray_y",
+      "ray_z",
+      "ray_r",
+      "ray_theta",
+      "ray_t_geo",
+      "ray_dtau",
+      "ray_Sigma",
+      "Omega",
+      "g_doppler",
+      "t_frames",
+      "images_true",
+      "images_noisy",
+      "emission_true",
+      "rot_axis_true",
+      "fov_M",
+      "t_start_obs",
+      "t_injection",
+      "r_observer"
+    ],
+    "candidate_sources": [
+      "src/generate_data.py:np.savez"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "evaluation/reference_outputs/reconstruction.npy"
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "evaluation/reference_outputs/pred_images.npy"
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "evaluation/reference_outputs/loss_history.npy"
+      },
+      {
+        "fields": [
+          "ray_x",
+          "ray_y",
+          "ray_z",
+          "ray_r",
+          "ray_theta",
+          "ray_t_geo",
+          "ray_dtau",
+          "ray_Sigma",
+          "Omega",
+          "g_doppler",
+          "t_frames",
+          "images_true",
+          "images_noisy",
+          "emission_true",
+          "rot_axis_true",
+          "fov_M",
+          "t_start_obs",
+          "t_injection",
+          "r_observer"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Astronomy",
+    "exists": true,
+    "headings": [
+      "EHT Black Hole Tomography (BH-NeRF)",
+      "Background",
+      "Problem Description",
+      "Emission representation",
+      "Keplerian dynamics",
+      "Gravitational lensing",
+      "Measurement model",
+      "Optimization",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/ground_truth.npz`",
+      "`data/meta_data.json`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "EHT Black Hole Tomography (BH-NeRF)"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_tomography\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_tomography\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\eht_black_hole_tomography.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\83519cd9be9b760f\\build.log",
+    "env_hash": "83519cd9be9b760f",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\83519cd9be9b760f\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\83519cd9be9b760f\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "eht_black_hole_tomography",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_tomography",
+  "vendor_session_ref": {},
+  "warnings": []
+}

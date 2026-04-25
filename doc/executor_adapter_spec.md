@@ -124,10 +124,12 @@ Required behavior:
   - `sdk_backend = "claude_sdk"`
   - `allowed_tools`
   - `tool_policy_summary`
-  - `stop_oracle = "public_self_eval"`
-  - `agent_stop_policy = "run_self_eval_then_summary"`
+  - `stop_oracle`
+  - `agent_stop_policy`
   - `public_self_eval_seen_in_trace`
   - `public_self_eval_passed_post_run`
+  - `submission_attempt_count` when a submission stop oracle is active
+  - `final_hidden_judge_passed_post_run` when `workspace_stop_oracle = "hidden_judge_submit"`
 
 Prompt contract metadata for this path should use
 `prompt_contract_version = "v7_claude_sdk_public_self_eval"`.
@@ -166,11 +168,16 @@ Default Claude SDK option requirements:
   contract is satisfied and a valid structured completion is captured without a
   final `ResultMessage`
 
-Optional compatibility behavior:
+Stop oracle behavior:
 
-- `workspace_stop_oracle = "submit_tool"` may re-enable the legacy
+- `workspace_stop_oracle = "hidden_judge_submit"` is the default live path:
+  the agent uses `submit_result(...)`, receives only `{ "status": "pass" }`
+  or `{ "status": "fail" }`, and continues iterating after `fail`
+- `workspace_stop_oracle = "submit_tool"` keeps the legacy public
   `check_ready()` / `submit_result(...)` path for compatibility experiments
-- the default formal execution path is `public_self_eval`, not `submit_tool`
+- `workspace_stop_oracle = "public_self_eval"` keeps the public
+  `python evaluation/self_eval.py` completion path for compatibility tests and
+  targeted executor runs
 
 When the live runner opt-in network flag is enabled:
 

@@ -5,6 +5,7 @@ import subprocess
 import sys
 import urllib.error
 import uuid
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -74,6 +75,103 @@ def make_bundle(tmp_path, task_spec=None):
         task_spec_path=task_spec_path,
         compile_report_path=compile_report_path,
         readme_public_path=readme,
+    )
+
+
+def install_hidden_judge_bundle(bundle):
+    evaluation_dir = bundle.hidden_bundle_dir / "evaluation"
+    evaluation_dir.mkdir(parents=True, exist_ok=True)
+    (evaluation_dir / "task_contract.json").write_text(
+        json.dumps({"task_id": bundle.task_id}, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    (evaluation_dir / "judge_adapter.py").write_text(
+        "\n".join(
+            [
+                "from __future__ import annotations",
+                "",
+                "import numpy as np",
+                "",
+                "from myevoskill.models import JudgeResult",
+                "from myevoskill.task_runtime import resolve_primary_output_path",
+                "",
+                "",
+                "def evaluate_run(task_root, run_record, manifest):",
+                "    output_path = resolve_primary_output_path(run_record.workspace_root, manifest)",
+                "    if not output_path.exists():",
+                "        return JudgeResult(",
+                "            task_id=run_record.task_id,",
+                "            all_metrics_passed=False,",
+                "            metrics_actual={},",
+                "            failed_metrics=['score'],",
+                "            failure_tags=['missing_output'],",
+                "        )",
+                "    with np.load(output_path, allow_pickle=False) as payload:",
+                "        score = float(np.asarray(payload['sample']).reshape(-1)[0])",
+                "    return JudgeResult(",
+                "        task_id=run_record.task_id,",
+                "        all_metrics_passed=score >= 1.0,",
+                "        metrics_actual={'score': score},",
+                "        failed_metrics=[] if score >= 1.0 else ['score'],",
+                "        failure_tags=[] if score >= 1.0 else ['low_score'],",
+                "    )",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    task_spec = json.loads(bundle.task_spec_path.read_text(encoding="utf-8"))
+    task_spec.update(
+        {
+            "primary_output_path": "output/reconstruction.npz",
+            "task_contract_path": "evaluation/task_contract.json",
+            "judge_adapter_path": "evaluation/judge_adapter.py",
+            "runtime_env": {
+                "backend": "venv_pip",
+                "env_hash": "env-hidden",
+                "python_executable": str(Path(sys.executable).resolve()),
+                "ready": True,
+            },
+        }
+    )
+    bundle.task_spec_path.write_text(
+        json.dumps(task_spec, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def workspace_plan_content(label: str = "inspect inputs and validate outputs") -> str:
+    return "\n".join(
+        [
+            "# Plan",
+            f"- {label}",
+            "- update the solver or submission payload for this round",
+            "- run `python work/main.py` and validate the expected artifacts",
+        ]
+    )
+
+
+def workspace_plan_write_message(*, tool_id: str = "tool-plan", content: str | None = None) -> dict:
+    return {
+        "content": [
+            {
+                "id": tool_id,
+                "name": "Write",
+                "input": {
+                    "file_path": ClaudeWorkspaceAdapter.WORKSPACE_PLAN_PATH,
+                    "content": content or workspace_plan_content(),
+                },
+            }
+        ]
+    }
+
+
+def write_workspace_plan(workspace: Path, *, content: str | None = None) -> None:
+    output_dir = workspace / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "plan.md").write_text(
+        content or workspace_plan_content(),
+        encoding="utf-8",
     )
 
 
@@ -362,6 +460,9 @@ def test_claude_workspace_adapter_writes_multifile_workspace_and_runs(tmp_path, 
         provider_extras={
             "mock_claude_sdk_response": {
                 "files": {
+                    "output/plan.md": workspace_plan_content(
+                        "inspect public inputs and build a multifile solver"
+                    ),
                     "work/main.py": "\n".join(
                         [
                             "import numpy as np",
@@ -383,11 +484,17 @@ def test_claude_workspace_adapter_writes_multifile_workspace_and_runs(tmp_path, 
                 "declared_outputs": ["output/reconstruction.npz"],
                 "assumptions": ["public inputs are staged"],
                 "files_written": [
+                    "output/plan.md",
                     "work/main.py",
                     "work/src/__init__.py",
                 ],
                 "commands_run": ["python work/main.py", "python evaluation/self_eval.py"],
                 "sdk_messages": [
+                    workspace_plan_write_message(
+                        content=workspace_plan_content(
+                            "inspect public inputs and build a multifile solver"
+                        )
+                    ),
                     {"name": "Bash", "input": {"command": "cd . && python work/main.py"}},
                     {"name": "Bash", "input": {"command": "cd . && python evaluation/self_eval.py"}},
                 ],
@@ -402,7 +509,10 @@ def test_claude_workspace_adapter_writes_multifile_workspace_and_runs(tmp_path, 
     assert record.metadata["sdk_backend"] == "claude_sdk"
     assert record.metadata["agent_stop_policy"] == "run_self_eval_then_summary"
     assert record.metadata["stop_oracle"] == "public_self_eval"
-    assert record.metadata["harness_feedback_mode"] == "none"
+    assert (
+        record.metadata["harness_feedback_mode"]
+        == ClaudeWorkspaceAdapter.WORKSPACE_HARNESS_FEEDBACK_MODE
+    )
     assert record.metadata["run_status"] == "succeeded"
     assert record.metadata["run_failure_reason"] == ""
     assert record.metadata["output_contract_satisfied_post_run"] is True
@@ -449,6 +559,9 @@ def test_claude_workspace_adapter_files_written_excludes_removed_scaffold_paths(
         provider_extras={
             "mock_claude_sdk_response": {
                 "files": {
+                    "output/plan.md": workspace_plan_content(
+                        "inspect public inputs and build a multifile solver"
+                    ),
                     "work/main.py": "\n".join(
                         [
                             "import numpy as np",
@@ -468,7 +581,7 @@ def test_claude_workspace_adapter_files_written_excludes_removed_scaffold_paths(
                 "solver_summary": "workspace files written test",
                 "declared_outputs": ["output/reconstruction.npz"],
                 "assumptions": [],
-                "files_written": ["work/main.py"],
+                "files_written": ["output/plan.md", "work/main.py"],
                 "commands_run": [],
             }
         },
@@ -480,6 +593,7 @@ def test_claude_workspace_adapter_files_written_excludes_removed_scaffold_paths(
     )
     assert record.metadata["run_status"] == "succeeded"
     assert sorted(files_written) == [
+        "output/plan.md",
         "work/main.py",
         "work/src/__init__.py",
         "work/src/forward_model.py",
@@ -490,6 +604,104 @@ def test_claude_workspace_adapter_files_written_excludes_removed_scaffold_paths(
     assert "work/src/physics_model.py" not in files_written
     assert "work/src/solvers.py" not in files_written
     assert "work/src/visualization.py" not in files_written
+
+
+def test_claude_workspace_adapter_sanitizes_workspace_visible_paths_in_logs(
+    tmp_path, monkeypatch
+):
+    bundle = make_bundle(tmp_path)
+    workspace_root = tmp_path / "workspace"
+    (bundle.public_bundle_dir / "data").mkdir(parents=True, exist_ok=True)
+    np.savez(
+        bundle.public_bundle_dir / "data" / "raw_data.npz",
+        measurements=np.array([[0.1, 0.2]], dtype=float),
+        nu_axis=np.array([[1.0, 2.0]], dtype=float),
+    )
+    model = ModelConfig(
+        provider_name="claude-sdk",
+        model_name="claude-test",
+        api_key_env="TEST_CLAUDE_API_KEY",
+    )
+    config = ExecutorSessionConfig(
+        run_id="run-sanitize-visible-paths",
+        env_hash="env-1",
+        workspace_root=workspace_root,
+        model_config=model,
+        provider_extras={
+            "mock_claude_sdk_response": {
+                "files": {
+                    "output/plan.md": workspace_plan_content(
+                        "sanitize workspace-visible logs while completing the task"
+                    ),
+                    "work/main.py": "\n".join(
+                        [
+                            "import numpy as np",
+                            "from pathlib import Path",
+                            "Path('output').mkdir(parents=True, exist_ok=True)",
+                            "raw = np.load('data/raw_data.npz')",
+                            "np.savez('output/reconstruction.npz', estimated_temperature_K=np.array([2400.0]), reconstructed_spectrum=raw['measurements'], nu_axis=raw['nu_axis'])",
+                            "print('workspace-pass')",
+                        ]
+                    )
+                    + "\n",
+                },
+                "solver_summary": "sanitize visible workspace paths",
+                "declared_outputs": ["output/reconstruction.npz"],
+                "assumptions": [],
+                "files_written": ["output/plan.md", "work/main.py"],
+                "commands_run": ["python work/main.py", "python evaluation/self_eval.py"],
+                "sdk_messages": [
+                    workspace_plan_write_message(
+                        content=workspace_plan_content(
+                            "sanitize workspace-visible logs while completing the task"
+                        )
+                    ),
+                    {
+                        "name": "Bash",
+                        "input": {"command": "cd . && python work/main.py"},
+                        "cwd": str(workspace_root.resolve()),
+                    },
+                    {
+                        "name": "Bash",
+                        "input": {"command": "cd . && python evaluation/self_eval.py"},
+                        "cwd": str(workspace_root.resolve()),
+                    },
+                ],
+                "sdk_diagnostics": {
+                    "cwd": str(workspace_root.resolve()),
+                    "vendor_session_ref": {
+                        "directory": str(workspace_root.resolve()),
+                    },
+                },
+                "vendor_session_ref": {
+                    "directory": str(workspace_root.resolve()),
+                    "workspace_native_path": str(
+                        (workspace_root / "trajectory_native.jsonl").resolve()
+                    ),
+                    "session_id": "session-1",
+                },
+            }
+        },
+    )
+    monkeypatch.setenv("TEST_CLAUDE_API_KEY", "sdk-secret")
+    record = ClaudeWorkspaceAdapter().run(bundle, config, [])
+
+    assert record.metadata["run_status"] == "succeeded"
+    workspace_abs = str(workspace_root.resolve())
+    sdk_messages_text = (workspace_root / "sdk_messages_round_1.json").read_text(encoding="utf-8")
+    diagnostics_text = (workspace_root / "claude_sdk_diagnostics_round_1.json").read_text(
+        encoding="utf-8"
+    )
+    vendor_ref_text = (workspace_root / "vendor_session_ref.json").read_text(encoding="utf-8")
+    trajectory_text = (workspace_root / "trajectory_normalized.json").read_text(encoding="utf-8")
+
+    assert workspace_abs not in sdk_messages_text
+    assert workspace_abs not in diagnostics_text
+    assert workspace_abs not in vendor_ref_text
+    assert workspace_abs not in trajectory_text
+    assert '"cwd": "."' in sdk_messages_text
+    assert '"cwd": "."' in diagnostics_text
+    assert '"directory": "."' in vendor_ref_text
 
 
 def test_claude_workspace_adapter_rejects_write_outside_workdir(tmp_path, monkeypatch):
@@ -543,6 +755,9 @@ def test_claude_workspace_adapter_does_not_reprompt_after_failed_post_run_audit(
             "mock_claude_sdk_response": [
                 {
                     "files": {
+                        "output/plan.md": workspace_plan_content(
+                            "first round: reproduce the current failure"
+                        ),
                         "work/main.py": "print('missing-output')\n",
                         "work/src/__init__.py": "",
                         "work/src/preprocessing.py": "",
@@ -553,11 +768,14 @@ def test_claude_workspace_adapter_does_not_reprompt_after_failed_post_run_audit(
                     "solver_summary": "first attempt",
                     "declared_outputs": [],
                     "assumptions": [],
-                    "files_written": ["work/main.py"],
+                    "files_written": ["output/plan.md", "work/main.py"],
                     "commands_run": [],
                 },
                 {
                     "files": {
+                        "output/plan.md": workspace_plan_content(
+                            "second round: repair the missing output artifact"
+                        ),
                         "work/main.py": "\n".join(
                             [
                                 "import numpy as np",
@@ -578,7 +796,7 @@ def test_claude_workspace_adapter_does_not_reprompt_after_failed_post_run_audit(
                     "solver_summary": "second attempt",
                     "declared_outputs": ["output/reconstruction.npz"],
                     "assumptions": [],
-                    "files_written": ["work/main.py"],
+                    "files_written": ["output/plan.md", "work/main.py"],
                     "commands_run": ["python work/main.py"],
                 },
             ]
@@ -712,9 +930,10 @@ def test_claude_workspace_adapter_prompt_marks_readme_as_authoritative(tmp_path)
         completion_policy="main_success_output_contract",
     )
     assert "README_public.md is the authoritative task specification" in prompt
-    assert "workspace_root=" in prompt
-    assert "cwd=" in prompt
+    assert "workspace_root=." in prompt
+    assert "cwd=." in prompt
     assert "Use relative paths first" in prompt
+    assert str(workspace_root.resolve()) not in prompt
     assert "Your job is to complete the workspace contract and stop cleanly" in prompt
     assert "evaluation/self_eval.py" in prompt
     assert "## Contract" in prompt
@@ -752,10 +971,75 @@ def test_claude_workspace_adapter_prompt_marks_readme_as_authoritative(tmp_path)
     assert "Any Bash command is acceptable if it stays inside the workspace" in prompt
     assert "network access" in prompt
     assert "Absolute or relative paths are both acceptable when they resolve inside the workspace" in prompt
+    assert "`output/plan.md`" in prompt
     assert "preferably with the `Write` tool" in prompt
     assert "WebSearch" not in prompt
     assert "WebFetch" not in prompt
     assert "paper-first" not in prompt
+
+
+def test_claude_workspace_adapter_hidden_judge_prompt_uses_submit_result_only(tmp_path):
+    bundle = make_bundle(tmp_path)
+    workspace_root = tmp_path / "workspace"
+    adapter = ClaudeWorkspaceAdapter()
+    prompt = adapter._build_workspace_agent_prompt(
+        bundle,
+        ["skill-a"],
+        workspace_root=workspace_root,
+        tool_policy=adapter._coerce_tool_policy(
+            ExecutorSessionConfig(run_id="run-1", env_hash="env-1")
+        ),
+        stop_oracle="hidden_judge_submit",
+        prompt_mode="semantic_only",
+        completion_policy="sdk_result_message",
+    )
+
+    assert "submit_result(...)" in prompt
+    assert "check_ready()" not in prompt
+    assert "evaluation/self_eval.py" not in prompt
+    assert "returns only pass or fail" in prompt
+    assert "If `submit_result(...)` returns `{ \"status\": \"fail\" }`" in prompt
+    assert "If `submit_result(...)` returns `{ \"status\": \"pass\" }`" in prompt
+    assert "workspace_root=." in prompt
+    assert "cwd=." in prompt
+    assert str(workspace_root.resolve()) not in prompt
+    assert "`output/plan.md`" in prompt
+
+
+def test_claude_workspace_adapter_run_hidden_judge_evaluates_private_bundle(tmp_path):
+    bundle = make_bundle(tmp_path)
+    install_hidden_judge_bundle(bundle)
+    adapter = ClaudeWorkspaceAdapter()
+    task_spec = json.loads(bundle.task_spec_path.read_text(encoding="utf-8"))
+    workspace = tmp_path / "workspace"
+    (workspace / "output").mkdir(parents=True, exist_ok=True)
+
+    np.savez(workspace / "output" / "reconstruction.npz", sample=np.array([0.5]))
+    failed = adapter._run_hidden_judge(
+        task_bundle=bundle,
+        task_spec=task_spec,
+        run_id="run-hidden-fail",
+        workspace=workspace,
+        summary={"solver_summary": "attempt-1"},
+    )
+
+    np.savez(workspace / "output" / "reconstruction.npz", sample=np.array([1.0]))
+    passed = adapter._run_hidden_judge(
+        task_bundle=bundle,
+        task_spec=task_spec,
+        run_id="run-hidden-pass",
+        workspace=workspace,
+        summary={"solver_summary": "attempt-2"},
+    )
+
+    assert failed.all_metrics_passed is False
+    assert failed.metrics_actual == {"score": 0.5}
+    assert failed.failed_metrics == ["score"]
+    assert failed.failure_tags == ["low_score"]
+    assert passed.all_metrics_passed is True
+    assert passed.metrics_actual == {"score": 1.0}
+    assert passed.failed_metrics == []
+    assert passed.failure_tags == []
 
 
 def test_claude_workspace_prompt_encourages_network_research_when_enabled(tmp_path):
@@ -1138,6 +1422,9 @@ def test_claude_workspace_adapter_resolves_model_name_from_env_for_logging(
         provider_extras={
             "mock_claude_sdk_response": {
                 "files": {
+                    "output/plan.md": workspace_plan_content(
+                        "inspect public inputs and build a multifile solver"
+                    ),
                     "work/main.py": "\n".join(
                         [
                             "import numpy as np",
@@ -1158,9 +1445,14 @@ def test_claude_workspace_adapter_resolves_model_name_from_env_for_logging(
                 "solver_summary": "workspace env model test",
                 "declared_outputs": ["output/reconstruction.npz"],
                 "assumptions": [],
-                "files_written": ["work/main.py"],
+                "files_written": ["output/plan.md", "work/main.py"],
                 "commands_run": ["python work/main.py", "python evaluation/self_eval.py"],
                 "sdk_messages": [
+                    workspace_plan_write_message(
+                        content=workspace_plan_content(
+                            "inspect public inputs and build a multifile solver"
+                        )
+                    ),
                     {"name": "Bash", "input": {"command": "cd . && python work/main.py"}},
                     {"name": "Bash", "input": {"command": "cd . && python evaluation/self_eval.py"}},
                 ],
@@ -1247,10 +1539,23 @@ def test_claude_workspace_adapter_returns_failed_record_without_result_message(t
         workspace = kwargs["workspace"]
         (workspace / "work" / "src").mkdir(parents=True, exist_ok=True)
         (workspace / "work" / "main.py").write_text("print('no-result-message')\n", encoding="utf-8")
+        write_workspace_plan(
+            workspace,
+            content=workspace_plan_content(
+                "record the initial execution attempt before running work/main.py"
+            ),
+        )
         raise ClaudeSDKExecutionError(
             "Claude SDK response stream ended without a ResultMessage",
             error_type="missing_result_message",
-            sdk_messages=[{"name": "Bash", "input": {"command": "python work/main.py"}}],
+            sdk_messages=[
+                workspace_plan_write_message(
+                    content=workspace_plan_content(
+                        "record the initial execution attempt before running work/main.py"
+                    )
+                ),
+                {"name": "Bash", "input": {"command": "python work/main.py"}},
+            ],
             diagnostics={
                 "timeout_occurred": False,
                 "sdk_result": {
@@ -1330,7 +1635,10 @@ def test_claude_workspace_adapter_accepts_external_output_contract_without_resul
         workspace = kwargs["workspace"]
         (workspace / "work" / "src").mkdir(parents=True, exist_ok=True)
         (workspace / "work" / "main.py").write_text("print('trace-success')\n", encoding="utf-8")
-        (workspace / "output").mkdir(parents=True, exist_ok=True)
+        write_workspace_plan(
+            workspace,
+            content=workspace_plan_content("confirm the output contract and then run work/main.py"),
+        )
         np.savez(
             workspace / "output" / "reconstruction.npz",
             estimated_temperature_K=np.asarray([1200.0]),
@@ -1341,6 +1649,11 @@ def test_claude_workspace_adapter_accepts_external_output_contract_without_resul
             "Claude SDK response stream ended without a ResultMessage",
             error_type="missing_result_message",
             sdk_messages=[
+                workspace_plan_write_message(
+                    content=workspace_plan_content(
+                        "confirm the output contract and then run work/main.py"
+                    )
+                ),
                 {
                     "content": [
                         {
@@ -1555,6 +1868,9 @@ def test_claude_workspace_adapter_stops_after_first_sdk_result_message(tmp_path,
             "mock_claude_sdk_response": [
                 {
                     "files": {
+                        "output/plan.md": workspace_plan_content(
+                            "round 1: produce a candidate reconstruction and inspect the contract"
+                        ),
                         "work/main.py": "\n".join(
                             [
                                 "import numpy as np",
@@ -1573,11 +1889,14 @@ def test_claude_workspace_adapter_stops_after_first_sdk_result_message(tmp_path,
                     "solver_summary": "round-1",
                     "declared_outputs": ["output/reconstruction.npz"],
                     "assumptions": [],
-                    "files_written": ["work/main.py"],
+                    "files_written": ["output/plan.md", "work/main.py"],
                     "commands_run": ["python work/main.py"],
                 },
                 {
                     "files": {
+                        "output/plan.md": workspace_plan_content(
+                            "round 2: add the missing nu_axis field before rerunning"
+                        ),
                         "work/main.py": "\n".join(
                             [
                                 "import numpy as np",
@@ -1597,7 +1916,7 @@ def test_claude_workspace_adapter_stops_after_first_sdk_result_message(tmp_path,
                     "solver_summary": "round-2",
                     "declared_outputs": ["output/reconstruction.npz"],
                     "assumptions": [],
-                    "files_written": ["work/main.py"],
+                    "files_written": ["output/plan.md", "work/main.py"],
                     "commands_run": ["python work/main.py"],
                 },
             ],
@@ -1635,10 +1954,21 @@ def test_claude_workspace_adapter_returns_specific_failure_when_submission_accep
         workspace = kwargs["workspace"]
         (workspace / "work" / "src").mkdir(parents=True, exist_ok=True)
         (workspace / "work" / "main.py").write_text("print('submitted-no-result')\n", encoding="utf-8")
+        write_workspace_plan(
+            workspace,
+            content=workspace_plan_content("prepare the public submission and then call submit_result"),
+        )
         raise ClaudeSDKExecutionError(
             "Claude SDK accepted submit_result(...) but did not return a ResultMessage",
             error_type="accepted_submission_missing_result_message",
-            sdk_messages=[{"name": "submit_result", "input": {"solver_summary": "done"}}],
+            sdk_messages=[
+                workspace_plan_write_message(
+                    content=workspace_plan_content(
+                        "prepare the public submission and then call submit_result"
+                    )
+                ),
+                {"name": "submit_result", "input": {"solver_summary": "done"}},
+            ],
             diagnostics={
                 "timeout_occurred": True,
                 "submission_state": {
@@ -1673,6 +2003,434 @@ def test_claude_workspace_adapter_returns_specific_failure_when_submission_accep
     assert record.metadata["submission_attempted"] is True
     assert record.metadata["submission_accepted"] is True
     assert record.metadata["submission_id"] == "round-1-submit-1"
+
+
+def test_claude_workspace_adapter_hidden_judge_same_session_fail_then_pass(
+    tmp_path, monkeypatch
+):
+    bundle = make_bundle(tmp_path)
+    model = ModelConfig(
+        provider_name="claude-sdk",
+        model_name="claude-test",
+        api_key_env="TEST_CLAUDE_API_KEY",
+    )
+    config = ExecutorSessionConfig(
+        run_id="run-hidden-judge-same-session",
+        env_hash="env-1",
+        workspace_root=tmp_path / "workspace",
+        model_config=model,
+        provider_extras={"stop_oracle": "hidden_judge_submit"},
+    )
+    monkeypatch.setenv("TEST_CLAUDE_API_KEY", "sdk-secret")
+    adapter = ClaudeWorkspaceAdapter()
+
+    def fake_generate_workspace_sdk_response(**kwargs):
+        workspace = kwargs["workspace"]
+        (workspace / "work").mkdir(parents=True, exist_ok=True)
+        write_workspace_plan(
+            workspace,
+            content=workspace_plan_content(
+                "run the solver and keep resubmitting until hidden judge passes"
+            ),
+        )
+        (workspace / "work" / "main.py").write_text("print('hidden-pass')\n", encoding="utf-8")
+        np.savez(workspace / "output" / "reconstruction.npz", sample=np.array([1.0]))
+        submission_state = {
+            "submission_attempted": True,
+            "submission_accepted": True,
+            "submission_attempt_count": 2,
+            "last_submission_status": "pass",
+            "submission_id": "hidden-submit-2",
+            "submit_result_calls": [
+                {
+                    "tool": "submit_result",
+                    "attempt_index": 1,
+                    "request": {"solver_summary": "attempt-1"},
+                    "response": {"status": "fail"},
+                },
+                {
+                    "tool": "submit_result",
+                    "attempt_index": 2,
+                    "request": {"solver_summary": "attempt-2"},
+                    "response": {"status": "pass"},
+                },
+            ],
+            "submission_events": [
+                {"tool": "submit_result", "attempt_index": 1, "response": {"status": "fail"}},
+                {"tool": "submit_result", "attempt_index": 2, "response": {"status": "pass"}},
+            ],
+        }
+        summary = {
+            "solver_summary": "hidden judge recovered in one session",
+            "declared_outputs": ["output/reconstruction.npz"],
+            "assumptions": [],
+            "files_written": ["work/main.py"],
+            "commands_run": ["python work/main.py"],
+        }
+        metadata = adapter._build_sdk_metadata(
+            sdk_messages=[
+                workspace_plan_write_message(
+                    content=workspace_plan_content(
+                        "run the solver and keep resubmitting until hidden judge passes"
+                    )
+                ),
+                {"name": "Bash", "input": {"command": "python work/main.py"}},
+            ],
+            parsed_summary=dict(summary),
+            bridge_mode="workspace_claude_sdk",
+            model_provider_kind="claude_sdk",
+            raw_response_text=json.dumps(summary, sort_keys=True),
+            sdk_diagnostics={},
+            submission_state=submission_state,
+        )
+        metadata["private_submission_state"] = {
+            "judge_results": [
+                {
+                    "task_id": "task-1",
+                    "all_metrics_passed": False,
+                    "metrics_actual": {"score": 0.5},
+                    "failed_metrics": ["score"],
+                    "failure_tags": ["low_score"],
+                },
+                {
+                    "task_id": "task-1",
+                    "all_metrics_passed": True,
+                    "metrics_actual": {"score": 1.0},
+                    "failed_metrics": [],
+                    "failure_tags": [],
+                },
+            ]
+        }
+        return summary, metadata
+
+    monkeypatch.setattr(adapter, "_generate_workspace_sdk_response", fake_generate_workspace_sdk_response)
+    record = adapter.run(bundle, config, [])
+
+    sanitized_submit_calls = (
+        tmp_path / "workspace" / "submit_result_calls_round_1.json"
+    ).read_text(encoding="utf-8")
+    assert record.metadata["run_status"] == "succeeded"
+    assert record.metadata["stop_oracle"] == "hidden_judge_submit"
+    assert record.metadata["submission_attempt_count"] == 2
+    assert record.metadata["final_hidden_judge_passed_post_run"] is True
+    assert record.metadata["hidden_judge_feedback_mode"] == "pass_fail_only"
+    assert record.judge_result is not None
+    assert record.judge_result.all_metrics_passed is True
+    assert record.judge_result.metrics_actual == {"score": 1.0}
+    assert '"status": "fail"' in sanitized_submit_calls
+    assert '"status": "pass"' in sanitized_submit_calls
+    assert "metrics_actual" not in sanitized_submit_calls
+    assert "failed_metrics" not in sanitized_submit_calls
+    assert "failure_tags" not in sanitized_submit_calls
+    assert not (tmp_path / "workspace" / "public_self_eval_round_1.json").exists()
+
+
+def test_claude_workspace_adapter_hidden_judge_failed_submission_retries_next_round(
+    tmp_path, monkeypatch
+):
+    bundle = make_bundle(tmp_path)
+    model = ModelConfig(
+        provider_name="claude-sdk",
+        model_name="claude-test",
+        api_key_env="TEST_CLAUDE_API_KEY",
+    )
+    config = ExecutorSessionConfig(
+        run_id="run-hidden-judge-retry",
+        env_hash="env-1",
+        workspace_root=tmp_path / "workspace",
+        model_config=model,
+        provider_extras={
+            "stop_oracle": "hidden_judge_submit",
+            "max_workspace_iterations": 2,
+        },
+    )
+    monkeypatch.setenv("TEST_CLAUDE_API_KEY", "sdk-secret")
+    adapter = ClaudeWorkspaceAdapter()
+
+    def fake_generate_workspace_sdk_response(**kwargs):
+        workspace = kwargs["workspace"]
+        round_index = kwargs["round_index"]
+        (workspace / "work").mkdir(parents=True, exist_ok=True)
+        if round_index == 1:
+            write_workspace_plan(
+                workspace,
+                content=workspace_plan_content("round 1: submit the first hidden-judge candidate"),
+            )
+            (workspace / "work" / "main.py").write_text("print('round-1')\n", encoding="utf-8")
+            np.savez(workspace / "output" / "reconstruction.npz", sample=np.array([0.5]))
+            raise ClaudeSDKExecutionError(
+                "Claude SDK response stream ended without a ResultMessage",
+                error_type="missing_result_message",
+                sdk_messages=[
+                    workspace_plan_write_message(
+                        content=workspace_plan_content(
+                            "round 1: submit the first hidden-judge candidate"
+                        )
+                    ),
+                    {"name": "submit_result", "input": {"solver_summary": "attempt-1"}},
+                ],
+                diagnostics={
+                    "sdk_result": {
+                        "subtype": "",
+                        "stop_reason": "",
+                        "is_error": False,
+                        "num_turns": 0,
+                        "session_id": "",
+                    },
+                    "submission_state": {
+                        "submission_attempted": True,
+                        "submission_accepted": False,
+                        "submission_attempt_count": 1,
+                        "last_submission_status": "fail",
+                        "submit_result_calls": [
+                            {
+                                "tool": "submit_result",
+                                "attempt_index": 1,
+                                "request": {
+                                    "solver_summary": "attempt-1",
+                                    "declared_outputs": ["output/reconstruction.npz"],
+                                    "assumptions": [],
+                                    "files_written": ["work/main.py"],
+                                    "commands_run": ["python work/main.py"],
+                                },
+                                "response": {"status": "fail"},
+                            }
+                        ],
+                        "submission_events": [
+                            {"tool": "submit_result", "attempt_index": 1, "response": {"status": "fail"}}
+                        ],
+                    },
+                },
+                private_state={
+                    "judge_results": [
+                        {
+                            "task_id": "task-1",
+                            "all_metrics_passed": False,
+                            "metrics_actual": {"score": 0.5},
+                            "failed_metrics": ["score"],
+                            "failure_tags": ["low_score"],
+                        }
+                    ]
+                },
+            )
+
+        write_workspace_plan(
+            workspace,
+            content=workspace_plan_content("round 2: revise the solver after the hidden-judge fail"),
+        )
+        (workspace / "work" / "main.py").write_text("print('round-2')\n", encoding="utf-8")
+        np.savez(workspace / "output" / "reconstruction.npz", sample=np.array([1.0]))
+        submission_state = {
+            "submission_attempted": True,
+            "submission_accepted": True,
+            "submission_attempt_count": 1,
+            "last_submission_status": "pass",
+            "submission_id": "hidden-submit-1",
+            "submit_result_calls": [
+                {
+                    "tool": "submit_result",
+                    "attempt_index": 1,
+                    "request": {"solver_summary": "attempt-2"},
+                    "response": {"status": "pass"},
+                }
+            ],
+            "submission_events": [
+                {"tool": "submit_result", "attempt_index": 1, "response": {"status": "pass"}}
+            ],
+        }
+        summary = {
+            "solver_summary": "round-2 repaired after hidden judge fail",
+            "declared_outputs": ["output/reconstruction.npz"],
+            "assumptions": [],
+            "files_written": ["work/main.py"],
+            "commands_run": ["python work/main.py"],
+        }
+        metadata = adapter._build_sdk_metadata(
+            sdk_messages=[
+                workspace_plan_write_message(
+                    content=workspace_plan_content(
+                        "round 2: revise the solver after the hidden-judge fail"
+                    )
+                ),
+                {"name": "Bash", "input": {"command": "python work/main.py"}},
+            ],
+            parsed_summary=dict(summary),
+            bridge_mode="workspace_claude_sdk",
+            model_provider_kind="claude_sdk",
+            raw_response_text=json.dumps(summary, sort_keys=True),
+            sdk_diagnostics={},
+            submission_state=submission_state,
+        )
+        metadata["private_submission_state"] = {
+            "judge_results": [
+                {
+                    "task_id": "task-1",
+                    "all_metrics_passed": True,
+                    "metrics_actual": {"score": 1.0},
+                    "failed_metrics": [],
+                    "failure_tags": [],
+                }
+            ]
+        }
+        return summary, metadata
+
+    monkeypatch.setattr(adapter, "_generate_workspace_sdk_response", fake_generate_workspace_sdk_response)
+    record = adapter.run(bundle, config, [])
+
+    prompt_round_2 = (tmp_path / "workspace" / "agent_prompt_round_2.txt").read_text(
+        encoding="utf-8"
+    )
+    round_1_submit_log = (tmp_path / "workspace" / "submit_result_calls_round_1.json").read_text(
+        encoding="utf-8"
+    )
+    assert record.metadata["iteration_count"] == 2
+    assert record.metadata["run_status"] == "succeeded"
+    assert record.metadata["submission_attempt_count"] == 2
+    assert record.metadata["final_hidden_judge_passed_post_run"] is True
+    assert "Submission feedback:" in prompt_round_2
+    assert '"submission_status": "fail"' in prompt_round_2
+    assert "metrics_actual" not in prompt_round_2
+    assert "failed_metrics" not in prompt_round_2
+    assert "failure_tags" not in prompt_round_2
+    assert '"status": "fail"' in round_1_submit_log
+    assert "metrics_actual" not in round_1_submit_log
+    assert "failed_metrics" not in round_1_submit_log
+    assert "failure_tags" not in round_1_submit_log
+    assert not (tmp_path / "workspace" / "public_self_eval_round_1.json").exists()
+    assert not (tmp_path / "workspace" / "public_self_eval_round_2.json").exists()
+
+
+def test_claude_workspace_adapter_hidden_judge_retries_when_agent_does_not_submit(
+    tmp_path, monkeypatch
+):
+    bundle = make_bundle(tmp_path)
+    model = ModelConfig(
+        provider_name="claude-sdk",
+        model_name="claude-test",
+        api_key_env="TEST_CLAUDE_API_KEY",
+    )
+    config = ExecutorSessionConfig(
+        run_id="run-hidden-judge-not-submitted",
+        env_hash="env-1",
+        workspace_root=tmp_path / "workspace",
+        model_config=model,
+        provider_extras={
+            "stop_oracle": "hidden_judge_submit",
+            "max_workspace_iterations": 2,
+        },
+    )
+    monkeypatch.setenv("TEST_CLAUDE_API_KEY", "sdk-secret")
+    adapter = ClaudeWorkspaceAdapter()
+
+    def fake_generate_workspace_sdk_response(**kwargs):
+        workspace = kwargs["workspace"]
+        round_index = kwargs["round_index"]
+        (workspace / "work").mkdir(parents=True, exist_ok=True)
+        if round_index == 1:
+            write_workspace_plan(
+                workspace,
+                content=workspace_plan_content(
+                    "round 1: build a candidate output but forget to submit it"
+                ),
+            )
+            (workspace / "work" / "main.py").write_text("print('candidate-only')\n", encoding="utf-8")
+            np.savez(workspace / "output" / "reconstruction.npz", sample=np.array([0.5]))
+            summary = {
+                "solver_summary": "candidate built but not submitted",
+                "declared_outputs": ["output/reconstruction.npz"],
+                "assumptions": [],
+                "files_written": ["output/plan.md", "work/main.py"],
+                "commands_run": ["python work/main.py"],
+            }
+            metadata = adapter._build_sdk_metadata(
+                sdk_messages=[
+                    workspace_plan_write_message(
+                        content=workspace_plan_content(
+                            "round 1: build a candidate output but forget to submit it"
+                        )
+                    ),
+                    {"name": "Bash", "input": {"command": "python work/main.py"}},
+                ],
+                parsed_summary=dict(summary),
+                bridge_mode="workspace_claude_sdk",
+                model_provider_kind="claude_sdk",
+                raw_response_text=json.dumps(summary, sort_keys=True),
+                sdk_diagnostics={},
+                submission_state=adapter._empty_submission_state(),
+            )
+            return summary, metadata
+
+        write_workspace_plan(
+            workspace,
+            content=workspace_plan_content("round 2: submit the repaired hidden-judge candidate"),
+        )
+        (workspace / "work" / "main.py").write_text("print('submitted-pass')\n", encoding="utf-8")
+        np.savez(workspace / "output" / "reconstruction.npz", sample=np.array([1.0]))
+        summary = {
+            "solver_summary": "submitted after repair prompt",
+            "declared_outputs": ["output/reconstruction.npz"],
+            "assumptions": [],
+            "files_written": ["output/plan.md", "work/main.py"],
+            "commands_run": ["python work/main.py"],
+        }
+        submission_state = {
+            "submission_attempted": True,
+            "submission_accepted": True,
+            "submission_attempt_count": 1,
+            "last_submission_status": "pass",
+            "submission_id": "hidden-submit-1",
+            "submit_result_calls": [
+                {
+                    "tool": "submit_result",
+                    "attempt_index": 1,
+                    "request": {"solver_summary": "attempt-2"},
+                    "response": {"status": "pass"},
+                }
+            ],
+            "submission_events": [
+                {"tool": "submit_result", "attempt_index": 1, "response": {"status": "pass"}}
+            ],
+        }
+        metadata = adapter._build_sdk_metadata(
+            sdk_messages=[
+                workspace_plan_write_message(
+                    content=workspace_plan_content(
+                        "round 2: submit the repaired hidden-judge candidate"
+                    )
+                ),
+                {"name": "Bash", "input": {"command": "python work/main.py"}},
+            ],
+            parsed_summary=dict(summary),
+            bridge_mode="workspace_claude_sdk",
+            model_provider_kind="claude_sdk",
+            raw_response_text=json.dumps(summary, sort_keys=True),
+            sdk_diagnostics={},
+            submission_state=submission_state,
+        )
+        metadata["private_submission_state"] = {
+            "judge_results": [
+                {
+                    "task_id": "task-1",
+                    "all_metrics_passed": True,
+                    "metrics_actual": {"score": 1.0},
+                    "failed_metrics": [],
+                    "failure_tags": [],
+                }
+            ]
+        }
+        return summary, metadata
+
+    monkeypatch.setattr(adapter, "_generate_workspace_sdk_response", fake_generate_workspace_sdk_response)
+    record = adapter.run(bundle, config, [])
+
+    prompt_round_2 = (tmp_path / "workspace" / "agent_prompt_round_2.txt").read_text(
+        encoding="utf-8"
+    )
+    assert record.metadata["iteration_count"] == 2
+    assert record.metadata["run_status"] == "succeeded"
+    assert record.metadata["final_hidden_judge_passed_post_run"] is True
+    assert '"submission_status": "not_submitted"' in prompt_round_2
+    assert "must call `submit_result(...)` before stopping" in prompt_round_2
 
 
 def test_claude_workspace_adapter_installs_public_self_eval_runtime(tmp_path):
@@ -2032,6 +2790,67 @@ def test_claude_workspace_adapter_allows_curl_when_network_enabled(tmp_path):
     assert violations == []
 
 
+def test_claude_workspace_adapter_pretool_hook_allows_workspace_local_bash(tmp_path):
+    adapter = ClaudeWorkspaceAdapter()
+    policy = adapter._coerce_tool_policy(ExecutorSessionConfig(run_id="run-1", env_hash="env-1"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    hook_events: list[dict[str, object]] = []
+    hooks = adapter.build_workspace_sdk_hooks(
+        hook_events,
+        workspace_root=workspace,
+        tool_policy=policy,
+    )
+    matcher = hooks["PreToolUse"][0]
+    callback = matcher.hooks[0]
+
+    result = asyncio.run(
+        callback(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": "cd . && python work/main.py"},
+            },
+            "tool-allow",
+            {},
+        )
+    )
+
+    assert result["hookSpecificOutput"]["permissionDecision"] == "allow"
+    assert hook_events and hook_events[0]["permission_decision"] == "allow"
+
+
+def test_claude_workspace_adapter_pretool_hook_denies_outside_workspace_bash(tmp_path):
+    adapter = ClaudeWorkspaceAdapter()
+    policy = adapter._coerce_tool_policy(ExecutorSessionConfig(run_id="run-1", env_hash="env-1"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    hook_events: list[dict[str, object]] = []
+    hooks = adapter.build_workspace_sdk_hooks(
+        hook_events,
+        workspace_root=workspace,
+        tool_policy=policy,
+    )
+    matcher = hooks["PreToolUse"][0]
+    callback = matcher.hooks[0]
+
+    result = asyncio.run(
+        callback(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": "cd ../.. && ls"},
+            },
+            "tool-deny",
+            {},
+        )
+    )
+
+    assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "outside_workspace_path" in result["hookSpecificOutput"]["permissionDecisionReason"]
+    assert hook_events and hook_events[0]["permission_decision"] == "deny"
+
+
 def test_claude_workspace_system_prompt_describes_boundary_policy_when_network_disabled():
     adapter = ClaudeWorkspaceAdapter()
     prompt = adapter._build_workspace_system_prompt(
@@ -2122,7 +2941,178 @@ def test_claude_workspace_output_contract_completion_handles_none_stdio(tmp_path
     assert result["output_contract_satisfied"] is True
 
 
-def test_claude_workspace_adapter_rejects_disallowed_bash_commands(tmp_path, monkeypatch):
+def test_claude_workspace_adapter_retries_after_denied_bash_round(tmp_path, monkeypatch):
+    bundle = make_bundle(tmp_path)
+    model = ModelConfig(
+        provider_name="claude-sdk",
+        model_name="claude-test",
+        api_key_env="TEST_CLAUDE_API_KEY",
+    )
+    config = ExecutorSessionConfig(
+        run_id="run-bad-bash",
+        env_hash="env-1",
+        workspace_root=tmp_path / "workspace",
+        model_config=model,
+        provider_extras={
+            "max_workspace_iterations": 2,
+            "mock_claude_sdk_response": [
+                {
+                    "files": {
+                        "output/plan.md": workspace_plan_content(
+                            "round 1: recover from the denied Bash attempt"
+                        ),
+                        "work/main.py": "print('retry-me')\n",
+                    },
+                    "mock_execution_error": True,
+                    "error_message": "Claude SDK response stream ended without a ResultMessage",
+                    "error_type": "missing_result_message",
+                    "sdk_messages": [
+                        workspace_plan_write_message(
+                            content=workspace_plan_content(
+                                "round 1: recover from the denied Bash attempt"
+                            )
+                        ),
+                        {
+                            "content": [
+                                {
+                                    "id": "tool-denied",
+                                    "name": "Bash",
+                                    "input": {"command": "cd ../.. && ls"},
+                                }
+                            ]
+                        }
+                    ],
+                    "sdk_diagnostics": {
+                        "hook_events": [
+                            {
+                                "hook_event_name": "PreToolUse",
+                                "tool_use_id": "tool-denied",
+                                "tool_name": "Bash",
+                                "command": "cd ../.. && ls",
+                                "permission_decision": "deny",
+                            }
+                        ]
+                    },
+                },
+                {
+                    "files": {
+                        "output/plan.md": workspace_plan_content(
+                            "round 2: use a workspace-local command and validate the output"
+                        ),
+                        "work/main.py": "\n".join(
+                            [
+                                "from pathlib import Path",
+                                "import numpy as np",
+                                "Path('output').mkdir(parents=True, exist_ok=True)",
+                                "np.savez('output/reconstruction.npz', sample=np.array([1.0]))",
+                                "print('recovered-after-denial')",
+                            ]
+                        )
+                        + "\n",
+                    },
+                    "solver_summary": "repaired after denial",
+                    "declared_outputs": ["output/reconstruction.npz"],
+                    "assumptions": [],
+                    "files_written": ["output/plan.md", "work/main.py"],
+                    "commands_run": ["python work/main.py"],
+                    "sdk_messages": [
+                        workspace_plan_write_message(
+                            content=workspace_plan_content(
+                                "round 2: use a workspace-local command and validate the output"
+                            )
+                        ),
+                        {"name": "Bash", "input": {"command": "python work/main.py"}}
+                    ],
+                },
+            ],
+        },
+    )
+    monkeypatch.setenv("TEST_CLAUDE_API_KEY", "sdk-secret")
+    record = ClaudeWorkspaceAdapter().run(bundle, config, [])
+
+    prompt_round_2 = (tmp_path / "workspace" / "agent_prompt_round_2.txt").read_text(
+        encoding="utf-8"
+    )
+    assert record.metadata["iteration_count"] == 2
+    assert record.metadata["run_status"] == "succeeded"
+    assert "recovered-after-denial" in record.stdout
+    assert record.metadata["workspace_policy_denials"]
+    assert (tmp_path / "workspace" / "workspace_policy_denials_round_1.json").exists()
+    assert "Policy denial feedback:" in prompt_round_2
+    assert '"failure_mode": "bash_policy_denial"' in prompt_round_2
+
+
+def test_claude_workspace_adapter_succeeds_after_same_round_denial_recovery(
+    tmp_path, monkeypatch
+):
+    bundle = make_bundle(tmp_path)
+    model = ModelConfig(
+        provider_name="claude-sdk",
+        model_name="claude-test",
+        api_key_env="TEST_CLAUDE_API_KEY",
+    )
+    config = ExecutorSessionConfig(
+        run_id="run-same-round-recovery",
+        env_hash="env-1",
+        workspace_root=tmp_path / "workspace",
+        model_config=model,
+        provider_extras={
+            "mock_claude_sdk_response": {
+                "files": {
+                    "output/plan.md": workspace_plan_content(
+                        "inspect public inputs and build a multifile solver"
+                    ),
+                    "work/main.py": "\n".join(
+                        [
+                            "from pathlib import Path",
+                            "import numpy as np",
+                            "Path('output').mkdir(parents=True, exist_ok=True)",
+                            "np.savez('output/reconstruction.npz', sample=np.array([1.0]))",
+                            "print('same-round-recovery')",
+                        ]
+                    )
+                    + "\n",
+                },
+                "solver_summary": "same round repair",
+                "declared_outputs": ["output/reconstruction.npz"],
+                "assumptions": [],
+                "files_written": ["output/plan.md", "work/main.py"],
+                "commands_run": ["cd ../.. && ls", "python work/main.py"],
+                "sdk_messages": [
+                    workspace_plan_write_message(
+                        content=workspace_plan_content(
+                            "same round: recover from the denied command and rerun locally"
+                        )
+                    ),
+                    {"content": [{"id": "tool-denied", "name": "Bash", "input": {"command": "cd ../.. && ls"}}]},
+                    {"content": [{"id": "tool-run", "name": "Bash", "input": {"command": "python work/main.py"}}]},
+                ],
+                "sdk_diagnostics": {
+                    "hook_events": [
+                        {
+                            "hook_event_name": "PreToolUse",
+                            "tool_use_id": "tool-denied",
+                            "tool_name": "Bash",
+                            "command": "cd ../.. && ls",
+                            "permission_decision": "deny",
+                        }
+                    ]
+                },
+            }
+        },
+    )
+    monkeypatch.setenv("TEST_CLAUDE_API_KEY", "sdk-secret")
+    record = ClaudeWorkspaceAdapter().run(bundle, config, [])
+
+    assert record.metadata["run_status"] == "succeeded"
+    assert "same-round-recovery" in record.stdout
+    assert record.metadata["commands_run"] == ["python work/main.py"]
+    assert record.metadata["workspace_policy_denials"]
+
+
+def test_claude_workspace_adapter_still_fails_for_unhandled_disallowed_bash_commands(
+    tmp_path, monkeypatch
+):
     bundle = make_bundle(tmp_path)
     model = ModelConfig(
         provider_name="claude-sdk",
@@ -2138,11 +3128,6 @@ def test_claude_workspace_adapter_rejects_disallowed_bash_commands(tmp_path, mon
             "mock_claude_sdk_response": {
                 "files": {
                     "work/main.py": "print('noop')\n",
-                    "work/src/__init__.py": "",
-                    "work/src/preprocessing.py": "",
-                    "work/src/physics_model.py": "",
-                    "work/src/solvers.py": "",
-                    "work/src/visualization.py": "",
                 },
                 "solver_summary": "tries disallowed bash",
                 "declared_outputs": [],

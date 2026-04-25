@@ -92,6 +92,7 @@ def run_registered_task_live(
             "repo_root": str(project_root),
             "workspace_prompt_mode": "semantic_only",
             "workspace_completion_policy": LIVE_RUN_WORKSPACE_COMPLETION_POLICY,
+            "workspace_stop_oracle": "hidden_judge_submit",
             "max_workspace_iterations": LIVE_RUN_MAX_WORKSPACE_ITERATIONS,
             "claude_max_turns": LIVE_RUN_CLAUDE_MAX_TURNS,
         },
@@ -105,7 +106,7 @@ def run_registered_task_live(
     except TypeError:
         proxy_spec = manifest_proxy_spec(record, manifest)
     proxy = ProxyVerifier().evaluate(record, proxy_spec)
-    judge = evaluate_manifest_run(task_root, record, manifest)
+    judge = record.judge_result or evaluate_manifest_run(task_root, record, manifest)
     log_dir = write_live_run_logs(
         run_paths.log_root,
         manifest=manifest,

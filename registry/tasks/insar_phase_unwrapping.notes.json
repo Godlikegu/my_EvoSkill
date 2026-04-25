@@ -1,0 +1,446 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\insar_phase_unwrapping\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "earth_science",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "dates": {
+            "dtype": "<U10",
+            "shape": [
+              2
+            ]
+          },
+          "description": {
+            "dtype": "<U76",
+            "shape": []
+          },
+          "geolocation": {
+            "dtype": "object",
+            "shape": []
+          },
+          "image_dimensions": {
+            "dtype": "object",
+            "shape": []
+          },
+          "reference": {
+            "dtype": "object",
+            "shape": []
+          },
+          "sensor": {
+            "dtype": "<U11",
+            "shape": []
+          },
+          "task": {
+            "dtype": "<U22",
+            "shape": []
+          },
+          "temporal_baseline_days": {
+            "dtype": "int64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "interferogram": {
+            "dtype": "complex64",
+            "shape": [
+              1,
+              778,
+              947
+            ]
+          },
+          "magnitude": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              778,
+              947
+            ]
+          },
+          "wrapped_phase": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              778,
+              947
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "magnitude": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              778,
+              947
+            ]
+          },
+          "unwrapped_phase": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              778,
+              947
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/baseline_reference.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              778,
+              947
+            ],
+            "field": "unwrapped_phase",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              778,
+              947
+            ],
+            "field": "unwrapped_phase",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.8107
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              778,
+              947
+            ],
+            "field": "unwrapped_phase",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              778,
+              947
+            ],
+            "field": "unwrapped_phase",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.0787
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "unwrapped_phase",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            778,
+            947
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "insar_phase_unwrapping",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/baseline_reference.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/fig1_wrapped_phase_coherence.png",
+      "evaluation/reference_outputs/fig2_unwrapped_comparison.png",
+      "evaluation/reference_outputs/fig3_residuals.png",
+      "evaluation/reference_outputs/fig4_spurs_vs_snaphu_diff.png",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/unwrapped_phase.npz",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/conftest.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/insar_phase_unwrapping.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "baseline_reference.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {},
+      "exists": false
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "dates",
+        "description",
+        "geolocation",
+        "image_dimensions",
+        "reference",
+        "sensor",
+        "task",
+        "temporal_baseline_days"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "interferogram": {
+          "dtype": "complex64",
+          "shape": [
+            1,
+            778,
+            947
+          ]
+        },
+        "magnitude": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            778,
+            947
+          ]
+        },
+        "wrapped_phase": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            778,
+            947
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\insar_phase_unwrapping\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "SPURS (ADMM with G0 sparsity penalty, DCT-based Poisson solver, 15 iterations)",
+          "ncc_vs_ref": 0.9008,
+          "nrmse_vs_ref": 0.0715
+        }
+      ],
+      "ncc_boundary": 0.8107,
+      "nrmse_boundary": 0.0787,
+      "nrmse_definition": "NRMSE is computed after subtracting the global median offset (spurs - snaphu) from the reconstruction, then normalised by the dynamic range of the SNAPHU reference: NRMSE = RMSE(spurs_aligned, snaphu) / (max(snaphu) - min(snaphu)). The offset correction is necessary because phase unwrapping is only defined up to a global additive constant."
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/fig1_wrapped_phase_coherence.png",
+      "reference_outputs/fig2_unwrapped_comparison.png",
+      "reference_outputs/fig3_residuals.png",
+      "reference_outputs/fig4_spurs_vs_snaphu_diff.png",
+      "reference_outputs/metrics.json",
+      "reference_outputs/unwrapped_phase.npz"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\insar_phase_unwrapping\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\insar_phase_unwrapping.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "unwrapped_spurs",
+      "unwrapped_snaphu",
+      "wrapped_phase"
+    ],
+    "candidate_sources": [
+      "main.py:np.savez"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [
+          "unwrapped_spurs",
+          "unwrapped_snaphu",
+          "wrapped_phase"
+        ],
+        "file": "main.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Earth Science",
+    "exists": true,
+    "headings": [
+      "InSAR Phase Unwrapping via Sparse Optimization",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/baseline_reference.npz`",
+      "`data/meta_data.json`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "InSAR Phase Unwrapping via Sparse Optimization"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\insar_phase_unwrapping\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\insar_phase_unwrapping\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\insar_phase_unwrapping.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\1a95a6a98663e21e\\build.log",
+    "env_hash": "1a95a6a98663e21e",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\1a95a6a98663e21e\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\1a95a6a98663e21e\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "insar_phase_unwrapping",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\insar_phase_unwrapping",
+  "vendor_session_ref": {},
+  "warnings": []
+}

@@ -1,0 +1,385 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\confocal-nlos-fk\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "physics",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_meta_data",
+        "path": "data/meta_data",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "bin_resolution": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "meas": {
+            "dtype": "float32",
+            "shape": [
+              128,
+              128,
+              2048
+            ]
+          },
+          "tofgrid": {
+            "dtype": "float64",
+            "shape": [
+              128,
+              128
+            ]
+          },
+          "wall_size": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "fk": {
+            "dtype": "float32",
+            "shape": [
+              512,
+              128,
+              128
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "evaluation/reference_outputs/reconstruction.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              512,
+              128,
+              128
+            ],
+            "field": "fk",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              512,
+              128,
+              128
+            ],
+            "field": "fk",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.9
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              512,
+              128,
+              128
+            ],
+            "field": "fk",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              512,
+              128,
+              128
+            ],
+            "field": "fk",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.1
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "fk",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            512,
+            128,
+            128
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "confocal-nlos-fk",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/baseline_reference.npz",
+      "data/meta_data",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/fk.png",
+      "evaluation/reference_outputs/fk_reference.npy",
+      "evaluation/reference_outputs/measurement_slice.png",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/reconstruction.npz",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/test_solvers.py",
+      "main.py",
+      "nature25489.pdf",
+      "nlos_fk.pdf",
+      "notebooks/confocal-nlos-fk.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "baseline_reference.npz",
+      "meta_data",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {},
+      "exists": false
+    },
+    "meta_data": {
+      "exists": false,
+      "keys": []
+    },
+    "raw_data": {
+      "arrays": {
+        "bin_resolution": {
+          "dtype": "float64",
+          "shape": []
+        },
+        "meas": {
+          "dtype": "float32",
+          "shape": [
+            128,
+            128,
+            2048
+          ]
+        },
+        "tofgrid": {
+          "dtype": "float64",
+          "shape": [
+            128,
+            128
+          ]
+        },
+        "wall_size": {
+          "dtype": "float64",
+          "shape": []
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\confocal-nlos-fk\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "f-k (Stolt) migration with coherent compounding",
+          "ncc_vs_ref": 1.0,
+          "nrmse_vs_ref": 0.0,
+          "time_s": 19.6
+        }
+      ],
+      "ncc_boundary": 0.9,
+      "nrmse_boundary": 0.1
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/fk.png",
+      "reference_outputs/fk_reference.npy",
+      "reference_outputs/measurement_slice.png",
+      "reference_outputs/metrics.json",
+      "reference_outputs/reconstruction.npz"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\confocal-nlos-fk\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\confocal-nlos-fk.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": true,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "src/preprocessing.py",
+        "kind": "h5py.File",
+        "path_hint": ""
+      }
+    ],
+    "warnings": [
+      "task appears to export HDF5 or custom binary outputs; add a public npz export at output/reconstruction.npz"
+    ]
+  },
+  "readme_summary": {
+    "domain": "Physics",
+    "exists": true,
+    "headings": [
+      "Confocal NLOS Imaging — f-k Migration",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "`data/baseline_reference.npz`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Confocal NLOS Imaging — f-k Migration"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\confocal-nlos-fk\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\confocal-nlos-fk\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\confocal-nlos-fk.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\62f860b095bdc5ce\\build.log",
+    "env_hash": "62f860b095bdc5ce",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\62f860b095bdc5ce\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\62f860b095bdc5ce\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "confocal-nlos-fk",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\confocal-nlos-fk",
+  "vendor_session_ref": {},
+  "warnings": []
+}

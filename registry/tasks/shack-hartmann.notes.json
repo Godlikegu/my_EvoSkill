@@ -1,0 +1,739 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\shack-hartmann\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "astronomy",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "deformable_mirror": {
+            "dtype": "object",
+            "shape": []
+          },
+          "simulation": {
+            "dtype": "object",
+            "shape": []
+          },
+          "telescope": {
+            "dtype": "object",
+            "shape": []
+          },
+          "wavefront_sensor": {
+            "dtype": "object",
+            "shape": []
+          },
+          "wfe_levels_nm": {
+            "dtype": "int64",
+            "shape": [
+              4
+            ]
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "aperture": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              16384
+            ]
+          },
+          "detector_coords_x": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              128,
+              128
+            ]
+          },
+          "detector_coords_y": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              128,
+              128
+            ]
+          },
+          "dm_modes": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              150,
+              16384
+            ]
+          },
+          "ref_image": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              128,
+              128
+            ]
+          },
+          "response_matrix": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              592,
+              150
+            ]
+          },
+          "subap_map": {
+            "dtype": "int32",
+            "shape": [
+              1,
+              128,
+              128
+            ]
+          },
+          "wfs_images": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              4,
+              128,
+              128
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "wavefront_phases": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              4,
+              16384
+            ]
+          }
+        },
+        "id": "ground_truth",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden wavefront-phase references used for evaluation.",
+        "visibility": "private"
+      },
+      {
+        "fields": {
+          "level_0": {
+            "dtype": "float32",
+            "shape": [
+              16384
+            ]
+          },
+          "level_1": {
+            "dtype": "float32",
+            "shape": [
+              16384
+            ]
+          },
+          "level_2": {
+            "dtype": "float32",
+            "shape": [
+              16384
+            ]
+          },
+          "level_3": {
+            "dtype": "float32",
+            "shape": [
+              16384
+            ]
+          }
+        },
+        "id": "ground_truth_levels",
+        "path": "evaluation/reference_outputs/task_contract_refs_wavefront_levels.npz",
+        "role": "reference_data",
+        "semantics": "Generated hidden per-level wavefront slices used for metric binding.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate_0": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "reconstructed_phases",
+            "preprocess": "identity",
+            "selectors": {
+              "slice": [
+                0,
+                1,
+                null
+              ],
+              "squeeze": true
+            },
+            "source": "output"
+          },
+          "estimate_1": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "reconstructed_phases",
+            "preprocess": "identity",
+            "selectors": {
+              "slice": [
+                1,
+                2,
+                null
+              ],
+              "squeeze": true
+            },
+            "source": "output"
+          },
+          "estimate_2": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "reconstructed_phases",
+            "preprocess": "identity",
+            "selectors": {
+              "slice": [
+                2,
+                3,
+                null
+              ],
+              "squeeze": true
+            },
+            "source": "output"
+          },
+          "estimate_3": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "reconstructed_phases",
+            "preprocess": "identity",
+            "selectors": {
+              "slice": [
+                3,
+                4,
+                null
+              ],
+              "squeeze": true
+            },
+            "source": "output"
+          },
+          "reference_0": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "level_0",
+            "file_id": "ground_truth_levels",
+            "preprocess": "identity",
+            "source": "file"
+          },
+          "reference_1": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "level_1",
+            "file_id": "ground_truth_levels",
+            "preprocess": "identity",
+            "source": "file"
+          },
+          "reference_2": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "level_2",
+            "file_id": "ground_truth_levels",
+            "preprocess": "identity",
+            "source": "file"
+          },
+          "reference_3": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "level_3",
+            "file_id": "ground_truth_levels",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.8
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate_0": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "reconstructed_phases",
+            "preprocess": "identity",
+            "selectors": {
+              "slice": [
+                0,
+                1,
+                null
+              ],
+              "squeeze": true
+            },
+            "source": "output"
+          },
+          "estimate_1": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "reconstructed_phases",
+            "preprocess": "identity",
+            "selectors": {
+              "slice": [
+                1,
+                2,
+                null
+              ],
+              "squeeze": true
+            },
+            "source": "output"
+          },
+          "estimate_2": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "reconstructed_phases",
+            "preprocess": "identity",
+            "selectors": {
+              "slice": [
+                2,
+                3,
+                null
+              ],
+              "squeeze": true
+            },
+            "source": "output"
+          },
+          "estimate_3": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "reconstructed_phases",
+            "preprocess": "identity",
+            "selectors": {
+              "slice": [
+                3,
+                4,
+                null
+              ],
+              "squeeze": true
+            },
+            "source": "output"
+          },
+          "reference_0": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "level_0",
+            "file_id": "ground_truth_levels",
+            "preprocess": "identity",
+            "source": "file"
+          },
+          "reference_1": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "level_1",
+            "file_id": "ground_truth_levels",
+            "preprocess": "identity",
+            "source": "file"
+          },
+          "reference_2": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "level_2",
+            "file_id": "ground_truth_levels",
+            "preprocess": "identity",
+            "source": "file"
+          },
+          "reference_3": {
+            "expected_shape": [
+              16384
+            ],
+            "field": "level_3",
+            "file_id": "ground_truth_levels",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.09
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "reconstructed_phases",
+          "semantics": "Estimated wavefront phase for each WFE level.",
+          "shape": [
+            4,
+            16384
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "shack-hartmann",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "1070342.pdf",
+      "README.md",
+      "data/baseline_reference.npz",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/dm_modes.png",
+      "evaluation/reference_outputs/metrics_vs_wfe.png",
+      "evaluation/reference_outputs/reconstruction.npz",
+      "evaluation/reference_outputs/response_singular_values.png",
+      "evaluation/reference_outputs/task_contract_refs_wavefront_levels.npz",
+      "evaluation/reference_outputs/wavefront_comparison.png",
+      "evaluation/reference_outputs/wfs_ref_image.png",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "main.py",
+      "notebooks/make_notebook.py",
+      "notebooks/shack_hartmann.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "baseline_reference.npz",
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "wavefront_phases": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            4,
+            16384
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "deformable_mirror",
+        "simulation",
+        "telescope",
+        "wavefront_sensor",
+        "wfe_levels_nm"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "aperture": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            16384
+          ]
+        },
+        "detector_coords_x": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            128
+          ]
+        },
+        "detector_coords_y": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            128
+          ]
+        },
+        "dm_modes": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            150,
+            16384
+          ]
+        },
+        "ref_image": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            128
+          ]
+        },
+        "response_matrix": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            592,
+            150
+          ]
+        },
+        "subap_map": {
+          "dtype": "int32",
+          "shape": [
+            1,
+            128,
+            128
+          ]
+        },
+        "wfs_images": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            4,
+            128,
+            128
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\shack-hartmann\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "Weighted-centroid slope estimation + Tikhonov reconstruction (rcond=1e-3)",
+          "ncc_wfe_100nm": 0.9843,
+          "ncc_wfe_200nm": 0.9745,
+          "ncc_wfe_400nm": 0.8642,
+          "ncc_wfe_50nm": 0.996,
+          "nrmse_wfe_100nm": 0.0706,
+          "nrmse_wfe_200nm": 0.0714,
+          "nrmse_wfe_400nm": 0.0752,
+          "nrmse_wfe_50nm": 0.0836,
+          "reconstruction_time_s": 0.072
+        }
+      ],
+      "ncc_boundary": 0.8,
+      "nrmse_boundary": 0.09
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/dm_modes.png",
+      "reference_outputs/metrics_vs_wfe.png",
+      "reference_outputs/reconstruction.npz",
+      "reference_outputs/response_singular_values.png",
+      "reference_outputs/task_contract_refs_wavefront_levels.npz",
+      "reference_outputs/wavefront_comparison.png",
+      "reference_outputs/wfs_ref_image.png"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\shack-hartmann\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\shack-hartmann.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "reconstructed_phases",
+      "ground_truth_phases",
+      "ncc_per_level",
+      "nrmse_per_level",
+      "reconstruction_time_s"
+    ],
+    "candidate_sources": [
+      "main.py:np.savez"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [
+          "reconstructed_phases",
+          "ground_truth_phases",
+          "ncc_per_level",
+          "nrmse_per_level",
+          "reconstruction_time_s"
+        ],
+        "file": "main.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      },
+      {
+        "fields": [
+          "response_matrix",
+          "wfs_images",
+          "ref_image",
+          "detector_coords_x",
+          "detector_coords_y",
+          "subap_map",
+          "dm_modes",
+          "aperture"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      },
+      {
+        "fields": [
+          "wavefront_phases"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Astronomy",
+    "exists": true,
+    "headings": [
+      "Shack-Hartmann Wavefront Sensing",
+      "Background",
+      "Problem Description",
+      "Detector image formation",
+      "Forward model",
+      "Inverse problem",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/ground_truth.npz",
+      "data/baseline_reference.npz",
+      "data/meta_data.json",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "reconstructed phase maps (N_levels × N_pupil_px) compared against",
+    "title": "Shack-Hartmann Wavefront Sensing"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\shack-hartmann\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\shack-hartmann\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\shack-hartmann.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\9e35cd585fac08da\\build.log",
+    "env_hash": "9e35cd585fac08da",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\9e35cd585fac08da\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\9e35cd585fac08da\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "shack-hartmann",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\shack-hartmann",
+  "vendor_session_ref": {},
+  "warnings": []
+}

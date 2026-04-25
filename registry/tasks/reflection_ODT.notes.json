@@ -1,0 +1,450 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\reflection_ODT\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "biology",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "NA_obj": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "description": {
+            "dtype": "<U440",
+            "shape": []
+          },
+          "dz_gap": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "dz_layer": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "illumination_rings": {
+            "dtype": "object",
+            "shape": [
+              4
+            ]
+          },
+          "n0": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "res_um": {
+            "dtype": "float64",
+            "shape": [
+              3
+            ]
+          },
+          "volume_shape": {
+            "dtype": "int64",
+            "shape": [
+              3
+            ]
+          },
+          "wavelength_um": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "measurements": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              56,
+              128,
+              128
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "delta_n": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              4,
+              128,
+              128
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              4,
+              128,
+              128
+            ],
+            "field": "delta_n",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              4,
+              128,
+              128
+            ],
+            "field": "delta_n",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.785
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              4,
+              128,
+              128
+            ],
+            "field": "delta_n",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              4,
+              128,
+              128
+            ],
+            "field": "delta_n",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.359
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float64",
+          "name": "delta_n",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            4,
+            128,
+            128
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "reflection_ODT",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      ".gitignore",
+      "2503.12246v3.pdf",
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/comparison.png",
+      "evaluation/reference_outputs/ground_truth_slices.png",
+      "evaluation/reference_outputs/loss_history.npy",
+      "evaluation/reference_outputs/loss_history.png",
+      "evaluation/reference_outputs/measurements.png",
+      "evaluation/reference_outputs/reconstruction.npy",
+      "evaluation/reference_outputs/reconstruction_slices.png",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "main.py",
+      "notebooks/reflection_ODT.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "delta_n": {
+          "dtype": "float64",
+          "shape": [
+            1,
+            4,
+            128,
+            128
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "NA_obj",
+        "description",
+        "dz_gap",
+        "dz_layer",
+        "illumination_rings",
+        "n0",
+        "res_um",
+        "volume_shape",
+        "wavelength_um"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "measurements": {
+          "dtype": "float64",
+          "shape": [
+            1,
+            56,
+            128,
+            128
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\reflection_ODT\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "ncc": 0.872,
+          "nrmse": 0.326
+        }
+      ],
+      "ncc_boundary": 0.785,
+      "nrmse_boundary": 0.359
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/comparison.png",
+      "reference_outputs/ground_truth_slices.png",
+      "reference_outputs/loss_history.npy",
+      "reference_outputs/loss_history.png",
+      "reference_outputs/measurements.png",
+      "reference_outputs/reconstruction.npy",
+      "reference_outputs/reconstruction_slices.png"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\reflection_ODT\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\reflection_ODT.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "measurements"
+    ],
+    "candidate_sources": [
+      "src/generate_data.py:np.savez"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [
+          "measurements"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": "data/raw_data.npz"
+      },
+      {
+        "fields": [
+          "delta_n"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": "data/ground_truth.npz"
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Biology",
+    "exists": true,
+    "headings": [
+      "Reflection-Mode Optical Diffraction Tomography (rMS-FPT)",
+      "Background",
+      "Problem Description",
+      "Physics",
+      "Illumination / Incident Angles",
+      "Discrete-Layer Forward Model",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/ground_truth.npz`",
+      "`data/meta_data.json`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Reflection-Mode Optical Diffraction Tomography (rMS-FPT)"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\reflection_ODT\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\reflection_ODT\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\reflection_ODT.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\509833b9a5fe7afe\\build.log",
+    "env_hash": "509833b9a5fe7afe",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\509833b9a5fe7afe\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\509833b9a5fe7afe\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "reflection_ODT",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\reflection_ODT",
+  "vendor_session_ref": {},
+  "warnings": []
+}

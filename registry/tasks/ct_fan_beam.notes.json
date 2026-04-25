@@ -1,0 +1,477 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\ct_fan_beam\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "medicine",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "detector_type": {
+            "dtype": "<U4",
+            "shape": []
+          },
+          "fan_half_angle_deg": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "image_size": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "isocenter_to_detector_pixels": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "modality": {
+            "dtype": "<U11",
+            "shape": []
+          },
+          "n_angles_full": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_angles_short": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_det": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "noise_sigma_relative": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "short_scan_range_deg": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "source_to_isocenter_pixels": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "angles_full": {
+            "dtype": "float32",
+            "shape": [
+              180
+            ]
+          },
+          "angles_short": {
+            "dtype": "float32",
+            "shape": [
+              116
+            ]
+          },
+          "det_pos": {
+            "dtype": "float32",
+            "shape": [
+              192
+            ]
+          },
+          "sino_full": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              180,
+              192
+            ]
+          },
+          "sino_short": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              116,
+              192
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "phantom": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              128,
+              128
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "phantom",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "phantom",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.8695
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "phantom",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "phantom",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.0941
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "phantom",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            128,
+            128
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "ct_fan_beam",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__init__.py",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/fixtures/physics_model_fixtures.npz",
+      "evaluation/fixtures/preprocessing_fixtures.npz",
+      "evaluation/fixtures/solvers_fixtures.npz",
+      "evaluation/fixtures/visualization_fixtures.npz",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/recon_fbp_full.npz",
+      "evaluation/reference_outputs/recon_fbp_short.npz",
+      "evaluation/reference_outputs/recon_tv_short.npz",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/conftest.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/ct_fan_beam.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "phantom": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            128
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "detector_type",
+        "fan_half_angle_deg",
+        "image_size",
+        "isocenter_to_detector_pixels",
+        "modality",
+        "n_angles_full",
+        "n_angles_short",
+        "n_det",
+        "noise_sigma_relative",
+        "short_scan_range_deg",
+        "source_to_isocenter_pixels"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "angles_full": {
+          "dtype": "float32",
+          "shape": [
+            180
+          ]
+        },
+        "angles_short": {
+          "dtype": "float32",
+          "shape": [
+            116
+          ]
+        },
+        "det_pos": {
+          "dtype": "float32",
+          "shape": [
+            192
+          ]
+        },
+        "sino_full": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            180,
+            192
+          ]
+        },
+        "sino_short": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            116,
+            192
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\ct_fan_beam\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "FBP full-scan (360 deg)",
+          "ncc_vs_ref": 0.6518,
+          "nrmse_vs_ref": 0.1929
+        },
+        {
+          "method": "FBP short-scan with Parker weighting",
+          "ncc_vs_ref": 0.5578,
+          "nrmse_vs_ref": 0.211
+        },
+        {
+          "method": "TV-PDHG short-scan",
+          "ncc_vs_ref": 0.9661,
+          "nrmse_vs_ref": 0.0855
+        }
+      ],
+      "ncc_boundary": 0.8695,
+      "nrmse_boundary": 0.0941
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/recon_fbp_full.npz",
+      "reference_outputs/recon_fbp_short.npz",
+      "reference_outputs/recon_tv_short.npz"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\ct_fan_beam\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\ct_fan_beam.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "medicine",
+    "exists": true,
+    "headings": [
+      "Fan-Beam CT Reconstruction",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Fan-Beam CT Reconstruction"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\ct_fan_beam\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\ct_fan_beam\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\ct_fan_beam.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\691fc30e4c4ff5a3\\build.log",
+    "env_hash": "691fc30e4c4ff5a3",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\691fc30e4c4ff5a3\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\691fc30e4c4ff5a3\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "ct_fan_beam",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\ct_fan_beam",
+  "vendor_session_ref": {},
+  "warnings": []
+}

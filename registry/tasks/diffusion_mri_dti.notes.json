@@ -1,0 +1,550 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\diffusion_mri_dti\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "medicine",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "b_value_s_per_mm2": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "field_of_view_mm": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "image_size": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "modality": {
+            "dtype": "<U22",
+            "shape": []
+          },
+          "n_b0": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_directions": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "noise_sigma": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "pixel_size_mm": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "signal_model": {
+            "dtype": "<U15",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "bvals": {
+            "dtype": "float32",
+            "shape": [
+              31
+            ]
+          },
+          "bvecs": {
+            "dtype": "float32",
+            "shape": [
+              31,
+              3
+            ]
+          },
+          "dwi_signal": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              128,
+              128,
+              31
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "fa_map": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              128,
+              128
+            ]
+          },
+          "md_map": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              128,
+              128
+            ]
+          },
+          "tensor_elements": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              128,
+              128,
+              6
+            ]
+          },
+          "tissue_mask": {
+            "dtype": "bool",
+            "shape": [
+              1,
+              128,
+              128
+            ]
+          }
+        },
+        "id": "ground_truth",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden DTI reference maps and tissue mask.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "fa_map",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "mask": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "tissue_mask",
+            "file_id": "ground_truth",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "reference": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "fa_map",
+            "file_id": "ground_truth",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.8982
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "fa_map",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "mask": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "tissue_mask",
+            "file_id": "ground_truth",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "reference": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "fa_map",
+            "file_id": "ground_truth",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.0643
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "fa_map",
+          "semantics": "Estimated fa map.",
+          "shape": [
+            128,
+            128
+          ]
+        },
+        {
+          "dtype": "float32",
+          "name": "md_map",
+          "semantics": "Estimated md map.",
+          "shape": [
+            128,
+            128
+          ]
+        },
+        {
+          "dtype": "float32",
+          "name": "tensor_elements",
+          "semantics": "Estimated tensor elements.",
+          "shape": [
+            128,
+            128,
+            6
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "diffusion_mri_dti",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__init__.py",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/fixtures/generate_data_dti_phantom.npz",
+      "evaluation/fixtures/generate_data_gradient_table.npz",
+      "evaluation/fixtures/physics_model_compute_fa.npz",
+      "evaluation/fixtures/physics_model_compute_md.npz",
+      "evaluation/fixtures/physics_model_design_matrix.npz",
+      "evaluation/fixtures/physics_model_elements_batch.npz",
+      "evaluation/fixtures/physics_model_rician_noise.npz",
+      "evaluation/fixtures/physics_model_stejskal_tanner.npz",
+      "evaluation/fixtures/physics_model_stejskal_tanner_aniso.npz",
+      "evaluation/fixtures/physics_model_tensor_from_eig.npz",
+      "evaluation/fixtures/physics_model_tensor_roundtrip.npz",
+      "evaluation/fixtures/preprocessing_preprocess_dwi.npz",
+      "evaluation/fixtures/preprocessing_preprocess_dwi_negative.npz",
+      "evaluation/fixtures/solvers_fit_dti_ols.npz",
+      "evaluation/fixtures/solvers_fit_dti_wls.npz",
+      "evaluation/fixtures/solvers_tensor_eig_decomposition.npz",
+      "evaluation/fixtures/solvers_tensor_eig_isotropic.npz",
+      "evaluation/fixtures/visualization_compute_ncc.npz",
+      "evaluation/fixtures/visualization_compute_nrmse.npz",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/dti_ols.npz",
+      "evaluation/reference_outputs/dti_wls.npz",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/conftest.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/diffusion_mri_dti.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "fa_map": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            128
+          ]
+        },
+        "md_map": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            128
+          ]
+        },
+        "tensor_elements": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            128,
+            6
+          ]
+        },
+        "tissue_mask": {
+          "dtype": "bool",
+          "shape": [
+            1,
+            128,
+            128
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "b_value_s_per_mm2",
+        "field_of_view_mm",
+        "image_size",
+        "modality",
+        "n_b0",
+        "n_directions",
+        "noise_sigma",
+        "pixel_size_mm",
+        "signal_model"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "bvals": {
+          "dtype": "float32",
+          "shape": [
+            31
+          ]
+        },
+        "bvecs": {
+          "dtype": "float32",
+          "shape": [
+            31,
+            3
+          ]
+        },
+        "dwi_signal": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            128,
+            31
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\diffusion_mri_dti\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "OLS tensor fit",
+          "ncc_md": 0.9993,
+          "ncc_vs_ref": 0.9978,
+          "nrmse_md": 0.0135,
+          "nrmse_vs_ref": 0.0613
+        },
+        {
+          "method": "WLS tensor fit",
+          "ncc_md": 0.9993,
+          "ncc_vs_ref": 0.998,
+          "nrmse_md": 0.0134,
+          "nrmse_vs_ref": 0.0585
+        }
+      ],
+      "ncc_boundary": 0.8982,
+      "nrmse_boundary": 0.0643
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/dti_ols.npz",
+      "reference_outputs/dti_wls.npz"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\diffusion_mri_dti\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\diffusion_mri_dti.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "medicine",
+    "exists": true,
+    "headings": [
+      "Diffusion MRI: Diffusion Tensor Imaging (DTI)",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Diffusion MRI: Diffusion Tensor Imaging (DTI)"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\diffusion_mri_dti\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\diffusion_mri_dti\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\diffusion_mri_dti.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\9176c0545f7a2440\\build.log",
+    "env_hash": "9176c0545f7a2440",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\9176c0545f7a2440\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\9176c0545f7a2440\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "diffusion_mri_dti",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\diffusion_mri_dti",
+  "vendor_session_ref": {},
+  "warnings": []
+}

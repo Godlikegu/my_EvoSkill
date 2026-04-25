@@ -1,0 +1,463 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\pnp_mri_reconstruction\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "TODO_family",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "batch_size": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "dataset": {
+            "dtype": "<U12",
+            "shape": []
+          },
+          "image_size": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          },
+          "key_dim": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "model_checkpoints": {
+            "dtype": "<U35",
+            "shape": []
+          },
+          "num_heads": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "num_iter": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "num_lines": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "patch_size": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "sampling_pattern": {
+            "dtype": "<U6",
+            "shape": []
+          },
+          "sigma": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "state_num": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "step_size": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "stride": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "value_dim": {
+            "dtype": "int64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "img": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              320,
+              320
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "img": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              320,
+              320
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              320,
+              320
+            ],
+            "field": "img",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              320,
+              320
+            ],
+            "field": "img",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.9774
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              320,
+              320
+            ],
+            "field": "img",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              320,
+              320
+            ],
+            "field": "img",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.1536
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "img",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            320,
+            320
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "pnp_mri_reconstruction",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/generate_fixtures.py",
+      "evaluation/generate_reference_outputs.py",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/ground_truth.npy",
+      "evaluation/reference_outputs/ifft_recon.npy",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/pnp_mssn_recon.npy",
+      "evaluation/reference_outputs/sampling_mask.npy",
+      "evaluation/reference_outputs/selected_iterations.npz",
+      "evaluation/reference_outputs/snr_history.npy",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "models/checkpoints/mssn-550000iters.data-00000-of-00001",
+      "models/checkpoints/mssn-550000iters.index",
+      "models/checkpoints/mssn-550000iters.meta",
+      "notebooks/pnp_mssn.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "img": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            320,
+            320
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "batch_size",
+        "dataset",
+        "image_size",
+        "key_dim",
+        "model_checkpoints",
+        "num_heads",
+        "num_iter",
+        "num_lines",
+        "patch_size",
+        "sampling_pattern",
+        "sigma",
+        "state_num",
+        "step_size",
+        "stride",
+        "value_dim"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "img": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            320,
+            320
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\pnp_mri_reconstruction\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "PnP-MSSN (Multiple Self-Similarity Network, 200 iterations)",
+          "ncc_vs_ref": 0.9902,
+          "nrmse_vs_ref": 0.1396
+        }
+      ],
+      "ncc_boundary": 0.9774,
+      "nrmse_boundary": 0.1536
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/ground_truth.npy",
+      "reference_outputs/ifft_recon.npy",
+      "reference_outputs/metrics.json",
+      "reference_outputs/pnp_mssn_recon.npy",
+      "reference_outputs/sampling_mask.npy",
+      "reference_outputs/selected_iterations.npz",
+      "reference_outputs/snr_history.npy"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\pnp_mri_reconstruction\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\pnp_mri_reconstruction.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "output/reconstruction.npy"
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "output/snr_history.npy"
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "output/dist_history.npy"
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "",
+    "exists": true,
+    "headings": [
+      "PnP-MSSN: Plug-and-Play MRI Reconstruction with Multiple Self-Similarity Network",
+      "Background",
+      "Physical model",
+      "Plug-and-Play framework",
+      "MSSN denoiser",
+      "Data",
+      "`data/raw_data.npz`",
+      "`data/ground_truth.npz`",
+      "`data/meta_data.json`",
+      "Method hints"
+    ],
+    "output_excerpt": "",
+    "title": "PnP-MSSN: Plug-and-Play MRI Reconstruction with Multiple Self-Similarity Network"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\pnp_mri_reconstruction\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\pnp_mri_reconstruction\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\pnp_mri_reconstruction.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\d75ce0be060a4aaa\\build.log",
+    "env_hash": "d75ce0be060a4aaa",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\d75ce0be060a4aaa\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\d75ce0be060a4aaa\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "pnp_mri_reconstruction",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\pnp_mri_reconstruction",
+  "vendor_session_ref": {},
+  "warnings": []
+}

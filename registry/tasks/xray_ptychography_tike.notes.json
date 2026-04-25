@@ -1,0 +1,467 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\xray_ptychography_tike\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "physics",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "data_dtype": {
+            "dtype": "<U7",
+            "shape": []
+          },
+          "data_max": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "data_min": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "description": {
+            "dtype": "<U93",
+            "shape": []
+          },
+          "diffraction_shape": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          },
+          "n_positions": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "probe_dtype": {
+            "dtype": "<U9",
+            "shape": []
+          },
+          "probe_shape": {
+            "dtype": "int64",
+            "shape": [
+              5
+            ]
+          },
+          "scan_range_pixels": {
+            "dtype": "float64",
+            "shape": [
+              2,
+              2
+            ]
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "diffraction_patterns": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              516,
+              128,
+              128
+            ]
+          },
+          "probe_guess": {
+            "dtype": "complex64",
+            "shape": [
+              1,
+              1,
+              1,
+              1,
+              128,
+              128
+            ]
+          },
+          "scan_positions": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              516,
+              2
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "object_amplitude": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              482,
+              479
+            ]
+          },
+          "object_phase": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              482,
+              479
+            ]
+          }
+        },
+        "id": "baseline_reference",
+        "path": "data/baseline_reference.npz",
+        "role": "reference_data",
+        "semantics": "Hidden object-phase reference used for evaluation.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              482,
+              479
+            ],
+            "field": "object_phase",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              482,
+              479
+            ],
+            "field": "object_phase",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.9
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              482,
+              479
+            ],
+            "field": "object_phase",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              482,
+              479
+            ],
+            "field": "object_phase",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.1
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "object_phase",
+          "semantics": "Estimated object phase.",
+          "shape": [
+            482,
+            479
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "xray_ptychography_tike",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/baseline_reference.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/costs.npy",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/reconstructed_object.npy",
+      "evaluation/reference_outputs/reconstructed_probe.npy",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "generate_fixtures.py",
+      "main.py",
+      "notebooks/xray_ptychography_tike.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "baseline_reference.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {},
+      "exists": false
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "data_dtype",
+        "data_max",
+        "data_min",
+        "description",
+        "diffraction_shape",
+        "n_positions",
+        "probe_dtype",
+        "probe_shape",
+        "scan_range_pixels"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "diffraction_patterns": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            516,
+            128,
+            128
+          ]
+        },
+        "probe_guess": {
+          "dtype": "complex64",
+          "shape": [
+            1,
+            1,
+            1,
+            1,
+            128,
+            128
+          ]
+        },
+        "scan_positions": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            516,
+            2
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\xray_ptychography_tike\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "final_cost": 0.3276,
+          "method": "lstsq_grad (64 epochs)",
+          "ncc_vs_ref": 1.0,
+          "nrmse_vs_ref": 0.0
+        }
+      ],
+      "ncc_boundary": 0.9,
+      "nrmse_boundary": 0.1
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/costs.npy",
+      "reference_outputs/metrics.json",
+      "reference_outputs/reconstructed_object.npy",
+      "reference_outputs/reconstructed_probe.npy"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\xray_ptychography_tike\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\xray_ptychography_tike.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Physics",
+    "exists": true,
+    "headings": [
+      "X-ray Ptychography Reconstruction",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/meta_data.json",
+      "data/ground_truth.npz",
+      "data/baseline_reference.npz",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "X-ray Ptychography Reconstruction"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\xray_ptychography_tike\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\xray_ptychography_tike\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\xray_ptychography_tike.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\18bd4f6b26d34892\\build.log",
+    "env_hash": "18bd4f6b26d34892",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\18bd4f6b26d34892\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\18bd4f6b26d34892\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "xray_ptychography_tike",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\xray_ptychography_tike",
+  "vendor_session_ref": {},
+  "warnings": []
+}

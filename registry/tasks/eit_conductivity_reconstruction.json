@@ -1,0 +1,65 @@
+{
+  "family": "medicine",
+  "judge_adapter_path": "evaluation/judge_adapter.py",
+  "primary_output_path": "output/reconstruction.npz",
+  "public_eval_spec": {
+    "alignments": []
+  },
+  "public_policy": {
+    "public_data_allowlist": [
+      "data/raw_data.npz",
+      "data/meta_data.json"
+    ],
+    "public_data_denylist": [
+      "ground_truth.npz",
+      "reference_outputs"
+    ],
+    "readme_policy": {
+      "preserve_sections": [
+        "Method Hints",
+        "References",
+        "Data Description",
+        "Problem Description",
+        "Background"
+      ],
+      "preserve_user_eval_notes": true,
+      "remove_path_patterns": [
+        "(?i)data/ground_truth\\.",
+        "(?i)data/baseline_reference\\.",
+        "(?i)data/simu\\.",
+        "(?i)evaluation/reference_outputs/",
+        "(?i)evaluation/tests/",
+        "(?i)\\bmain\\.py\\b",
+        "(?i)\\bsrc/",
+        "(?i)\\bnotebooks/",
+        "(?i)\\bplan/"
+      ],
+      "remove_sections": []
+    }
+  },
+  "ready": true,
+  "runtime_env": {
+    "backend": "venv_pip",
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\64fda3fae600da2e\\build.log",
+    "env_hash": "64fda3fae600da2e",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\64fda3fae600da2e\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\64fda3fae600da2e\\Scripts\\python.exe",
+    "ready": true,
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eit_conductivity_reconstruction\\requirements.txt"
+  },
+  "runtime_layout": {
+    "checkpoints_dir": "checkpoints",
+    "data_dir": "data",
+    "output_dir": "output",
+    "public_bundle_dir": "public_bundle",
+    "work_dir": "work"
+  },
+  "runtime_policy": {
+    "execution_budget_seconds": 900,
+    "model_timeout_seconds": 240
+  },
+  "source_task_dir": "../tasks/eit_conductivity_reconstruction",
+  "task_contract_path": "evaluation/task_contract.json",
+  "task_contract_public_path": "evaluation/task_contract.public.json",
+  "task_id": "eit_conductivity_reconstruction"
+}

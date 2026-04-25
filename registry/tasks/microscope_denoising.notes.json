@@ -1,0 +1,623 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\microscope_denoising\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "biology",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "avg_signal_above_bg_adu": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "background_adu": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "camera": {
+            "dtype": "<U35",
+            "shape": []
+          },
+          "emission_wavelength_nm": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "excitation_wavelength_nm": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "image_height": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "image_width": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "modality": {
+            "dtype": "<U28",
+            "shape": []
+          },
+          "n_frames": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "na": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "noise_model": {
+            "dtype": "object",
+            "shape": []
+          },
+          "paper": {
+            "dtype": "<U50",
+            "shape": []
+          },
+          "pixel_size_um": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "psf": {
+            "dtype": "object",
+            "shape": []
+          },
+          "source": {
+            "dtype": "<U34",
+            "shape": []
+          },
+          "structure": {
+            "dtype": "<U25",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "measurements": {
+            "dtype": "float32",
+            "shape": [
+              55,
+              502,
+              502
+            ]
+          },
+          "psf": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              32,
+              32
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "deconvolved": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              502,
+              502
+            ]
+          },
+          "denoised": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              502,
+              502
+            ]
+          }
+        },
+        "id": "baseline_reference",
+        "path": "data/baseline_reference.npz",
+        "role": "reference_data",
+        "semantics": "Hidden denoised and deconvolved reference outputs.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              502,
+              502
+            ],
+            "field": "denoised",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              502,
+              502
+            ],
+            "field": "denoised",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.85
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              502,
+              502
+            ],
+            "field": "denoised",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              502,
+              502
+            ],
+            "field": "denoised",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.2
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "denoised": {
+            "expected_shape": [
+              502,
+              502
+            ],
+            "field": "denoised",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "noisy": {
+            "expected_shape": [
+              502,
+              502
+            ],
+            "field": "measurements",
+            "file_id": "data_raw_data_npz",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0,
+              "slice": [
+                0,
+                1,
+                null
+              ],
+              "squeeze": true
+            },
+            "source": "file"
+          }
+        },
+        "name": "noise_reduction_factor",
+        "threshold": 5.0
+      },
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "deconvolved": {
+            "expected_shape": [
+              502,
+              502
+            ],
+            "field": "deconvolved",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "denoised": {
+            "expected_shape": [
+              502,
+              502
+            ],
+            "field": "denoised",
+            "preprocess": "identity",
+            "source": "output"
+          }
+        },
+        "name": "sharpness_improvement_factor",
+        "threshold": 3.0
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "denoised",
+          "semantics": "Stage-1 denoised output.",
+          "shape": [
+            502,
+            502
+          ]
+        },
+        {
+          "dtype": "float32",
+          "name": "deconvolved",
+          "semantics": "Stage-2 deconvolved output.",
+          "shape": [
+            502,
+            502
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "microscope_denoising",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "2d_data.zip",
+      "README.md",
+      "data/baseline_reference.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/comparison.png",
+      "evaluation/reference_outputs/comparison_lyso_mt.png",
+      "evaluation/reference_outputs/comparison_zoom.png",
+      "evaluation/reference_outputs/deconvolved.npy",
+      "evaluation/reference_outputs/denoised.npy",
+      "evaluation/reference_outputs/denoised_mt.npy",
+      "evaluation/reference_outputs/intensity_profile.png",
+      "evaluation/reference_outputs/loss_history.npy",
+      "evaluation/reference_outputs/loss_history_mt.npy",
+      "evaluation/reference_outputs/model_dec_weights.pt",
+      "evaluation/reference_outputs/model_den_weights.pt",
+      "evaluation/reference_outputs/model_weights.pt",
+      "evaluation/reference_outputs/mt_comparison.png",
+      "evaluation/reference_outputs/training_curve.png",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/test_integration.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/microscope_denoising.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "s41467-024-48575-9.pdf",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "baseline_reference.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {},
+      "exists": false
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "avg_signal_above_bg_adu",
+        "background_adu",
+        "camera",
+        "emission_wavelength_nm",
+        "excitation_wavelength_nm",
+        "image_height",
+        "image_width",
+        "modality",
+        "n_frames",
+        "na",
+        "noise_model",
+        "paper",
+        "pixel_size_um",
+        "psf",
+        "source",
+        "structure"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "measurements": {
+          "dtype": "float32",
+          "shape": [
+            55,
+            502,
+            502
+          ]
+        },
+        "psf": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            32,
+            32
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\microscope_denoising\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "noise_reduction_factor_boundary",
+      "nrmse_boundary",
+      "sharpness_improvement_factor_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "ZS-DeconvNet (joint denoising + deconvolution, 30 000 iters)",
+          "ncc_vs_ref": 1.0,
+          "noise_reduction_factor": 10.46,
+          "nrmse_vs_ref": 0.0,
+          "sharpness_improvement_factor": 7.45
+        }
+      ],
+      "detail": {
+        "stage1_denoising": {
+          "background_noise_std_denoised": 0.2063,
+          "background_noise_std_noisy": 2.1584,
+          "noise_reduction_factor": 10.46,
+          "snr_denoised": 692.2,
+          "snr_improvement_factor": 10.45,
+          "snr_noisy": 66.2
+        },
+        "stage2_deconvolution": {
+          "psf_residual": 0.001374,
+          "sharpness_deconvolved": 6.05,
+          "sharpness_denoised": 0.81,
+          "sharpness_improvement_factor": 7.45,
+          "sharpness_noisy": 357.12
+        },
+        "test_frame": "measurements[0] (Microtubule frame 01)"
+      },
+      "ncc_boundary": 0.85,
+      "noise_reduction_factor_boundary": 5.0,
+      "nrmse_boundary": 0.2,
+      "nrmse_definition": "NRMSE computed between agent denoised output and reference denoised output (evaluation/reference_outputs/denoised.npy), normalised by dynamic range of the reference. Boundaries are lenient due to stochastic zero-shot training.",
+      "sharpness_improvement_factor_boundary": 3.0
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/comparison.png",
+      "reference_outputs/comparison_lyso_mt.png",
+      "reference_outputs/comparison_zoom.png",
+      "reference_outputs/deconvolved.npy",
+      "reference_outputs/denoised.npy",
+      "reference_outputs/denoised_mt.npy",
+      "reference_outputs/intensity_profile.png",
+      "reference_outputs/loss_history.npy",
+      "reference_outputs/loss_history_mt.npy",
+      "reference_outputs/model_dec_weights.pt",
+      "reference_outputs/model_den_weights.pt",
+      "reference_outputs/model_weights.pt",
+      "reference_outputs/mt_comparison.png",
+      "reference_outputs/training_curve.png"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\microscope_denoising\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\microscope_denoising.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "reconstructed_spectrum"
+    ],
+    "candidate_sources": [
+      "raw_data.npz:measurements"
+    ],
+    "needs_public_npz_export": true,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "src/generate_data.py",
+        "kind": "h5py.File",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "src/generate_data.py",
+        "kind": "h5py.File",
+        "path_hint": ""
+      }
+    ],
+    "warnings": [
+      "task appears to export HDF5 or custom binary outputs; add a public npz export at output/reconstruction.npz"
+    ]
+  },
+  "readme_summary": {
+    "domain": "Biology",
+    "exists": true,
+    "headings": [
+      "Zero-Shot Fluorescence Microscopy Restoration (ZS-DeconvNet)",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/baseline_reference.npz`",
+      "`data/meta_data.json`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Zero-Shot Fluorescence Microscopy Restoration (ZS-DeconvNet)"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\microscope_denoising\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\microscope_denoising\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\microscope_denoising.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\804a214d335e03e4\\build.log",
+    "env_hash": "804a214d335e03e4",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\804a214d335e03e4\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\804a214d335e03e4\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "microscope_denoising",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\microscope_denoising",
+  "vendor_session_ref": {},
+  "warnings": []
+}

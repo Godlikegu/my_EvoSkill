@@ -286,9 +286,105 @@ def test_run_registered_task_live_uses_sdk_result_completion_and_30m_defaults(
     assert session_config.budget_seconds == 1800
     assert session_config.model_config.timeout == 1800
     assert session_config.provider_extras["workspace_completion_policy"] == "sdk_result_message"
+    assert session_config.provider_extras["workspace_stop_oracle"] == "hidden_judge_submit"
     assert session_config.provider_extras["max_workspace_iterations"] == 0
     assert session_config.provider_extras["claude_max_turns"] == 0
     assert session_config.tool_policy["network_access"] is False
+
+
+def test_run_registered_task_live_reuses_private_executor_judge_result(tmp_path, monkeypatch):
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True, exist_ok=True)
+    task_root = tmp_path / "tasks" / "demo_task"
+    task_root.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "task_id": "demo_task",
+        "family": "optics",
+        "public_policy": {},
+        "source_task_dir": "../tasks/demo_task",
+    }
+    bundle = SimpleNamespace(root_dir=project_root / "artifacts" / "compiled" / "demo_task")
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sdk-secret")
+    monkeypatch.setattr(
+        "myevoskill.live_runner.load_registered_manifest",
+        lambda task_id, *, project_root: manifest,
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.resolve_registered_task_root",
+        lambda manifest, *, project_root: task_root,
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.ensure_live_ready_manifest",
+        lambda manifest, *, task_root: None,
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.ensure_manifest_runtime_env",
+        lambda manifest, *, task_root, output_root: {
+            "backend": "venv_pip",
+            "env_hash": "env-1",
+            "requirements_path": str(task_root / "requirements.txt"),
+            "python_executable": str(Path(sys.executable).resolve()),
+            "ready": True,
+            "build_log_path": str(project_root / "artifacts" / "env_cache" / "build.log"),
+            "install_report_path": str(
+                project_root / "artifacts" / "env_cache" / "install_report.json"
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.TaskBundleCompiler.compile",
+        lambda self, *args, **kwargs: bundle,
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.ClaudeSDKAdapter.resolve_model_name",
+        lambda self: "",
+    )
+
+    class FakeWorkspaceAdapter:
+        def run(self, bundle_value, session_config, skills):
+            return RunRecord(
+                run_id=session_config.run_id,
+                task_id="demo_task",
+                provider="claude_workspace",
+                env_hash=session_config.env_hash,
+                skills_active=skills,
+                workspace_root=session_config.workspace_root,
+                model_provider=session_config.model_config.provider_name,
+                model_name=session_config.model_config.model_name,
+                judge_result=JudgeResult(
+                    task_id="demo_task",
+                    all_metrics_passed=True,
+                    metrics_actual={"score": 0.99},
+                    failed_metrics=[],
+                    failure_tags=[],
+                ),
+                metadata={"protocol_status": "completed"},
+            )
+
+    monkeypatch.setattr("myevoskill.live_runner.ClaudeWorkspaceAdapter", FakeWorkspaceAdapter)
+    monkeypatch.setattr(
+        "myevoskill.live_runner.manifest_proxy_spec",
+        lambda record, manifest: {},
+    )
+    monkeypatch.setattr(
+        "myevoskill.live_runner.ProxyVerifier.evaluate",
+        lambda self, record, spec: ProxyFeedback(task_id="demo_task", output_exists=True),
+    )
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("evaluate_manifest_run should not be called when executor already has judge_result")
+
+    monkeypatch.setattr("myevoskill.live_runner.evaluate_manifest_run", fail_if_called)
+    monkeypatch.setattr(
+        "myevoskill.live_runner.write_live_run_logs",
+        lambda log_dir, **kwargs: Path(log_dir),
+    )
+
+    result = run_registered_task_live("demo_task", project_root=project_root)
+
+    assert result["judge"].all_metrics_passed is True
+    assert result["judge"].metrics_actual == {"score": 0.99}
 
 
 def test_run_registered_task_live_passes_allow_network_into_tool_policy(

@@ -1,0 +1,724 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_UQ\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_gt_fits",
+        "data_meta_data",
+        "data_meta_data_json",
+        "data_obs_uvfits",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_gt_fits",
+        "data_meta_data",
+        "data_meta_data_json",
+        "data_obs_uvfits",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "astronomy",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_gt_fits",
+        "path": "data/gt.fits",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_meta_data",
+        "path": "data/meta_data",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "batch_size": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "center_weight": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "flux_weight": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "fov_uas": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "freq_ghz": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "grad_clip": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "l1_weight": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "logdet_weight": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "lr": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "mem_weight": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "n_epoch": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_flow": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "npix": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "pixel_size_uas": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "prior_fwhm_uas": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "seqfrac": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "tsv_weight": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_obs_uvfits",
+        "path": "data/obs.uvfits",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "cp_sigmas_deg": {
+            "dtype": "float64",
+            "shape": [
+              465
+            ]
+          },
+          "cp_t1": {
+            "dtype": "|S4",
+            "shape": [
+              465
+            ]
+          },
+          "cp_t2": {
+            "dtype": "|S4",
+            "shape": [
+              465
+            ]
+          },
+          "cp_t3": {
+            "dtype": "|S4",
+            "shape": [
+              465
+            ]
+          },
+          "cp_times": {
+            "dtype": "float64",
+            "shape": [
+              465
+            ]
+          },
+          "cp_values_deg": {
+            "dtype": "float64",
+            "shape": [
+              465
+            ]
+          },
+          "lca_sigmas": {
+            "dtype": "float64",
+            "shape": [
+              485
+            ]
+          },
+          "lca_t1": {
+            "dtype": "|S4",
+            "shape": [
+              485
+            ]
+          },
+          "lca_t2": {
+            "dtype": "|S4",
+            "shape": [
+              485
+            ]
+          },
+          "lca_t3": {
+            "dtype": "|S4",
+            "shape": [
+              485
+            ]
+          },
+          "lca_t4": {
+            "dtype": "|S4",
+            "shape": [
+              485
+            ]
+          },
+          "lca_times": {
+            "dtype": "float64",
+            "shape": [
+              485
+            ]
+          },
+          "lca_values": {
+            "dtype": "float64",
+            "shape": [
+              485
+            ]
+          },
+          "sigma": {
+            "dtype": "float64",
+            "shape": [
+              938
+            ]
+          },
+          "station_ids": {
+            "dtype": "int64",
+            "shape": [
+              938,
+              2
+            ]
+          },
+          "t1": {
+            "dtype": "|S4",
+            "shape": [
+              938
+            ]
+          },
+          "t2": {
+            "dtype": "|S4",
+            "shape": [
+              938
+            ]
+          },
+          "times": {
+            "dtype": "float64",
+            "shape": [
+              938
+            ]
+          },
+          "uv_coords": {
+            "dtype": "float64",
+            "shape": [
+              938,
+              2
+            ]
+          },
+          "vis": {
+            "dtype": "complex128",
+            "shape": [
+              938
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "image": {
+            "dtype": "float64",
+            "shape": [
+              32,
+              32
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              32,
+              32
+            ],
+            "field": "posterior_mean",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              32,
+              32
+            ],
+            "field": "image",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.591
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              32,
+              32
+            ],
+            "field": "posterior_mean",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              32,
+              32
+            ],
+            "field": "image",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.149
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float64",
+          "name": "posterior_mean",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            32,
+            32
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "eht_black_hole_UQ",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "2010.14462v2.pdf",
+      "README.md",
+      "data/ground_truth.npz",
+      "data/gt.fits",
+      "data/meta_data",
+      "data/meta_data.json",
+      "data/obs.uvfits",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/generate_fixtures.py",
+      "evaluation/generate_reference_outputs.py",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_code/DPI_interferometry.py",
+      "evaluation/reference_code/__init__.py",
+      "evaluation/reference_code/generative_model/__init__.py",
+      "evaluation/reference_code/generative_model/realnvpfc_model.py",
+      "evaluation/reference_code/interferometry_helpers.py",
+      "evaluation/reference_outputs/ground_truth.npy",
+      "evaluation/reference_outputs/logscale_state_dict.pt",
+      "evaluation/reference_outputs/loss_history.npy",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/model_state_dict.pt",
+      "evaluation/reference_outputs/posterior_mean.npy",
+      "evaluation/reference_outputs/posterior_samples.npy",
+      "evaluation/reference_outputs/posterior_samples_1024.npy",
+      "evaluation/reference_outputs/posterior_std.npy",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/generate_parity_refs.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_parity.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "generate_fixtures_safe.py",
+      "main.py",
+      "notebooks/.ipynb_checkpoints/Untitled-checkpoint.ipynb",
+      "notebooks/.ipynb_checkpoints/eht_black_hole_UQ-checkpoint.ipynb",
+      "notebooks/eht_black_hole_UQ.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "gt.fits",
+      "meta_data",
+      "meta_data.json",
+      "obs.uvfits",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "image": {
+          "dtype": "float64",
+          "shape": [
+            32,
+            32
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "batch_size",
+        "center_weight",
+        "flux_weight",
+        "fov_uas",
+        "freq_ghz",
+        "grad_clip",
+        "l1_weight",
+        "logdet_weight",
+        "lr",
+        "mem_weight",
+        "n_epoch",
+        "n_flow",
+        "npix",
+        "pixel_size_uas",
+        "prior_fwhm_uas",
+        "seqfrac",
+        "tsv_weight"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "cp_sigmas_deg": {
+          "dtype": "float64",
+          "shape": [
+            465
+          ]
+        },
+        "cp_t1": {
+          "dtype": "|S4",
+          "shape": [
+            465
+          ]
+        },
+        "cp_t2": {
+          "dtype": "|S4",
+          "shape": [
+            465
+          ]
+        },
+        "cp_t3": {
+          "dtype": "|S4",
+          "shape": [
+            465
+          ]
+        },
+        "cp_times": {
+          "dtype": "float64",
+          "shape": [
+            465
+          ]
+        },
+        "cp_values_deg": {
+          "dtype": "float64",
+          "shape": [
+            465
+          ]
+        },
+        "lca_sigmas": {
+          "dtype": "float64",
+          "shape": [
+            485
+          ]
+        },
+        "lca_t1": {
+          "dtype": "|S4",
+          "shape": [
+            485
+          ]
+        },
+        "lca_t2": {
+          "dtype": "|S4",
+          "shape": [
+            485
+          ]
+        },
+        "lca_t3": {
+          "dtype": "|S4",
+          "shape": [
+            485
+          ]
+        },
+        "lca_t4": {
+          "dtype": "|S4",
+          "shape": [
+            485
+          ]
+        },
+        "lca_times": {
+          "dtype": "float64",
+          "shape": [
+            485
+          ]
+        },
+        "lca_values": {
+          "dtype": "float64",
+          "shape": [
+            485
+          ]
+        },
+        "sigma": {
+          "dtype": "float64",
+          "shape": [
+            938
+          ]
+        },
+        "station_ids": {
+          "dtype": "int64",
+          "shape": [
+            938,
+            2
+          ]
+        },
+        "t1": {
+          "dtype": "|S4",
+          "shape": [
+            938
+          ]
+        },
+        "t2": {
+          "dtype": "|S4",
+          "shape": [
+            938
+          ]
+        },
+        "times": {
+          "dtype": "float64",
+          "shape": [
+            938
+          ]
+        },
+        "uv_coords": {
+          "dtype": "float64",
+          "shape": [
+            938,
+            2
+          ]
+        },
+        "vis": {
+          "dtype": "complex128",
+          "shape": [
+            938
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_UQ\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "DPI (normalizing flow)",
+          "ncc": 0.657,
+          "nrmse": 0.135
+        }
+      ],
+      "ncc_boundary": 0.591,
+      "nrmse_boundary": 0.149
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/ground_truth.npy",
+      "reference_outputs/logscale_state_dict.pt",
+      "reference_outputs/loss_history.npy",
+      "reference_outputs/metrics.json",
+      "reference_outputs/model_state_dict.pt",
+      "reference_outputs/posterior_mean.npy",
+      "reference_outputs/posterior_samples.npy",
+      "reference_outputs/posterior_samples_1024.npy",
+      "reference_outputs/posterior_std.npy"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_UQ\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\eht_black_hole_UQ.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "src/generate_data.py",
+        "kind": "np.save",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Astronomy",
+    "exists": true,
+    "headings": [
+      "EHT Black Hole Probabilistic Imaging (DPI)",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/ground_truth.npz`",
+      "`data/meta_data.json`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "** a generative model that produces posterior image samples.",
+    "title": "EHT Black Hole Probabilistic Imaging (DPI)"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_UQ\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_UQ\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\eht_black_hole_UQ.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\e90d0cc809f05ddb\\build.log",
+    "env_hash": "e90d0cc809f05ddb",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\e90d0cc809f05ddb\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\e90d0cc809f05ddb\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "eht_black_hole_UQ",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_UQ",
+  "vendor_session_ref": {},
+  "warnings": []
+}

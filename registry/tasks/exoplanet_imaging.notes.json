@@ -1,0 +1,626 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\exoplanet_imaging\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_naco_betapic_cube_fits",
+        "data_naco_betapic_pa_fits",
+        "data_naco_betapic_preproc_npz",
+        "data_naco_betapic_psf_fits",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_naco_betapic_cube_fits",
+        "data_naco_betapic_pa_fits",
+        "data_naco_betapic_preproc_npz",
+        "data_naco_betapic_psf_fits",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "astronomy",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "center_px": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          },
+          "filter": {
+            "dtype": "<U2",
+            "shape": []
+          },
+          "frame_size": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          },
+          "fwhm_px": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "instrument": {
+            "dtype": "<U8",
+            "shape": []
+          },
+          "iwa_px": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "known_companion": {
+            "dtype": "object",
+            "shape": []
+          },
+          "n_frames": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "observation_date": {
+            "dtype": "<U10",
+            "shape": []
+          },
+          "pixel_scale_arcsec": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "target": {
+            "dtype": "<U13",
+            "shape": []
+          },
+          "total_field_rotation_deg": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "wavelength_um": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_naco_betapic_cube_fits",
+        "path": "data/naco_betapic_cube.fits",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_naco_betapic_pa_fits",
+        "path": "data/naco_betapic_pa.fits",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "_item_cuberef": {
+            "dtype": "bool",
+            "shape": []
+          },
+          "_item_fwhm": {
+            "dtype": "bool",
+            "shape": []
+          },
+          "_item_px_scale": {
+            "dtype": "bool",
+            "shape": []
+          },
+          "_item_wavelengths": {
+            "dtype": "bool",
+            "shape": []
+          },
+          "_vip_object": {
+            "dtype": "<U10",
+            "shape": []
+          },
+          "_vip_version": {
+            "dtype": "<U5",
+            "shape": []
+          },
+          "angles": {
+            "dtype": "float32",
+            "shape": [
+              61
+            ]
+          },
+          "cube": {
+            "dtype": "float32",
+            "shape": [
+              61,
+              100,
+              100
+            ]
+          },
+          "fwhm": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "psf": {
+            "dtype": "float64",
+            "shape": [
+              38,
+              38
+            ]
+          },
+          "psfn": {
+            "dtype": "float64",
+            "shape": [
+              38,
+              38
+            ]
+          },
+          "px_scale": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_naco_betapic_preproc_npz",
+        "path": "data/naco_betapic_preproc.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "id": "data_naco_betapic_psf_fits",
+        "path": "data/naco_betapic_psf.fits",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "angles": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              61
+            ]
+          },
+          "cube": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              61,
+              100,
+              100
+            ]
+          },
+          "psf": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              38,
+              38
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "K10": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              100,
+              100
+            ]
+          },
+          "K20": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              100,
+              100
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "evaluation/reference_outputs/klip_result.npz",
+        "role": "reference_data",
+        "semantics": "Hidden KLIP reference image used for evaluation.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "image": {
+            "expected_shape": [
+              100,
+              100
+            ],
+            "field": "klip_image",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              100,
+              100
+            ],
+            "field": "K10",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.589
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "image": {
+            "expected_shape": [
+              100,
+              100
+            ],
+            "field": "klip_image",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              100,
+              100
+            ],
+            "field": "K10",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.0225
+      },
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "exclude_nearest": {
+            "expected_shape": [],
+            "field": "",
+            "preprocess": "identity",
+            "source": "value",
+            "value": 1
+          },
+          "fwhm": {
+            "expected_shape": [],
+            "field": "",
+            "preprocess": "identity",
+            "source": "value",
+            "value": 4.8009718484811135
+          },
+          "image": {
+            "expected_shape": [
+              100,
+              100
+            ],
+            "field": "klip_image",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "planet_x": {
+            "expected_shape": [],
+            "field": "",
+            "preprocess": "identity",
+            "source": "value",
+            "value": 62.0
+          },
+          "planet_y": {
+            "expected_shape": [],
+            "field": "",
+            "preprocess": "identity",
+            "source": "value",
+            "value": 63.0
+          }
+        },
+        "name": "snr",
+        "threshold": 10.0
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "klip_image",
+          "semantics": "Estimated KLIP-ADI detection map aligned to the reference image.",
+          "shape": [
+            100,
+            100
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "exoplanet_imaging",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "1207.4197v1.pdf",
+      "2409.16466v1.pdf",
+      "README.md",
+      "data/baseline_reference.npz",
+      "data/meta_data.json",
+      "data/naco_betapic_cube.fits",
+      "data/naco_betapic_pa.fits",
+      "data/naco_betapic_preproc.npz",
+      "data/naco_betapic_psf.fits",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/klip_result.npz",
+      "evaluation/reference_outputs/klip_result_K10.png",
+      "evaluation/reference_outputs/klip_result_K20.png",
+      "evaluation/reference_outputs/raw_frame.png",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "main.py",
+      "notebooks/exoplanet_imaging.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "baseline_reference.npz",
+      "meta_data.json",
+      "naco_betapic_cube.fits",
+      "naco_betapic_pa.fits",
+      "naco_betapic_preproc.npz",
+      "naco_betapic_psf.fits",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {},
+      "exists": false
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "center_px",
+        "filter",
+        "frame_size",
+        "fwhm_px",
+        "instrument",
+        "iwa_px",
+        "known_companion",
+        "n_frames",
+        "observation_date",
+        "pixel_scale_arcsec",
+        "target",
+        "total_field_rotation_deg",
+        "wavelength_um"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "angles": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            61
+          ]
+        },
+        "cube": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            61,
+            100,
+            100
+          ]
+        },
+        "psf": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            38,
+            38
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\exoplanet_imaging\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary",
+      "snr_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "KLIP-ADI K=10, SVD, mean combination (torchKLIP reference)",
+          "ncc_vs_ref": 1.0,
+          "nrmse_vs_ref": 0.0,
+          "snr_beta_pic_b": 17.88
+        },
+        {
+          "method": "KLIP-ADI K=20, SVD, mean combination",
+          "ncc_vs_ref": 0.6545,
+          "nrmse_vs_ref": 0.0204,
+          "snr_beta_pic_b": 11.74
+        }
+      ],
+      "ncc_boundary": 0.589,
+      "notes": "Primary metric: NCC and NRMSE vs K=10 reference image. Secondary: SNR of Beta Pic b >= 10.",
+      "nrmse_boundary": 0.0225,
+      "snr_boundary": 10.0
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/klip_result.npz",
+      "reference_outputs/klip_result_K10.png",
+      "reference_outputs/klip_result_K20.png",
+      "reference_outputs/raw_frame.png"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\exoplanet_imaging\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\exoplanet_imaging.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "astronomy",
+    "exists": true,
+    "headings": [
+      "Exoplanet Direct Imaging",
+      "Background",
+      "Problem Description",
+      "Forward model",
+      "Inverse problem",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/meta_data.json",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Exoplanet Direct Imaging"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\exoplanet_imaging\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\exoplanet_imaging\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\exoplanet_imaging.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\482a3023ef918300\\build.log",
+    "env_hash": "482a3023ef918300",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\482a3023ef918300\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\482a3023ef918300\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "exoplanet_imaging",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\exoplanet_imaging",
+  "vendor_session_ref": {},
+  "warnings": []
+}

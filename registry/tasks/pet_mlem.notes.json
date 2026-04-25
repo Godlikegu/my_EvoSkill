@@ -1,0 +1,443 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\pet_mlem\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "medicine",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "angle_range_deg": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "count_level": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "image_size": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "modality": {
+            "dtype": "<U6",
+            "shape": []
+          },
+          "n_angles": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_radial_bins": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "noise_model": {
+            "dtype": "<U7",
+            "shape": []
+          },
+          "randoms_fraction": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "background": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              128,
+              120
+            ]
+          },
+          "sinogram": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              128,
+              120
+            ]
+          },
+          "theta": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              120
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "activity_map": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              128,
+              128
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "activity_map",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "activity_map",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.8864
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "activity_map",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              128,
+              128
+            ],
+            "field": "activity_map",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.061
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "activity_map",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            128,
+            128
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "pet_mlem",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__init__.py",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/fixtures/generate_data_phantom.npz",
+      "evaluation/fixtures/physics_model_back_project.npz",
+      "evaluation/fixtures/physics_model_background.npz",
+      "evaluation/fixtures/physics_model_backproject.npz",
+      "evaluation/fixtures/physics_model_forward.npz",
+      "evaluation/fixtures/physics_model_forward_project.npz",
+      "evaluation/fixtures/physics_model_poisson_noise.npz",
+      "evaluation/fixtures/physics_model_sensitivity.npz",
+      "evaluation/fixtures/preprocessing_preprocess.npz",
+      "evaluation/fixtures/preprocessing_preprocess_sinogram.npz",
+      "evaluation/fixtures/solvers_mlem.npz",
+      "evaluation/fixtures/solvers_osem.npz",
+      "evaluation/fixtures/visualization_metrics.npz",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/recon_mlem.npz",
+      "evaluation/reference_outputs/recon_osem.npz",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/conftest.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_generate_data.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/pet_mlem.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "activity_map": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            128
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "angle_range_deg",
+        "count_level",
+        "image_size",
+        "modality",
+        "n_angles",
+        "n_radial_bins",
+        "noise_model",
+        "randoms_fraction"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "background": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            120
+          ]
+        },
+        "sinogram": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            120
+          ]
+        },
+        "theta": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            120
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\pet_mlem\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "MLEM (50 iterations)",
+          "ncc_vs_ref": 0.983,
+          "nrmse_vs_ref": 0.059
+        },
+        {
+          "method": "OSEM (10 iters, 6 subsets)",
+          "ncc_vs_ref": 0.9849,
+          "nrmse_vs_ref": 0.0554
+        }
+      ],
+      "ncc_boundary": 0.8864,
+      "nrmse_boundary": 0.061
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/recon_mlem.npz",
+      "reference_outputs/recon_osem.npz"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\pet_mlem\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\pet_mlem.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "medicine",
+    "exists": true,
+    "headings": [
+      "PET MLEM Reconstruction",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "PET MLEM Reconstruction"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\pet_mlem\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\pet_mlem\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\pet_mlem.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\8503169ee3d47da7\\build.log",
+    "env_hash": "8503169ee3d47da7",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\8503169ee3d47da7\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\8503169ee3d47da7\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "pet_mlem",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\pet_mlem",
+  "vendor_session_ref": {},
+  "warnings": []
+}

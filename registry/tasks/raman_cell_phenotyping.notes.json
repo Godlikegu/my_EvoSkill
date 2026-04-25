@@ -1,0 +1,612 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\raman_cell_phenotyping\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "chemistry",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "cell_type": {
+            "dtype": "<U5",
+            "shape": []
+          },
+          "fingerprint_region_cm1": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          },
+          "laser_excitation_nm": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_endmembers": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_spectral_points": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "pixel_size_um": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "source": {
+            "dtype": "<U45",
+            "shape": []
+          },
+          "spatial_shape": {
+            "dtype": "int64",
+            "shape": [
+              3
+            ]
+          },
+          "spectral_range_cm1": {
+            "dtype": "float64",
+            "shape": [
+              2
+            ]
+          },
+          "z_step_um": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "spectral_axis": {
+            "dtype": "float64",
+            "shape": [
+              1600
+            ]
+          },
+          "spectral_volume": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              40,
+              40,
+              10,
+              1600
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "abundance_background": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              40,
+              40
+            ]
+          },
+          "abundance_cytoplasm": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              40,
+              40
+            ]
+          },
+          "abundance_lipids": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              40,
+              40
+            ]
+          },
+          "abundance_nucleus": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              40,
+              40
+            ]
+          }
+        },
+        "id": "baseline_reference",
+        "path": "data/baseline_reference.npz",
+        "role": "reference_data",
+        "semantics": "Hidden abundance-map references used for evaluation.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "abundance_background_est": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_background",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "abundance_background_ref": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_background",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "abundance_cytoplasm_est": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_cytoplasm",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "abundance_cytoplasm_ref": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_cytoplasm",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "abundance_lipids_est": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_lipids",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "abundance_lipids_ref": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_lipids",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "abundance_nucleus_est": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_nucleus",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "abundance_nucleus_ref": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_nucleus",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.9
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "abundance_background_est": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_background",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "abundance_background_ref": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_background",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "abundance_cytoplasm_est": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_cytoplasm",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "abundance_cytoplasm_ref": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_cytoplasm",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "abundance_lipids_est": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_lipids",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "abundance_lipids_ref": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_lipids",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "abundance_nucleus_est": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_nucleus",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "abundance_nucleus_ref": {
+            "expected_shape": [
+              40,
+              40
+            ],
+            "field": "abundance_nucleus",
+            "file_id": "baseline_reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.11
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float64",
+          "name": "abundance_lipids",
+          "semantics": "Estimated abundance map for lipids.",
+          "shape": [
+            40,
+            40
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "abundance_nucleus",
+          "semantics": "Estimated abundance map for nucleus.",
+          "shape": [
+            40,
+            40
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "abundance_cytoplasm",
+          "semantics": "Estimated abundance map for cytoplasm.",
+          "shape": [
+            40,
+            40
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "abundance_background",
+          "semantics": "Estimated abundance map for background.",
+          "shape": [
+            40,
+            40
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "raman_cell_phenotyping",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/baseline_reference.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/abundance_maps.npz",
+      "evaluation/reference_outputs/endmembers.npz",
+      "evaluation/reference_outputs/preprocessed_axis.npy",
+      "evaluation/reference_outputs/preprocessed_volume.npy",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/raman_cell_phenotyping copy.ipynb",
+      "notebooks/raman_cell_phenotyping.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "baseline_reference.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {},
+      "exists": false
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "cell_type",
+        "fingerprint_region_cm1",
+        "laser_excitation_nm",
+        "n_endmembers",
+        "n_spectral_points",
+        "pixel_size_um",
+        "source",
+        "spatial_shape",
+        "spectral_range_cm1",
+        "z_step_um"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "spectral_axis": {
+          "dtype": "float64",
+          "shape": [
+            1600
+          ]
+        },
+        "spectral_volume": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            40,
+            40,
+            10,
+            1600
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\raman_cell_phenotyping\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "N-FINDR + FCLS",
+          "ncc_vs_ref": 1.0,
+          "nrmse_vs_ref": 0.0
+        }
+      ],
+      "ncc_boundary": 0.9,
+      "nrmse_boundary": 0.11,
+      "reconstruction_rmse": 0.006310498757733025
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/abundance_maps.npz",
+      "reference_outputs/endmembers.npz",
+      "reference_outputs/preprocessed_axis.npy",
+      "reference_outputs/preprocessed_volume.npy"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\raman_cell_phenotyping\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\raman_cell_phenotyping.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "spectral_axis"
+    ],
+    "candidate_sources": [
+      "main.py:np.savez"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [
+          "spectral_axis"
+        ],
+        "file": "main.py",
+        "kind": "np.savez",
+        "path_hint": "output/reconstruction.npz"
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "chemistry",
+    "exists": true,
+    "headings": [
+      "Raman Cell Phenotyping",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/meta_data.json",
+      "Ground truth",
+      "data/baseline_reference.npz",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "K endmember spectra of shape (K, B') and K abundance maps of shape (40, 40, 10).",
+    "title": "Raman Cell Phenotyping"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\raman_cell_phenotyping\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\raman_cell_phenotyping\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\raman_cell_phenotyping.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\d3eb774c52e4dd99\\build.log",
+    "env_hash": "d3eb774c52e4dd99",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\d3eb774c52e4dd99\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\d3eb774c52e4dd99\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "raman_cell_phenotyping",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\raman_cell_phenotyping",
+  "vendor_session_ref": {},
+  "warnings": []
+}

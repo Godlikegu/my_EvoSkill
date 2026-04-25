@@ -1,0 +1,925 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\era5_tensorvar\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "earth_science",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "ass_T": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "channel_units": {
+            "dtype": "<U7",
+            "shape": [
+              5
+            ]
+          },
+          "channels": {
+            "dtype": "<U12",
+            "shape": [
+              5
+            ]
+          },
+          "dataset_source": {
+            "dtype": "<U95",
+            "shape": []
+          },
+          "grid_height": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "grid_width": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "history_len": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "latitude_resolution_deg": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "longitude_resolution_deg": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "n_channels": {
+            "dtype": "int64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "lat_weight_matrix": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              5,
+              64,
+              32
+            ]
+          },
+          "max_val": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              5
+            ]
+          },
+          "min_val": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              5
+            ]
+          },
+          "obs_history": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              5,
+              50,
+              64,
+              32
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "reference": {
+            "dtype": "float32",
+            "shape": [
+              5,
+              5,
+              64,
+              32
+            ]
+          }
+        },
+        "id": "reference_npz",
+        "path": "evaluation/reference_outputs/task_contract_refs_trajectory.npz",
+        "role": "reference_data",
+        "semantics": "Generated hidden trajectory tensor used for metric binding.",
+        "visibility": "private"
+      },
+      {
+        "fields": {
+          "__array__": {
+            "dtype": "float32",
+            "shape": [
+              5,
+              5,
+              64,
+              32
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "evaluation/reference_outputs/trajectory.npy",
+        "role": "reference_data",
+        "semantics": "Hidden trajectory reference used for evaluation.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "state",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "lat_weight_matrix": {
+            "expected_shape": [
+              5,
+              64,
+              32
+            ],
+            "field": "lat_weight_matrix",
+            "file_id": "data_raw_data_npz",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "reference": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "reference",
+            "file_id": "reference_npz",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.8995
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "state",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "lat_weight_matrix": {
+            "expected_shape": [
+              5,
+              64,
+              32
+            ],
+            "field": "lat_weight_matrix",
+            "file_id": "data_raw_data_npz",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "reference": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "reference",
+            "file_id": "reference_npz",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.0238
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "state",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "lat_weight_matrix": {
+            "expected_shape": [
+              5,
+              64,
+              32
+            ],
+            "field": "lat_weight_matrix",
+            "file_id": "data_raw_data_npz",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "reference": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "reference",
+            "file_id": "reference_npz",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "weighted_nrmse",
+        "threshold": 0.029
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "state",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "lat_weight_matrix": {
+            "expected_shape": [
+              5,
+              64,
+              32
+            ],
+            "field": "lat_weight_matrix",
+            "file_id": "data_raw_data_npz",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "reference": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "reference",
+            "file_id": "reference_npz",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "weighted_nrmse_geopotential",
+        "threshold": 0.0096
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "state",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "lat_weight_matrix": {
+            "expected_shape": [
+              5,
+              64,
+              32
+            ],
+            "field": "lat_weight_matrix",
+            "file_id": "data_raw_data_npz",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "reference": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "reference",
+            "file_id": "reference_npz",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "weighted_nrmse_temperature",
+        "threshold": 0.0139
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "state",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "lat_weight_matrix": {
+            "expected_shape": [
+              5,
+              64,
+              32
+            ],
+            "field": "lat_weight_matrix",
+            "file_id": "data_raw_data_npz",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "reference": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "reference",
+            "file_id": "reference_npz",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "weighted_nrmse_humidity",
+        "threshold": 0.0495
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "state",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "lat_weight_matrix": {
+            "expected_shape": [
+              5,
+              64,
+              32
+            ],
+            "field": "lat_weight_matrix",
+            "file_id": "data_raw_data_npz",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "reference": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "reference",
+            "file_id": "reference_npz",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "weighted_nrmse_wind_u",
+        "threshold": 0.0362
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "state",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "lat_weight_matrix": {
+            "expected_shape": [
+              5,
+              64,
+              32
+            ],
+            "field": "lat_weight_matrix",
+            "file_id": "data_raw_data_npz",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          },
+          "reference": {
+            "expected_shape": [
+              5,
+              5,
+              64,
+              32
+            ],
+            "field": "reference",
+            "file_id": "reference_npz",
+            "preprocess": "identity",
+            "source": "file"
+          }
+        },
+        "name": "weighted_nrmse_wind_v",
+        "threshold": 0.0359
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "state",
+          "semantics": "Estimated trajectory tensor with shape (time, channel, lat, lon).",
+          "shape": [
+            5,
+            5,
+            64,
+            32
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "era5_tensorvar",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/checkpoints/C_forward.pt",
+      "evaluation/checkpoints/forward_model.pt",
+      "evaluation/checkpoints/inverse_model.pt",
+      "evaluation/checkpoints/z_b.pt",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/fixtures/parity/C_forward.npy",
+      "evaluation/fixtures/parity/K_S_seq_z.npy",
+      "evaluation/fixtures/parity/decoded_traj.npy",
+      "evaluation/fixtures/parity/encode_lists/encode_0.npy",
+      "evaluation/fixtures/parity/encode_lists/encode_1.npy",
+      "evaluation/fixtures/parity/encode_lists/encode_2.npy",
+      "evaluation/fixtures/parity/encode_lists/encode_3.npy",
+      "evaluation/fixtures/parity/encode_lists/encode_4.npy",
+      "evaluation/fixtures/parity/encode_lists/encode_5.npy",
+      "evaluation/fixtures/parity/final_metrics.json",
+      "evaluation/fixtures/parity/inv_obs_seq_z.npy",
+      "evaluation/fixtures/parity/max_val.npy",
+      "evaluation/fixtures/parity/min_val.npy",
+      "evaluation/fixtures/parity/qp_result.npy",
+      "evaluation/fixtures/parity/sample_obs.npy",
+      "evaluation/fixtures/parity/sample_state.npy",
+      "evaluation/fixtures/parity/traj_estimation.npy",
+      "evaluation/fixtures/parity/weight_matrix.npy",
+      "evaluation/fixtures/parity/z_b.npy",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/K_S_seq_z.npy",
+      "evaluation/reference_outputs/comparison.png",
+      "evaluation/reference_outputs/ground_truth.npy",
+      "evaluation/reference_outputs/inv_obs_seq_z.npy",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/qp_result.npy",
+      "evaluation/reference_outputs/task_contract_refs_trajectory.npz",
+      "evaluation/reference_outputs/trajectory.npy",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/test_parity.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/era5_tensorvar.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "state": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            5,
+            5,
+            64,
+            32
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "ass_T",
+        "channel_units",
+        "channels",
+        "dataset_source",
+        "grid_height",
+        "grid_width",
+        "history_len",
+        "latitude_resolution_deg",
+        "longitude_resolution_deg",
+        "n_channels"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "lat_weight_matrix": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            5,
+            64,
+            32
+          ]
+        },
+        "max_val": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            5
+          ]
+        },
+        "min_val": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            5
+          ]
+        },
+        "obs_history": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            5,
+            50,
+            64,
+            32
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\era5_tensorvar\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary",
+      "weighted_nrmse_boundary",
+      "weighted_nrmse_geopotential_boundary",
+      "weighted_nrmse_humidity_boundary",
+      "weighted_nrmse_temperature_boundary",
+      "weighted_nrmse_wind_u_boundary",
+      "weighted_nrmse_wind_v_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "channels": [
+            "geopotential",
+            "temperature",
+            "humidity",
+            "wind_u",
+            "wind_v"
+          ],
+          "method": "Tensor-Var 4D-Var (deep kernel feature space, identity Q/R/B fallback)",
+          "ncc": 0.999408,
+          "ncc_per_channel": [
+            0.999914,
+            0.999816,
+            0.99878,
+            0.999325,
+            0.999206
+          ],
+          "nrmse": 0.02165,
+          "nrmse_per_channel": [
+            0.012946,
+            0.017276,
+            0.022135,
+            0.026849,
+            0.029044
+          ],
+          "weighted_nrmse": 0.026367,
+          "weighted_nrmse_per_channel": [
+            0.008721,
+            0.012674,
+            0.04496,
+            0.032877,
+            0.032603
+          ]
+        }
+      ],
+      "ncc_boundary": 0.8995,
+      "nrmse_boundary": 0.0238,
+      "nrmse_definition": "RMS error between estimate and reference normalised by the dynamic range (max - min) of the reference, computed independently per channel.",
+      "weighted_nrmse_boundary": 0.029,
+      "weighted_nrmse_definition": "For each channel c and timestep t, weighted_nrmse[t,c] = ||(est - true) * lat_weight||_2 / ||true * lat_weight||_2 where lat_weight is the cosine-latitude weighting matrix shipped in raw_data.npz. The reported per-channel value is the mean over the assimilation window.",
+      "weighted_nrmse_geopotential_boundary": 0.0096,
+      "weighted_nrmse_humidity_boundary": 0.0495,
+      "weighted_nrmse_temperature_boundary": 0.0139,
+      "weighted_nrmse_wind_u_boundary": 0.0362,
+      "weighted_nrmse_wind_v_boundary": 0.0359
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/comparison.png",
+      "reference_outputs/ground_truth.npy",
+      "reference_outputs/inv_obs_seq_z.npy",
+      "reference_outputs/K_S_seq_z.npy",
+      "reference_outputs/metrics.json",
+      "reference_outputs/qp_result.npy",
+      "reference_outputs/task_contract_refs_trajectory.npz",
+      "reference_outputs/trajectory.npy"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\era5_tensorvar\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\era5_tensorvar.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": true,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "src/preprocessing.py",
+        "kind": "h5py.File",
+        "path_hint": ""
+      }
+    ],
+    "warnings": [
+      "task appears to export HDF5 or custom binary outputs; add a public npz export at output/reconstruction.npz"
+    ]
+  },
+  "readme_summary": {
+    "domain": "Earth Science",
+    "exists": true,
+    "headings": [
+      "ERA5 Tensor-Var 4D-Var",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/ground_truth.npz`",
+      "`data/meta_data.json`",
+      "Pretrained checkpoints",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "ERA5 Tensor-Var 4D-Var"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\era5_tensorvar\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\era5_tensorvar\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\era5_tensorvar.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\7315184043ff160e\\build.log",
+    "env_hash": "7315184043ff160e",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\7315184043ff160e\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\7315184043ff160e\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "era5_tensorvar",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\era5_tensorvar",
+  "vendor_session_ref": {},
+  "warnings": []
+}

@@ -1,0 +1,504 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_traveltime_tomography\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "earth_science",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "Nx": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "Nz": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "checkerboard_n_x": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "checkerboard_n_z": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "checkerboard_pert": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "dx_km": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "dz_km": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "n_receivers": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "n_sources": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "noise_std_s": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "v0_km_s": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "v1_km_s": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "x_max_km": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "x_min_km": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "z_max_km": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "z_min_km": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "receivers": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              8,
+              2
+            ]
+          },
+          "sources": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              100,
+              2
+            ]
+          },
+          "traveltime_obs": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              100,
+              8
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "velocity": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              26,
+              111
+            ]
+          },
+          "velocity_perturbation": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              26,
+              111
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "evaluation/reference_outputs/baseline_reference.npz",
+        "role": "reference_data",
+        "semantics": "Hidden velocity perturbation reference used for evaluation.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              26,
+              111
+            ],
+            "field": "velocity_perturbation",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              26,
+              111
+            ],
+            "field": "velocity_perturbation",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.67
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              26,
+              111
+            ],
+            "field": "velocity_perturbation",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              26,
+              111
+            ],
+            "field": "velocity_perturbation",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.28
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "velocity_perturbation",
+          "semantics": "Estimated velocity perturbation relative to the background model.",
+          "shape": [
+            26,
+            111
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/velocity_reconstructed.npz"
+    },
+    "task_id": "seismic_traveltime_tomography",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "2412.00031v1.pdf",
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/fixtures/input_eikonal.npz",
+      "evaluation/fixtures/output_background_velocity.npz",
+      "evaluation/fixtures/output_eikonal.npz",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/baseline_reference.npz",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/test_functions.py",
+      "main.py",
+      "notebooks/seismic_traveltime_tomography.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "velocity": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            26,
+            111
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "Nx",
+        "Nz",
+        "checkerboard_n_x",
+        "checkerboard_n_z",
+        "checkerboard_pert",
+        "dx_km",
+        "dz_km",
+        "n_receivers",
+        "n_sources",
+        "noise_std_s",
+        "v0_km_s",
+        "v1_km_s",
+        "x_max_km",
+        "x_min_km",
+        "z_max_km",
+        "z_min_km"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "receivers": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            8,
+            2
+          ]
+        },
+        "sources": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            100,
+            2
+          ]
+        },
+        "traveltime_obs": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            100,
+            8
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_traveltime_tomography\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "ATT: ray back-projection, 40 iterations, step_size=0.02, step_decay=0.97, KD normalization zeta=0.5, Gaussian smoothing sigma=1.5 grid cells",
+          "misfit_reduction": 13.5,
+          "ncc_perturbation_vs_truth": 0.7473,
+          "ncc_vs_ref": 1.0,
+          "nrmse_perturbation_vs_truth": 0.2556,
+          "nrmse_vs_ref": 0.0
+        }
+      ],
+      "ncc_boundary": 0.67,
+      "notes": "ncc_vs_ref and nrmse_vs_ref compare the agent output perturbation against the baseline reference perturbation (evaluation/reference_outputs/baseline_reference.npz, key: velocity_perturbation). ncc_boundary = 0.9 * baseline_ncc = 0.9 * 0.747 ≈ 0.67. A correct ATT implementation with comparable settings should achieve NCC >= 0.67.",
+      "nrmse_boundary": 0.28,
+      "nrmse_definition": "RMS(delta_v_agent - delta_v_ref) / (max(delta_v_ref) - min(delta_v_ref)), where delta_v = v_inv - v_background is the velocity perturbation relative to the linear background model",
+      "output_format": "Agents must save the velocity perturbation (v_inv - v_background) under key 'velocity_perturbation' with shape (1, Nz, Nx) in output/velocity_reconstructed.npz. The background model is the linear gradient v(z) = v0 + (v1 - v0) * z / z_max as defined in meta_data.json."
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/baseline_reference.npz"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_traveltime_tomography\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\seismic_traveltime_tomography.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "velocity",
+      "velocity_perturbation"
+    ],
+    "candidate_sources": [
+      "main.py:np.savez"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [
+          "velocity",
+          "velocity_perturbation"
+        ],
+        "file": "main.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      },
+      {
+        "fields": [
+          "traveltime_obs",
+          "sources",
+          "receivers"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      },
+      {
+        "fields": [
+          "velocity"
+        ],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Earth Science",
+    "exists": true,
+    "headings": [
+      "Seismic Traveltime Tomography",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "** reconstructed 2D velocity field v_inv(z, x) saved as `velocity` (shape (1, Nz, Nx)) and the velocity perturbation relative to the background `velocity_perturbation` (shape (1, Nz, Nx)) in `output/velocity_reconstructed.npz`.",
+    "title": "Seismic Traveltime Tomography"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_traveltime_tomography\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_traveltime_tomography\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\seismic_traveltime_tomography.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\e2d027aaa6866600\\build.log",
+    "env_hash": "e2d027aaa6866600",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\e2d027aaa6866600\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\e2d027aaa6866600\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "seismic_traveltime_tomography",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_traveltime_tomography",
+  "vendor_session_ref": {},
+  "warnings": []
+}

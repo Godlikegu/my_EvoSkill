@@ -1,92 +1,7 @@
 {
-  "execution_conventions": {
-    "entrypoint": "work/main.py",
-    "read_first": [
-      "README_public.md"
-    ],
-    "readable_paths": [
-      "README_public.md",
-      "data/raw_data.npz",
-      "data/meta_data.json",
-      "requirements.txt"
-    ],
-    "writable_paths": [
-      "work",
-      "output",
-      "checkpoints"
-    ]
-  },
   "family": "physics",
-  "judge_metrics": [
-    "phase_ncc",
-    "phase_nrmse"
-  ],
-  "judge_spec": {
-    "adapter_path": "evaluation/judge_adapter.py",
-    "callable": "evaluate_run",
-    "metric_sources": [
-      {
-        "callable": "",
-        "kind": "standard",
-        "metric": "phase_ncc",
-        "source_path": "main.py"
-      },
-      {
-        "callable": "",
-        "kind": "standard",
-        "metric": "phase_nrmse",
-        "source_path": "main.py"
-      }
-    ],
-    "metrics": [
-      "phase_ncc",
-      "phase_nrmse"
-    ],
-    "metrics_config_path": "evaluation/metrics.json",
-    "ready": true,
-    "registration_contract_path": "evaluation/registration_contract.json",
-    "required_fields": [
-      "object"
-    ],
-    "validation_checks": [
-      "judge_importable",
-      "judge_callable_present",
-      "judge_metrics_match_manifest",
-      "judge_contract_path_match_manifest",
-      "judge_ready_marker_present"
-    ]
-  },
-  "output_contract": {
-    "required_outputs": [
-      {
-        "format": "npz",
-        "numeric_fields": [
-          "object"
-        ],
-        "path": "output/reconstruction.npz",
-        "required_fields": [
-          "object"
-        ],
-        "same_shape_fields": [
-          "object"
-        ]
-      }
-    ]
-  },
-  "proxy_output_name": "reconstruction.npz",
-  "proxy_spec": {
-    "numeric_fields": [
-      "object"
-    ],
-    "output_dtype": "npz",
-    "primary_output": "output/reconstruction.npz",
-    "required_fields": [
-      "object"
-    ],
-    "same_shape_fields": [
-      "object"
-    ]
-  },
+  "judge_adapter_path": "evaluation/judge_adapter.py",
+  "primary_output_path": "output/reconstruction.npz",
   "public_eval_spec": {
     "alignments": []
   },
@@ -124,145 +39,16 @@
       "remove_sections": []
     }
   },
-  "registration_contract": {
-    "execution_conventions": {
-      "entrypoint": "work/main.py",
-      "read_first": [
-        "README_public.md"
-      ],
-      "readable_paths": [
-        "README_public.md",
-        "data/raw_data.npz",
-        "data/meta_data.json",
-        "requirements.txt"
-      ],
-      "writable_paths": [
-        "work",
-        "output",
-        "checkpoints"
-      ]
-    },
-    "family": "physics",
-    "judge_contract": {
-      "metrics": [
-        {
-          "description": "NCC = dot(phase_recon.flatten(), phase_gt.flatten()) / (||phase_recon|| * ||phase_gt||) (cosine similarity on mean-subtracted phase maps, per CLAUDE.md standard).",
-          "kind": "standard",
-          "mode": "phase_ncc",
-          "name": "phase_ncc",
-          "output_field": "object",
-          "pass_condition": {
-            "operator": ">=",
-            "threshold": 0.878
-          },
-          "reference_field": "object",
-          "reference_resource_path": "data/ground_truth.npz",
-          "source_hint": "main.py"
-        },
-        {
-          "description": "NRMSE = sqrt(mean((phase_recon - phase_gt)^2)) / (max(phase_gt) - min(phase_gt)), where phase_gt = angle(GT) - mean(angle(GT)) and phase_recon = angle(recon) - mean(angle(recon)). Mean subtraction resolves the global phase ambiguity of ptychographic reconstruction.",
-          "kind": "standard",
-          "mode": "phase_nrmse",
-          "name": "phase_nrmse",
-          "output_field": "object",
-          "pass_condition": {
-            "operator": "<=",
-            "threshold": 0.0477
-          },
-          "reference_field": "object",
-          "reference_resource_path": "data/ground_truth.npz",
-          "source_hint": "main.py"
-        }
-      ]
-    },
-    "output_contract": {
-      "format": "npz",
-      "numeric_fields": [
-        "object"
-      ],
-      "path": "output/reconstruction.npz",
-      "required_fields": [
-        "object"
-      ],
-      "same_shape_fields": [
-        "object"
-      ]
-    },
-    "resources": [
-      {
-        "authority": "authoritative",
-        "path": "README.md",
-        "role": "task_description",
-        "semantics": "Task description and public constraints for the solver.",
-        "visibility": "public"
-      },
-      {
-        "authority": "authoritative",
-        "path": "data/raw_data.npz",
-        "role": "public_input_data",
-        "semantics": "Public observation data available to the execution agent.",
-        "visibility": "public"
-      },
-      {
-        "authority": "authoritative",
-        "path": "data/meta_data.json",
-        "role": "public_metadata",
-        "semantics": "Public physical parameters, constants, and experiment configuration.",
-        "visibility": "public"
-      },
-      {
-        "authority": "authoritative",
-        "path": "evaluation/metrics.json",
-        "role": "hidden_metric_config",
-        "semantics": "Metric threshold configuration used by the hidden judge.",
-        "visibility": "private"
-      },
-      {
-        "authority": "authoritative",
-        "path": "data/ground_truth.npz",
-        "role": "hidden_reference",
-        "semantics": "Hidden ground-truth reference used for metric evaluation.",
-        "visibility": "private"
-      },
-      {
-        "authority": "supplementary",
-        "path": "evaluation/reference_outputs/metrics.json",
-        "role": "hidden_reference",
-        "semantics": "Hidden reference output retained for offline evaluation or parity checks.",
-        "visibility": "private"
-      },
-      {
-        "authority": "supplementary",
-        "path": "evaluation/reference_outputs/recon.hdf5",
-        "role": "hidden_reference",
-        "semantics": "Hidden reference output retained for offline evaluation or parity checks.",
-        "visibility": "private"
-      },
-      {
-        "authority": "supplementary",
-        "path": "evaluation/reference_outputs/reconstruction_summary.png",
-        "role": "hidden_reference",
-        "semantics": "Hidden reference output retained for offline evaluation or parity checks.",
-        "visibility": "private"
-      },
-      {
-        "authority": "supplementary",
-        "path": "main.py",
-        "role": "metric_helper",
-        "semantics": "Task-private Python source that defines or computes evaluation metrics.",
-        "visibility": "private"
-      },
-      {
-        "authority": "supplementary",
-        "path": "src/visualization.py",
-        "role": "metric_helper",
-        "semantics": "Task-private Python source that defines or computes evaluation metrics.",
-        "visibility": "private"
-      }
-    ],
-    "task_id": "conventional_ptychography"
+  "ready": true,
+  "runtime_env": {
+    "backend": "venv_pip",
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\109c4505cdd38b94\\build.log",
+    "env_hash": "109c4505cdd38b94",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\109c4505cdd38b94\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\109c4505cdd38b94\\Scripts\\python.exe",
+    "ready": true,
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\conventional_ptychography\\requirements.txt"
   },
-  "registration_contract_path": "evaluation/registration_contract.json",
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",
     "data_dir": "data",
@@ -275,5 +61,7 @@
     "model_timeout_seconds": 240
   },
   "source_task_dir": "../tasks/conventional_ptychography",
+  "task_contract_path": "evaluation/task_contract.json",
+  "task_contract_public_path": "evaluation/task_contract.public.json",
   "task_id": "conventional_ptychography"
 }

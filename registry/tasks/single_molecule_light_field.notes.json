@@ -1,0 +1,589 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\single_molecule_light_field\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "biology",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "_alpha_model_doc": {
+            "dtype": "<U162",
+            "shape": []
+          },
+          "_csv_format_doc": {
+            "dtype": "<U79",
+            "shape": []
+          },
+          "_description": {
+            "dtype": "<U82",
+            "shape": []
+          },
+          "_filter_lenses_doc": {
+            "dtype": "<U68",
+            "shape": []
+          },
+          "_filter_photons_doc": {
+            "dtype": "<U74",
+            "shape": []
+          },
+          "_filter_rhos_doc": {
+            "dtype": "<U89",
+            "shape": []
+          },
+          "_filter_spot_sizes_doc": {
+            "dtype": "<U80",
+            "shape": []
+          },
+          "_focal_length_fourier_lens_doc": {
+            "dtype": "<U69",
+            "shape": []
+          },
+          "_focal_length_mla_doc": {
+            "dtype": "<U41",
+            "shape": []
+          },
+          "_focal_length_obj_lens_doc": {
+            "dtype": "<U93",
+            "shape": []
+          },
+          "_focal_length_tube_lens_doc": {
+            "dtype": "<U35",
+            "shape": []
+          },
+          "_mla_centre_doc": {
+            "dtype": "<U74",
+            "shape": []
+          },
+          "_mla_lens_pitch_doc": {
+            "dtype": "<U78",
+            "shape": []
+          },
+          "_mla_offset_doc": {
+            "dtype": "<U85",
+            "shape": []
+          },
+          "_mla_optic_size_doc": {
+            "dtype": "<U90",
+            "shape": []
+          },
+          "_mla_rotation_doc": {
+            "dtype": "<U79",
+            "shape": []
+          },
+          "_mla_type_doc": {
+            "dtype": "<U45",
+            "shape": []
+          },
+          "_num_aperture_doc": {
+            "dtype": "<U36",
+            "shape": []
+          },
+          "_pixel_size_camera_doc": {
+            "dtype": "<U28",
+            "shape": []
+          },
+          "_ref_idx_immersion_doc": {
+            "dtype": "<U37",
+            "shape": []
+          },
+          "_ref_idx_medium_doc": {
+            "dtype": "<U43",
+            "shape": []
+          },
+          "_show_max_lateral_err_doc": {
+            "dtype": "<U67",
+            "shape": []
+          },
+          "_show_min_view_count_doc": {
+            "dtype": "<U60",
+            "shape": []
+          },
+          "_z_calib_doc": {
+            "dtype": "<U160",
+            "shape": []
+          },
+          "alpha_model": {
+            "dtype": "<U16",
+            "shape": []
+          },
+          "csv_format": {
+            "dtype": "<U7",
+            "shape": []
+          },
+          "filter_lenses": {
+            "dtype": "bool",
+            "shape": []
+          },
+          "filter_photons": {
+            "dtype": "object",
+            "shape": []
+          },
+          "filter_rhos": {
+            "dtype": "object",
+            "shape": []
+          },
+          "filter_spot_sizes": {
+            "dtype": "object",
+            "shape": []
+          },
+          "focal_length_fourier_lens": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "focal_length_mla": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "focal_length_obj_lens": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "focal_length_tube_lens": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "mla_centre": {
+            "dtype": "float64",
+            "shape": [
+              2
+            ]
+          },
+          "mla_lens_pitch": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "mla_offset": {
+            "dtype": "float64",
+            "shape": [
+              2
+            ]
+          },
+          "mla_optic_size": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "mla_rotation": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "mla_type": {
+            "dtype": "<U9",
+            "shape": []
+          },
+          "num_aperture": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "pixel_size_camera": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "raw_data_columns": {
+            "dtype": "<U19",
+            "shape": [
+              35
+            ]
+          },
+          "ref_idx_immersion": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "ref_idx_medium": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "show_max_lateral_err": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "show_min_view_count": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "z_calib": {
+            "dtype": "float64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "localizations_2d": {
+            "dtype": "float32",
+            "shape": [
+              150996,
+              35
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "value": {
+            "expected_shape": [],
+            "field": "median_lateral_err_nm",
+            "preprocess": "identity",
+            "source": "output"
+          }
+        },
+        "name": "median_lateral_err_nm",
+        "threshold": 56.97
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "value": {
+            "expected_shape": [],
+            "field": "median_axial_err_nm",
+            "preprocess": "identity",
+            "source": "output"
+          }
+        },
+        "name": "median_axial_err_nm",
+        "threshold": 60.86
+      },
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "value": {
+            "expected_shape": [],
+            "field": "n_locs_3d_filtered",
+            "preprocess": "identity",
+            "source": "output"
+          }
+        },
+        "name": "n_locs_3d_filtered",
+        "threshold": 19554.0
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "int64",
+          "name": "n_locs_3d_filtered",
+          "semantics": "Number of retained 3D localisations after quality filtering.",
+          "shape": []
+        },
+        {
+          "dtype": "float64",
+          "name": "median_lateral_err_nm",
+          "semantics": "Median lateral localisation error in nanometers.",
+          "shape": []
+        },
+        {
+          "dtype": "float64",
+          "name": "median_axial_err_nm",
+          "semantics": "Median axial localisation error in nanometers.",
+          "shape": []
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "single_molecule_light_field",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      ".gitignore",
+      "2023.05.02.539032v1.full.pdf",
+      "README.md",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/fixtures/generate_fixtures.py",
+      "evaluation/fixtures/physics_model/assign_to_lenses.npz",
+      "evaluation/fixtures/physics_model/build_microscope.npz",
+      "evaluation/fixtures/physics_model/build_mla.npz",
+      "evaluation/fixtures/physics_model/compute_alpha_model.npz",
+      "evaluation/fixtures/preprocessing/center_localizations.npz",
+      "evaluation/fixtures/preprocessing/load_localizations.npz",
+      "evaluation/fixtures/solvers/fit_3d_localizations_small.npz",
+      "evaluation/fixtures/solvers/fit_aberrations.npz",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/fig_3d_locs.png",
+      "evaluation/reference_outputs/fig_histograms.png",
+      "evaluation/reference_outputs/fig_occurrences.png",
+      "evaluation/reference_outputs/locs_3d.csv",
+      "evaluation/reference_outputs/locs_3d.npz",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/__init__.py",
+      "evaluation/tests/conftest.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "main.py",
+      "notebooks/single_molecule_light_field.ipynb",
+      "optica-7-9-1065.pdf",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {},
+      "exists": false
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "_alpha_model_doc",
+        "_csv_format_doc",
+        "_description",
+        "_filter_lenses_doc",
+        "_filter_photons_doc",
+        "_filter_rhos_doc",
+        "_filter_spot_sizes_doc",
+        "_focal_length_fourier_lens_doc",
+        "_focal_length_mla_doc",
+        "_focal_length_obj_lens_doc",
+        "_focal_length_tube_lens_doc",
+        "_mla_centre_doc",
+        "_mla_lens_pitch_doc",
+        "_mla_offset_doc",
+        "_mla_optic_size_doc",
+        "_mla_rotation_doc",
+        "_mla_type_doc",
+        "_num_aperture_doc",
+        "_pixel_size_camera_doc",
+        "_ref_idx_immersion_doc",
+        "_ref_idx_medium_doc",
+        "_show_max_lateral_err_doc",
+        "_show_min_view_count_doc",
+        "_z_calib_doc",
+        "alpha_model",
+        "csv_format",
+        "filter_lenses",
+        "filter_photons",
+        "filter_rhos",
+        "filter_spot_sizes",
+        "focal_length_fourier_lens",
+        "focal_length_mla",
+        "focal_length_obj_lens",
+        "focal_length_tube_lens",
+        "mla_centre",
+        "mla_lens_pitch",
+        "mla_offset",
+        "mla_optic_size",
+        "mla_rotation",
+        "mla_type",
+        "num_aperture",
+        "pixel_size_camera",
+        "raw_data_columns",
+        "ref_idx_immersion",
+        "ref_idx_medium",
+        "show_max_lateral_err",
+        "show_min_view_count",
+        "z_calib"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "localizations_2d": {
+          "dtype": "float32",
+          "shape": [
+            150996,
+            35
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\single_molecule_light_field\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "median_axial_err_nm_boundary",
+      "median_lateral_err_nm_boundary",
+      "n_locs_3d_filtered_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "_comment": "Task-specific metrics: NCC/NRMSE are not meaningful for 3D point-cloud localisation output. Baseline values come from the reference pipeline in main.py run on the bundled BCR B-cell dataset (Sims et al. 2020). An agent reconstruction passes if its median lateral/axial precision are no worse than 1.1x the baseline and it recovers at least 0.9x as many high-quality localisations.",
+      "baseline": [
+        {
+          "median_axial_err_nm": 55.33,
+          "median_lateral_err_nm": 51.79,
+          "method": "hexSMLFM reference pipeline (INTEGRATE_SPHERE alpha + OLS multi-view fit)",
+          "n_locs_3d_filtered": 21727
+        }
+      ],
+      "median_axial_err_nm_boundary": 60.86,
+      "median_lateral_err_nm_boundary": 56.97,
+      "metric_definitions": {
+        "median_axial_err_nm": "Median axial OLS standard error (z) across filtered 3D localisations, in nm. Lower is better; boundary is 1.1x the baseline.",
+        "median_lateral_err_nm": "Median lateral OLS standard error (x,y averaged) across filtered 3D localisations, in nm. Lower is better; boundary is 1.1x the baseline.",
+        "n_locs_3d_filtered": "Number of 3D localisations after quality filtering (lateral fit error < 200 nm AND n_views > 3). Higher is better; boundary is 0.9x the baseline."
+      },
+      "n_locs_3d_filtered_boundary": 19554
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/fig_3d_locs.png",
+      "reference_outputs/fig_histograms.png",
+      "reference_outputs/fig_occurrences.png",
+      "reference_outputs/locs_3d.csv",
+      "reference_outputs/locs_3d.npz",
+      "reference_outputs/metrics.json"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\single_molecule_light_field\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\single_molecule_light_field.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Biology",
+    "exists": true,
+    "headings": [
+      "Single-Molecule Light Field Microscopy (SMLFM): 3D Super-Resolution Reconstruction",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Single-Molecule Light Field Microscopy (SMLFM): 3D Super-Resolution Reconstruction"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\single_molecule_light_field\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\single_molecule_light_field\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\single_molecule_light_field.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\86ec990c0104d3e6\\build.log",
+    "env_hash": "86ec990c0104d3e6",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\86ec990c0104d3e6\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\86ec990c0104d3e6\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "single_molecule_light_field",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\single_molecule_light_field",
+  "vendor_session_ref": {},
+  "warnings": []
+}

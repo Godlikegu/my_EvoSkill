@@ -1,0 +1,479 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\light_field_microscope\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "biology",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "description": {
+            "dtype": "<U180",
+            "shape": []
+          },
+          "microscope": {
+            "dtype": "object",
+            "shape": []
+          },
+          "mla": {
+            "dtype": "object",
+            "shape": []
+          },
+          "reconstruction": {
+            "dtype": "object",
+            "shape": []
+          },
+          "reference": {
+            "dtype": "object",
+            "shape": []
+          },
+          "task_name": {
+            "dtype": "<U22",
+            "shape": []
+          },
+          "units": {
+            "dtype": "object",
+            "shape": []
+          },
+          "usaf_data": {
+            "dtype": "object",
+            "shape": []
+          },
+          "volume_demo": {
+            "dtype": "object",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "light_field_observations": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              4,
+              450,
+              450
+            ]
+          },
+          "reconstruction_depths_um": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              4,
+              1
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "target_depths_um": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              4
+            ]
+          },
+          "target_images": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              4,
+              450,
+              450
+            ]
+          },
+          "target_volumes": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              4,
+              450,
+              450,
+              1
+            ]
+          }
+        },
+        "id": "ground_truth",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden target images used for evaluation.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              4,
+              450,
+              450
+            ],
+            "field": "rl_reconstructions",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              4,
+              450,
+              450
+            ],
+            "field": "target_images",
+            "file_id": "ground_truth",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.7219
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              4,
+              450,
+              450
+            ],
+            "field": "rl_reconstructions",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              4,
+              450,
+              450
+            ],
+            "field": "target_images",
+            "file_id": "ground_truth",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.1078
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "rl_reconstructions",
+          "semantics": "Estimated reconstructed target images across the provided cases.",
+          "shape": [
+            4,
+            450,
+            450
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "light_field_microscope",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      ".gitignore",
+      "README.md",
+      "Wave optics theory and 3-D deconvolution for t.pdf",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/baseline_reference.npz",
+      "evaluation/reference_outputs/cases.npz",
+      "evaluation/reference_outputs/lfm_system_config.yaml",
+      "evaluation/reference_outputs/light_field_usaf_comparison.png",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/volume_demo.npz",
+      "evaluation/reference_outputs/volume_demo_metrics.json",
+      "evaluation/reference_outputs/volume_reconstruction_demo.png",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/test_helpers.py",
+      "main.py",
+      "notebooks/light_field_microscope.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reference_website_github.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "target_depths_um": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            4
+          ]
+        },
+        "target_images": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            4,
+            450,
+            450
+          ]
+        },
+        "target_volumes": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            4,
+            450,
+            450,
+            1
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "description",
+        "microscope",
+        "mla",
+        "reconstruction",
+        "reference",
+        "task_name",
+        "units",
+        "usaf_data",
+        "volume_demo"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "light_field_observations": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            4,
+            450,
+            450
+          ]
+        },
+        "reconstruction_depths_um": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            4,
+            1
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\light_field_microscope\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "conventional microscope baseline",
+          "ncc_vs_ref": 0.8021,
+          "nrmse_vs_ref": 0.098
+        }
+      ],
+      "ncc_boundary": 0.7219,
+      "nrmse_boundary": 0.1078
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/baseline_reference.npz",
+      "reference_outputs/cases.npz",
+      "reference_outputs/lfm_system_config.yaml",
+      "reference_outputs/light_field_usaf_comparison.png",
+      "reference_outputs/metrics.json",
+      "reference_outputs/volume_demo.npz",
+      "reference_outputs/volume_demo_metrics.json",
+      "reference_outputs/volume_reconstruction_demo.png"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\light_field_microscope\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\light_field_microscope.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Biology",
+    "exists": true,
+    "headings": [
+      "Light Field Microscope",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/ground_truth.npz`",
+      "`data/meta_data.json`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Light Field Microscope"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\light_field_microscope\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\light_field_microscope\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\light_field_microscope.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\41945f442c2e921a\\build.log",
+    "env_hash": "41945f442c2e921a",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\41945f442c2e921a\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\41945f442c2e921a\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "light_field_microscope",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\light_field_microscope",
+  "vendor_session_ref": {},
+  "warnings": []
+}

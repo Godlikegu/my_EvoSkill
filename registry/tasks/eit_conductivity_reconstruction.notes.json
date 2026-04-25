@@ -1,0 +1,892 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eit_conductivity_reconstruction\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "medicine",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "experiments": {
+            "dtype": "object",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "bp_el_pos": {
+            "dtype": "int64",
+            "shape": [
+              16
+            ]
+          },
+          "bp_element": {
+            "dtype": "int32",
+            "shape": [
+              686,
+              3
+            ]
+          },
+          "bp_ex_mat": {
+            "dtype": "int64",
+            "shape": [
+              16,
+              2
+            ]
+          },
+          "bp_keep_ba": {
+            "dtype": "bool",
+            "shape": [
+              256
+            ]
+          },
+          "bp_meas_mat": {
+            "dtype": "int64",
+            "shape": [
+              208,
+              3
+            ]
+          },
+          "bp_node": {
+            "dtype": "float64",
+            "shape": [
+              376,
+              3
+            ]
+          },
+          "bp_perm_anomaly": {
+            "dtype": "float64",
+            "shape": [
+              686
+            ]
+          },
+          "bp_perm_background": {
+            "dtype": "float64",
+            "shape": [
+              686
+            ]
+          },
+          "bp_ref_node": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "bp_v0": {
+            "dtype": "float64",
+            "shape": [
+              208
+            ]
+          },
+          "bp_v1": {
+            "dtype": "float64",
+            "shape": [
+              208
+            ]
+          },
+          "greit_el_pos": {
+            "dtype": "int64",
+            "shape": [
+              16
+            ]
+          },
+          "greit_element": {
+            "dtype": "int32",
+            "shape": [
+              686,
+              3
+            ]
+          },
+          "greit_ex_mat": {
+            "dtype": "int64",
+            "shape": [
+              16,
+              2
+            ]
+          },
+          "greit_keep_ba": {
+            "dtype": "bool",
+            "shape": [
+              256
+            ]
+          },
+          "greit_meas_mat": {
+            "dtype": "int64",
+            "shape": [
+              208,
+              3
+            ]
+          },
+          "greit_node": {
+            "dtype": "float64",
+            "shape": [
+              376,
+              3
+            ]
+          },
+          "greit_perm_anomaly": {
+            "dtype": "float64",
+            "shape": [
+              686
+            ]
+          },
+          "greit_perm_background": {
+            "dtype": "float64",
+            "shape": [
+              686
+            ]
+          },
+          "greit_ref_node": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "greit_v0": {
+            "dtype": "float64",
+            "shape": [
+              208
+            ]
+          },
+          "greit_v1": {
+            "dtype": "float64",
+            "shape": [
+              208
+            ]
+          },
+          "jac_dyn_el_pos": {
+            "dtype": "int64",
+            "shape": [
+              16
+            ]
+          },
+          "jac_dyn_element": {
+            "dtype": "int32",
+            "shape": [
+              686,
+              3
+            ]
+          },
+          "jac_dyn_ex_mat": {
+            "dtype": "int64",
+            "shape": [
+              16,
+              2
+            ]
+          },
+          "jac_dyn_keep_ba": {
+            "dtype": "bool",
+            "shape": [
+              256
+            ]
+          },
+          "jac_dyn_meas_mat": {
+            "dtype": "int64",
+            "shape": [
+              192,
+              3
+            ]
+          },
+          "jac_dyn_node": {
+            "dtype": "float64",
+            "shape": [
+              376,
+              3
+            ]
+          },
+          "jac_dyn_perm_anomaly": {
+            "dtype": "float64",
+            "shape": [
+              686
+            ]
+          },
+          "jac_dyn_perm_background": {
+            "dtype": "float64",
+            "shape": [
+              686
+            ]
+          },
+          "jac_dyn_ref_node": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "jac_dyn_v0": {
+            "dtype": "float64",
+            "shape": [
+              192
+            ]
+          },
+          "jac_dyn_v1": {
+            "dtype": "float64",
+            "shape": [
+              192
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "bp_perm_anomaly": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              686
+            ]
+          },
+          "bp_perm_background": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              686
+            ]
+          },
+          "greit_perm_anomaly": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              686
+            ]
+          },
+          "greit_perm_background": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              686
+            ]
+          },
+          "jac_dyn_perm_anomaly": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              686
+            ]
+          },
+          "jac_dyn_perm_background": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              686
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              686
+            ],
+            "field": "bp_perm_anomaly",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              686
+            ],
+            "field": "bp_perm_anomaly",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.5018
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              686
+            ],
+            "field": "bp_perm_anomaly",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              686
+            ],
+            "field": "bp_perm_anomaly",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.5943
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float64",
+          "name": "bp_perm_anomaly",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            686
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "eit_conductivity_reconstruction",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/comparison_figure.png",
+      "evaluation/reference_outputs/ground_truth_bp.npy",
+      "evaluation/reference_outputs/ground_truth_greit.npy",
+      "evaluation/reference_outputs/ground_truth_jac_dynamic.npy",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/reconstruction_bp.npy",
+      "evaluation/reference_outputs/reconstruction_greit.npz",
+      "evaluation/reference_outputs/reconstruction_jac_dynamic.npy",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/eit_reconstruction.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/generate_data.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "bp_perm_anomaly": {
+          "dtype": "float64",
+          "shape": [
+            1,
+            686
+          ]
+        },
+        "bp_perm_background": {
+          "dtype": "float64",
+          "shape": [
+            1,
+            686
+          ]
+        },
+        "greit_perm_anomaly": {
+          "dtype": "float64",
+          "shape": [
+            1,
+            686
+          ]
+        },
+        "greit_perm_background": {
+          "dtype": "float64",
+          "shape": [
+            1,
+            686
+          ]
+        },
+        "jac_dyn_perm_anomaly": {
+          "dtype": "float64",
+          "shape": [
+            1,
+            686
+          ]
+        },
+        "jac_dyn_perm_background": {
+          "dtype": "float64",
+          "shape": [
+            1,
+            686
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "experiments"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "bp_el_pos": {
+          "dtype": "int64",
+          "shape": [
+            16
+          ]
+        },
+        "bp_element": {
+          "dtype": "int32",
+          "shape": [
+            686,
+            3
+          ]
+        },
+        "bp_ex_mat": {
+          "dtype": "int64",
+          "shape": [
+            16,
+            2
+          ]
+        },
+        "bp_keep_ba": {
+          "dtype": "bool",
+          "shape": [
+            256
+          ]
+        },
+        "bp_meas_mat": {
+          "dtype": "int64",
+          "shape": [
+            208,
+            3
+          ]
+        },
+        "bp_node": {
+          "dtype": "float64",
+          "shape": [
+            376,
+            3
+          ]
+        },
+        "bp_perm_anomaly": {
+          "dtype": "float64",
+          "shape": [
+            686
+          ]
+        },
+        "bp_perm_background": {
+          "dtype": "float64",
+          "shape": [
+            686
+          ]
+        },
+        "bp_ref_node": {
+          "dtype": "int64",
+          "shape": []
+        },
+        "bp_v0": {
+          "dtype": "float64",
+          "shape": [
+            208
+          ]
+        },
+        "bp_v1": {
+          "dtype": "float64",
+          "shape": [
+            208
+          ]
+        },
+        "greit_el_pos": {
+          "dtype": "int64",
+          "shape": [
+            16
+          ]
+        },
+        "greit_element": {
+          "dtype": "int32",
+          "shape": [
+            686,
+            3
+          ]
+        },
+        "greit_ex_mat": {
+          "dtype": "int64",
+          "shape": [
+            16,
+            2
+          ]
+        },
+        "greit_keep_ba": {
+          "dtype": "bool",
+          "shape": [
+            256
+          ]
+        },
+        "greit_meas_mat": {
+          "dtype": "int64",
+          "shape": [
+            208,
+            3
+          ]
+        },
+        "greit_node": {
+          "dtype": "float64",
+          "shape": [
+            376,
+            3
+          ]
+        },
+        "greit_perm_anomaly": {
+          "dtype": "float64",
+          "shape": [
+            686
+          ]
+        },
+        "greit_perm_background": {
+          "dtype": "float64",
+          "shape": [
+            686
+          ]
+        },
+        "greit_ref_node": {
+          "dtype": "int64",
+          "shape": []
+        },
+        "greit_v0": {
+          "dtype": "float64",
+          "shape": [
+            208
+          ]
+        },
+        "greit_v1": {
+          "dtype": "float64",
+          "shape": [
+            208
+          ]
+        },
+        "jac_dyn_el_pos": {
+          "dtype": "int64",
+          "shape": [
+            16
+          ]
+        },
+        "jac_dyn_element": {
+          "dtype": "int32",
+          "shape": [
+            686,
+            3
+          ]
+        },
+        "jac_dyn_ex_mat": {
+          "dtype": "int64",
+          "shape": [
+            16,
+            2
+          ]
+        },
+        "jac_dyn_keep_ba": {
+          "dtype": "bool",
+          "shape": [
+            256
+          ]
+        },
+        "jac_dyn_meas_mat": {
+          "dtype": "int64",
+          "shape": [
+            192,
+            3
+          ]
+        },
+        "jac_dyn_node": {
+          "dtype": "float64",
+          "shape": [
+            376,
+            3
+          ]
+        },
+        "jac_dyn_perm_anomaly": {
+          "dtype": "float64",
+          "shape": [
+            686
+          ]
+        },
+        "jac_dyn_perm_background": {
+          "dtype": "float64",
+          "shape": [
+            686
+          ]
+        },
+        "jac_dyn_ref_node": {
+          "dtype": "int64",
+          "shape": []
+        },
+        "jac_dyn_v0": {
+          "dtype": "float64",
+          "shape": [
+            192
+          ]
+        },
+        "jac_dyn_v1": {
+          "dtype": "float64",
+          "shape": [
+            192
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eit_conductivity_reconstruction\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "Back-Projection (BP) — difference reconstruction on 16-electrode adjacent-drive mesh",
+          "ncc_vs_ref": 0.5575,
+          "nrmse_vs_ref": 0.5403
+        },
+        {
+          "method": "GREIT — linear one-step reconstruction to 32x32 pixel grid",
+          "ncc_vs_ref": 0.5936,
+          "nrmse_vs_ref": 0.0901
+        },
+        {
+          "method": "JAC Dynamic — Tikhonov-regularized Jacobian inversion with Kotre prior (dist_exc=8)",
+          "ncc_vs_ref": 0.6092,
+          "nrmse_vs_ref": 0.1079
+        }
+      ],
+      "ncc_boundary": 0.5018,
+      "nrmse_boundary": 0.5943
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/comparison_figure.png",
+      "reference_outputs/ground_truth_bp.npy",
+      "reference_outputs/ground_truth_greit.npy",
+      "reference_outputs/ground_truth_jac_dynamic.npy",
+      "reference_outputs/metrics.json",
+      "reference_outputs/reconstruction_bp.npy",
+      "reference_outputs/reconstruction_greit.npz",
+      "reference_outputs/reconstruction_jac_dynamic.npy"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eit_conductivity_reconstruction\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\eit_conductivity_reconstruction.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "xg",
+      "yg",
+      "ds"
+    ],
+    "candidate_sources": [
+      "main.py:np.savez"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "output/reconstruction_bp.npy"
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "output/reconstruction_jac_dynamic.npy"
+      },
+      {
+        "fields": [
+          "xg",
+          "yg",
+          "ds"
+        ],
+        "file": "main.py",
+        "kind": "np.savez",
+        "path_hint": "output/reconstruction_greit.npz"
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "evaluation/reference_outputs/ground_truth_.npy"
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "evaluation/reference_outputs/reconstruction_.npy"
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": "evaluation/reference_outputs/ground_truth_greit.npy"
+      },
+      {
+        "fields": [
+          "xg",
+          "yg",
+          "ds"
+        ],
+        "file": "main.py",
+        "kind": "np.savez",
+        "path_hint": "evaluation/reference_outputs/reconstruction_greit.npz"
+      },
+      {
+        "fields": [],
+        "file": "src/generate_data.py",
+        "kind": "np.savez",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Medicine",
+    "exists": true,
+    "headings": [
+      "EIT Conductivity Reconstruction",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/ground_truth.npz`",
+      "`data/meta_data.json`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "EIT Conductivity Reconstruction"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eit_conductivity_reconstruction\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eit_conductivity_reconstruction\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\eit_conductivity_reconstruction.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\64fda3fae600da2e\\build.log",
+    "env_hash": "64fda3fae600da2e",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\64fda3fae600da2e\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\64fda3fae600da2e\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "eit_conductivity_reconstruction",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\eit_conductivity_reconstruction",
+  "vendor_session_ref": {},
+  "warnings": []
+}

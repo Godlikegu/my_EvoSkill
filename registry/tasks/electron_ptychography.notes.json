@@ -1,0 +1,474 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\electron_ptychography\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "physics",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "R_pixel_size_A": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "com_rotation_deg": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "convergence_semiangle_mrad": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "defocus_A": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "detector_shape": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          },
+          "energy_eV": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "scan_shape": {
+            "dtype": "int64",
+            "shape": [
+              2
+            ]
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "datacube": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              48,
+              48,
+              192,
+              192
+            ]
+          },
+          "vacuum_probe": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              192,
+              192
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "dpc_phase": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              48,
+              48
+            ]
+          },
+          "parallax_phase": {
+            "dtype": "float64",
+            "shape": [
+              1,
+              192,
+              192
+            ]
+          },
+          "probe_recon": {
+            "dtype": "complex64",
+            "shape": [
+              1,
+              192,
+              192
+            ]
+          },
+          "ptycho_complex": {
+            "dtype": "complex64",
+            "shape": [
+              1,
+              505,
+              505
+            ]
+          },
+          "ptycho_phase": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              505,
+              505
+            ]
+          }
+        },
+        "id": "reference",
+        "path": "data/baseline_reference.npz",
+        "role": "reference_data",
+        "semantics": "Hidden reference resource used by judge metrics.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              505,
+              505
+            ],
+            "field": "ptycho_phase",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              505,
+              505
+            ],
+            "field": "ptycho_phase",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.9
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              505,
+              505
+            ],
+            "field": "ptycho_phase",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              505,
+              505
+            ],
+            "field": "ptycho_phase",
+            "file_id": "reference",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.15
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "ptycho_phase",
+          "semantics": "Primary task output used by the evaluation metrics.",
+          "shape": [
+            505,
+            505
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "electron_ptychography",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      "README.md",
+      "data/baseline_reference.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/dpc_phase.npy",
+      "evaluation/reference_outputs/parallax_phase.npy",
+      "evaluation/reference_outputs/phase_comparison.png",
+      "evaluation/reference_outputs/probe_recon.npy",
+      "evaluation/reference_outputs/ptycho_complex.npy",
+      "evaluation/reference_outputs/ptycho_phase.npy",
+      "evaluation/reference_outputs/reconstruction.png",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/electron_ptychography.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "baseline_reference.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {},
+      "exists": false
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "R_pixel_size_A",
+        "com_rotation_deg",
+        "convergence_semiangle_mrad",
+        "defocus_A",
+        "detector_shape",
+        "energy_eV",
+        "scan_shape"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "datacube": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            48,
+            48,
+            192,
+            192
+          ]
+        },
+        "vacuum_probe": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            192,
+            192
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\electron_ptychography\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "method": "Ptychography (10 iter, gradient descent)",
+          "ncc_vs_ref": 1.0,
+          "nrmse_vs_ref": 0.0
+        }
+      ],
+      "ncc_boundary": 0.9,
+      "nrmse_boundary": 0.15
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/dpc_phase.npy",
+      "reference_outputs/parallax_phase.npy",
+      "reference_outputs/phase_comparison.png",
+      "reference_outputs/probe_recon.npy",
+      "reference_outputs/ptycho_complex.npy",
+      "reference_outputs/ptycho_phase.npy",
+      "reference_outputs/reconstruction.png"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\electron_ptychography\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\electron_ptychography.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      },
+      {
+        "fields": [],
+        "file": "main.py",
+        "kind": "np.save",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Physics",
+    "exists": true,
+    "headings": [
+      "Electron Ptychography of Gold Nanoparticles",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "data/raw_data.npz",
+      "data/meta_data.json",
+      "data/ground_truth.npz",
+      "data/baseline_reference.npz",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "",
+    "title": "Electron Ptychography of Gold Nanoparticles"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\electron_ptychography\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\electron_ptychography\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\electron_ptychography.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\88940f6512c2f0fc\\build.log",
+    "env_hash": "88940f6512c2f0fc",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\88940f6512c2f0fc\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\88940f6512c2f0fc\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "electron_ptychography",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\electron_ptychography",
+  "vendor_session_ref": {},
+  "warnings": []
+}

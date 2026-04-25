@@ -1,0 +1,490 @@
+{
+  "attempt_count": 0,
+  "attempt_summaries": [],
+  "completion_source": "task_contract",
+  "confirmed_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\fpm_inr_reconstruction\\evaluation\\task_contract.json",
+  "contract": {
+    "execution": {
+      "entrypoint": "work/main.py",
+      "read_first": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "readable_files": [
+        "readme",
+        "requirements",
+        "data_meta_data_json",
+        "data_raw_data_npz"
+      ],
+      "writable_paths": [
+        "work/",
+        "output/",
+        "checkpoints/"
+      ]
+    },
+    "family": "medicine_biophotonics",
+    "files": [
+      {
+        "id": "readme",
+        "path": "README.md",
+        "role": "task_description",
+        "semantics": "Authoritative public task description and method hints.",
+        "visibility": "public"
+      },
+      {
+        "id": "requirements",
+        "path": "requirements.txt",
+        "role": "runtime_dependencies",
+        "semantics": "Available Python dependencies for the execution workspace.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "D_led_um": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "NA": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "magnification": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "num_leds": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "num_modes": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "pixel_size_um": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "raw_size": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "upsample_ratio": {
+            "dtype": "int64",
+            "shape": []
+          },
+          "wavelength_um": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "z_max_um": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "z_min_um": {
+            "dtype": "float64",
+            "shape": []
+          },
+          "z_stack_slices": {
+            "dtype": "int64",
+            "shape": []
+          }
+        },
+        "id": "data_meta_data_json",
+        "path": "data/meta_data.json",
+        "role": "metadata",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "I_low": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              1024,
+              1024,
+              68
+            ]
+          },
+          "dpix_c": {
+            "dtype": "float32",
+            "shape": []
+          },
+          "mag": {
+            "dtype": "float32",
+            "shape": []
+          },
+          "na_cal": {
+            "dtype": "float32",
+            "shape": []
+          },
+          "na_calib": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              68,
+              2
+            ]
+          }
+        },
+        "id": "data_raw_data_npz",
+        "path": "data/raw_data.npz",
+        "role": "input_data",
+        "semantics": "Public task-local resource available to the execution agent.",
+        "visibility": "public"
+      },
+      {
+        "fields": {
+          "I_stack": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              1024,
+              1024,
+              161
+            ]
+          },
+          "zvec": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              161
+            ]
+          }
+        },
+        "id": "ground_truth",
+        "path": "data/ground_truth.npz",
+        "role": "reference_data",
+        "semantics": "Hidden amplitude stack used for evaluation.",
+        "visibility": "private"
+      },
+      {
+        "id": "metric_adapter",
+        "path": "evaluation/task_metric_adapter.py",
+        "role": "metric_helper",
+        "semantics": "Generated private metric adapter for the formal contract.",
+        "visibility": "private"
+      }
+    ],
+    "metrics": [
+      {
+        "goal": "maximize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              1024,
+              1024,
+              161
+            ],
+            "field": "amplitude_stack",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              1024,
+              1024,
+              161
+            ],
+            "field": "I_stack",
+            "file_id": "ground_truth",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "ncc",
+        "threshold": 0.8974
+      },
+      {
+        "goal": "minimize",
+        "helper": {
+          "callable": "compute_metric",
+          "file_id": "metric_adapter",
+          "interface": "metric_adapter"
+        },
+        "inputs": {
+          "estimate": {
+            "expected_shape": [
+              1024,
+              1024,
+              161
+            ],
+            "field": "amplitude_stack",
+            "preprocess": "identity",
+            "source": "output"
+          },
+          "reference": {
+            "expected_shape": [
+              1024,
+              1024,
+              161
+            ],
+            "field": "I_stack",
+            "file_id": "ground_truth",
+            "preprocess": "identity",
+            "selectors": {
+              "index": 0
+            },
+            "source": "file"
+          }
+        },
+        "name": "nrmse",
+        "threshold": 0.0781
+      }
+    ],
+    "output": {
+      "fields": [
+        {
+          "dtype": "float32",
+          "name": "amplitude_stack",
+          "semantics": "Estimated FPM amplitude stack.",
+          "shape": [
+            1024,
+            1024,
+            161
+          ]
+        }
+      ],
+      "format": "npz",
+      "path": "output/reconstruction.npz"
+    },
+    "task_id": "fpm_inr_reconstruction",
+    "version": 2
+  },
+  "contract_generation": {
+    "agent_summary": "",
+    "completion_source": "task_contract",
+    "open_questions": [],
+    "source_files": [
+      ".gitignore",
+      "FPM-INR%3A Fourier ptychographic microscopy image stack reconstruction using implicit neural representations.pdf",
+      "README.md",
+      "data/ground_truth.npz",
+      "data/meta_data.json",
+      "data/raw_data.npz",
+      "evaluation/__pycache__/judge_adapter.cpython-310.pyc",
+      "evaluation/contract_generation.notes.json",
+      "evaluation/judge_adapter.py",
+      "evaluation/metrics.json",
+      "evaluation/reference_outputs/aif_gt.npy",
+      "evaluation/reference_outputs/aif_pred.npy",
+      "evaluation/reference_outputs/metrics.json",
+      "evaluation/reference_outputs/per_slice_metrics.npz",
+      "evaluation/task_contract.json",
+      "evaluation/task_contract.public.json",
+      "evaluation/task_metric_adapter.py",
+      "evaluation/tests/test_end_to_end.py",
+      "evaluation/tests/test_physics_model.py",
+      "evaluation/tests/test_preprocessing.py",
+      "evaluation/tests/test_solvers.py",
+      "evaluation/tests/test_visualization.py",
+      "main.py",
+      "notebooks/fpm_inr.ipynb",
+      "plan/approach.md",
+      "plan/design.md",
+      "reproduction_report.md",
+      "requirements.txt",
+      "src/__init__.py",
+      "src/physics_model.py",
+      "src/preprocessing.py",
+      "src/solvers.py",
+      "src/visualization.py"
+    ],
+    "status": "confirmed_registered",
+    "vendor_session_ref": {}
+  },
+  "data_summary": {
+    "exists": true,
+    "files": [
+      "ground_truth.npz",
+      "meta_data.json",
+      "raw_data.npz"
+    ],
+    "ground_truth": {
+      "arrays": {
+        "I_stack": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            1024,
+            1024,
+            161
+          ]
+        },
+        "zvec": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            161
+          ]
+        }
+      },
+      "exists": true
+    },
+    "meta_data": {
+      "exists": true,
+      "keys": [
+        "D_led_um",
+        "NA",
+        "magnification",
+        "num_leds",
+        "num_modes",
+        "pixel_size_um",
+        "raw_size",
+        "upsample_ratio",
+        "wavelength_um",
+        "z_max_um",
+        "z_min_um",
+        "z_stack_slices"
+      ]
+    },
+    "raw_data": {
+      "arrays": {
+        "I_low": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            1024,
+            1024,
+            68
+          ]
+        },
+        "dpix_c": {
+          "dtype": "float32",
+          "shape": []
+        },
+        "mag": {
+          "dtype": "float32",
+          "shape": []
+        },
+        "na_cal": {
+          "dtype": "float32",
+          "shape": []
+        },
+        "na_calib": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            68,
+            2
+          ]
+        }
+      },
+      "exists": true
+    }
+  },
+  "declared_inputs_used": [],
+  "draft_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\fpm_inr_reconstruction\\evaluation\\task_contract.json",
+  "evaluation_summary": {
+    "exists": true,
+    "metric_threshold_keys": [
+      "ncc_boundary",
+      "nrmse_boundary"
+    ],
+    "metrics_config_exists": true,
+    "metrics_config_path": "evaluation/metrics.json",
+    "metrics_summary": {
+      "baseline": [
+        {
+          "aif_l2_error": 0.001325,
+          "method": "FPM-INR with factored 3D implicit neural representation (Zhou et al. 2023)",
+          "ncc_vs_ref": 0.9971,
+          "nrmse_vs_ref": 0.071,
+          "per_slice_psnr_mean": 22.79,
+          "per_slice_ssim_mean": 0.7753
+        }
+      ],
+      "ncc_boundary": 0.8974,
+      "nrmse_boundary": 0.0781
+    },
+    "reference_outputs_exists": true,
+    "reference_outputs_files": [
+      "reference_outputs/aif_gt.npy",
+      "reference_outputs/aif_pred.npy",
+      "reference_outputs/metrics.json",
+      "reference_outputs/per_slice_metrics.npz"
+    ]
+  },
+  "judge_generation": {
+    "status": "ready",
+    "validation_checks": [
+      "judge_importable",
+      "judge_callable_present",
+      "judge_metrics_match_task_contract",
+      "judge_contract_path_match_manifest",
+      "judge_ready_marker_present"
+    ]
+  },
+  "judge_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\fpm_inr_reconstruction\\evaluation\\judge_adapter.py",
+  "judge_recommendations": {},
+  "manifest_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\fpm_inr_reconstruction.json",
+  "metric_source_candidates": [
+    "metric_adapter",
+    "metric_adapter"
+  ],
+  "missing_items": [],
+  "output_detection": {
+    "candidate_output_fields": [
+      "TODO_field_name"
+    ],
+    "candidate_sources": [
+      "template:TODO_field_name"
+    ],
+    "needs_public_npz_export": false,
+    "output_format": "npz",
+    "output_path": "output/reconstruction.npz",
+    "save_calls": [
+      {
+        "fields": [],
+        "file": "src/solvers.py",
+        "kind": "np.save",
+        "path_hint": ""
+      }
+    ],
+    "warnings": []
+  },
+  "readme_summary": {
+    "domain": "Medicine / Biophotonics",
+    "exists": true,
+    "headings": [
+      "Fourier Ptychographic Microscopy Image Stack Reconstruction",
+      "Background",
+      "Problem Description",
+      "Data Description",
+      "`data/raw_data.npz`",
+      "`data/ground_truth.npz`",
+      "`data/meta_data.json`",
+      "Method Hints",
+      "References"
+    ],
+    "output_excerpt": "High-resolution 3D complex field at 2048 x 2048 pixels (2x upsampled) across 161 z-slices, from which an all-in-focus image is derived.",
+    "title": "Fourier Ptychographic Microscopy Image Stack Reconstruction"
+  },
+  "registration_input": {
+    "task_contract_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\fpm_inr_reconstruction\\evaluation\\task_contract.json"
+  },
+  "registration_input_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\fpm_inr_reconstruction\\evaluation\\task_contract.json",
+  "registry_notes_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\registry\\tasks\\fpm_inr_reconstruction.notes.json",
+  "resource_validation": [],
+  "runtime_env": {
+    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\64899ba2ba7affaa\\build.log",
+    "env_hash": "64899ba2ba7affaa",
+    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\64899ba2ba7affaa\\install_report.json",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\64899ba2ba7affaa\\Scripts\\python.exe",
+    "status": "ready"
+  },
+  "task_id": "fpm_inr_reconstruction",
+  "task_root": "D:\\yan1\\agent\\AutoSkill\\tasks\\fpm_inr_reconstruction",
+  "vendor_session_ref": {},
+  "warnings": []
+}
