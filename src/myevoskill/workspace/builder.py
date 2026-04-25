@@ -29,9 +29,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
+from .agent_spec import (
+    assert_spec_has_no_leaks,
+    derive_agent_task_spec,
+    render_summary,
+)
 from .policy import GLOBAL_FORBIDDEN_SUBSTRINGS, WorkspacePolicy
 
 _DEFAULT_README_NAMES = ("README.md", "README.MD", "Readme.md", "readme.md")
+_AGENT_TASK_SPEC_FILENAME = "agent_task_spec.json"
+_TASK_CONTRACT_REL = "evaluation/task_contract.json"
 
 
 @dataclass(frozen=True)
@@ -47,6 +54,8 @@ class WorkspaceBuild:
     skipped_files: tuple[str, ...]
     readme_path: Path
     meta_path: Path
+    agent_task_spec_path: Path | None = None
+    agent_task_spec_summary: str = ""
 
 
 # --------------------------------------------------------------------- helpers
@@ -284,6 +293,31 @@ def build_workspace(
 
     primary_output_path = (workspace_root / primary_output_rel).resolve()
 
+    # 6. Agent task spec (machine-readable IO contract).
+    #
+    # We derive a *strictly redacted* view of the task contract -- no
+    # threshold, no metric name, no ground_truth path, no judge helper --
+    # so the agent has a deterministic source of truth for the output
+    # schema without being able to inspect or hack the judge.
+    agent_spec_path: Path | None = None
+    agent_spec_summary: str = ""
+    contract_path = task_root / _TASK_CONTRACT_REL
+    if contract_path.exists():
+        try:
+            contract_dict = json.loads(contract_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            contract_dict = None
+        if isinstance(contract_dict, Mapping):
+            spec = derive_agent_task_spec(contract=contract_dict, manifest=manifest)
+            # Defence-in-depth: refuse to write a spec that leaks.
+            assert_spec_has_no_leaks(spec)
+            agent_spec_path = workspace_root / _AGENT_TASK_SPEC_FILENAME
+            agent_spec_path.write_text(
+                json.dumps(spec, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            agent_spec_summary = render_summary(spec)
+
     return WorkspaceBuild(
         task_id=task_id,
         run_id=run_id,
@@ -294,4 +328,6 @@ def build_workspace(
         skipped_files=tuple(skipped),
         readme_path=readme_path,
         meta_path=meta_path,
+        agent_task_spec_path=agent_spec_path,
+        agent_task_spec_summary=agent_spec_summary,
     )

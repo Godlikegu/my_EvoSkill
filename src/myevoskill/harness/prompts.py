@@ -30,9 +30,16 @@ SYSTEM_PROMPT = """You are an autonomous research engineer solving a computation
 Workspace contract
 ==================
 * Your *only* working directory is the workspace root (the cwd the harness gives you).
-* Read `README.md` and `meta_data.json` first. Then explore `data/`.
-* Write code into `work/` (scratch) and produce the final result at the path
-  named in `meta_data.json:primary_output_path` (typically `output/...`).
+* Read `agent_task_spec.json` first -- it is the *machine-readable* IO
+  contract: input file list, primary output path, the exact keys / dtypes /
+  shapes the judge expects, and your wall-clock budget. Then read `README.md`
+  for the human-readable task description and `meta_data.json` for any
+  task-specific physical parameters. Finally explore `data/`.
+* Write code into `work/` (scratch) and produce the final result at the
+  output path declared in `agent_task_spec.json:output.path` (also exposed
+  as `meta_data.json:primary_output_path`). The `.npz` archive must contain
+  every key listed under `output.required_keys` with the declared dtype
+  and shape, otherwise the judge will return INVALID.
 * The workspace is sandboxed: **anything outside the workspace is off-limits**.
   Filenames containing `ground_truth`, `evaluation/`, `task_contract.json`,
   `judge_adapter.py`, `src/`, `notebooks/`, or `plan/` are blocked
@@ -68,14 +75,32 @@ def initial_user_prompt(
     primary_output_rel: str,
     workspace_root: Path,
     budget_seconds: int,
+    task_spec_summary: str = "",
 ) -> str:
+    """First-round user message.
+
+    ``task_spec_summary`` is the rendered short summary of
+    ``agent_task_spec.json`` produced by
+    :func:`myevoskill.workspace.agent_spec.render_summary`. We inline it
+    so the agent has the full output schema in-context immediately,
+    without having to read the spec file (it can still read the file for
+    the authoritative version).
+    """
+
+    summary_block = ""
+    if task_spec_summary:
+        summary_block = "\n" + task_spec_summary.rstrip() + "\n"
+
     return (
         f"Task: **{task_id}**\n\n"
         f"Workspace: `{workspace_root}` (your cwd)\n"
         f"Primary output: `{primary_output_rel}`\n"
-        f"Wall-clock budget: {budget_seconds} seconds total across all rounds.\n\n"
-        "Step 1: read `README.md` and `meta_data.json`. Then list `data/` to\n"
-        "        understand what inputs you actually have.\n"
+        f"Wall-clock budget: {budget_seconds} seconds total across all rounds.\n"
+        + summary_block
+        + "\nStep 1: read `agent_task_spec.json` for the machine-readable IO\n"
+        "        contract, then `README.md` and `meta_data.json` for the\n"
+        "        human description and task parameters. Then list `data/`\n"
+        "        to confirm the inputs you actually have.\n"
         "Step 2: open `plan.md` (the harness has seeded a template-only file).\n"
         "        **Author your Round 1 block from scratch** under the existing\n"
         "        guidance: a one-line summary, your Hypothesis about what the\n"
@@ -85,7 +110,7 @@ def initial_user_prompt(
         "        older than your last code modification, so always update\n"
         "        plan.md *first*.\n"
         "Step 3: implement in `work/`, run, and produce the primary output\n"
-        "        file at the path above.\n"
+        "        file at the path above with every required key.\n"
         "When the output exists, reply with the single word `READY` so the\n"
         "judge can evaluate it."
     )
@@ -115,8 +140,9 @@ def feedback_user_prompt(
             "  * the file is not a valid `.npz` archive,\n"
             "  * a required array key is missing or has the wrong shape/dtype,\n"
             "  * the array contains NaN/Inf values.\n\n"
-            "Re-read `README.md` for the output schema, then update `plan.md`"
-            " (add a new `## Round N+1` block), fix the output, and try again."
+            "Re-read `agent_task_spec.json:output` for the exact required keys"
+            " and shapes, then update `plan.md` (add a new `## Round N+1`"
+            " block), fix the output, and try again."
         )
     else:  # FAIL
         body = (

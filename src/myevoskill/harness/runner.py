@@ -192,6 +192,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                     task_id=task_id,
                     primary_output_rel=build.policy.primary_output_rel,
                     workspace_root=build.agent_root,
+                    task_spec_summary=build.agent_task_spec_summary,
                     budget_seconds=config.budget_seconds,
                 )
             else:

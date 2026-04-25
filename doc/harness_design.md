@@ -15,7 +15,7 @@ src/myevoskill/
 ├── harness/                runner.py + hooks.py + plan_guard.py + prompts.py
 │                           + trajectory.py
 ├── judge/bridge.py         JudgeRunner (subprocess) + JudgeFeedback
-├── workspace/              policy.py + builder.py
+├── workspace/              policy.py + builder.py + agent_spec.py
 └── (judge-adapter API, frozen for tasks/*/evaluation/judge_adapter.py)
     models.py · judging.py · task_contract.py · task_runtime.py
     resource_probe.py
@@ -263,7 +263,56 @@ free to create.  Reference `tasks/<id>/main.py` is unreachable anyway
 because it sits outside the agent's workspace, and `policy.is_inside`
 denies any path that escapes `agent_root`.
 
-## 10. First-round plan.md authoring
+## 10. Agent-visible task spec (`workspace/agent_spec.py`)
+
+The harness ships a **machine-readable** IO contract to the agent as
+`agent_task_spec.json`, written into the workspace by `builder.py`. This
+gives the agent enough structural information to produce a file the judge
+will accept, **without** revealing any evaluation-side detail.
+
+What the spec exposes:
+
+* `inputs.files[]` -- public input files only (`input_data`, `metadata`,
+  `runtime_dependencies`), with `dtype` + `shape` per array key when the
+  contract declares them.
+* `output.path`, `output.format`, and `output.required_keys[].(name|dtype|shape)`
+  -- so the agent knows it must write
+  `output/reconstruction.npz` containing e.g.
+  `reconstruction (float32, shape 1x128x128)`.
+* `runtime.entrypoint`, `runtime.writable_paths`, `runtime.wall_clock_seconds`.
+* `evaluation_protocol`: only the *channel* (`pass_fail` or
+  `metric_status`), explicitly noting that names/numbers/thresholds are
+  hidden.
+* `forbidden.paths` and `forbidden.actions`, mirrored from the policy.
+
+What the spec **never** exposes (enforced by `assert_spec_has_no_leaks`):
+
+* metric names (`ncc`, `nrmse`, …) or threshold numbers,
+* `ground_truth*`, `judge_adapter*`, `evaluation/*`, `metric_helper*`,
+* paths that point at the reference solution
+  (`task_contract.json`, `registration_contract.json`,
+  `reference_outputs*`).
+
+`builder.build_workspace` calls `derive_agent_task_spec` then
+`assert_spec_has_no_leaks` on every workspace build, so a future
+contract refactor cannot accidentally smuggle a metric name into the
+agent's view -- the build will fail loudly first. A one-paragraph
+`render_summary(spec)` is also returned via `BuildResult.agent_task_spec_summary`,
+which `harness/runner.py` inlines into the first-round user prompt
+verbatim (the agent then has both the inline summary and the JSON file
+on disk to consult).
+
+Tests live in `tests/test_agent_spec.py`:
+
+* the spec contains the expected output schema,
+* the spec lists *only* `visibility=public` inputs,
+* the spec contains no leak words (parametrised over metric names and
+  numeric thresholds),
+* the leak list does not over-match friendly tokens such as
+  `judge_verdict` or `evaluation_protocol` (which appear in the spec by
+  design).
+
+## 11. First-round plan.md authoring
 
 `PLAN_SEED` deliberately ships **without a templated `## Round 1` block**.
 The agent is told (via the system prompt and the first-round user prompt)
