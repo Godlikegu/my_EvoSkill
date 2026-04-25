@@ -85,19 +85,30 @@ def _setup_logging(verbose: bool) -> None:
 
 
 def cmd_register_task(args: argparse.Namespace) -> int:
-    """Delegate to the existing ``task_register`` CLI.
+    """Run the deterministic v2 registration step.
 
-    The harness only consumes the manifest schema produced there, so we keep
-    one source of truth instead of forking the registration logic.
+    Reads ``tasks/<task_id>/evaluation/task_contract.json`` and writes
+    ``registry/tasks/<task_id>.json``. No LLM calls, no agent involvement.
     """
 
-    from . import task_register
+    from .registration import RegistrationError, register_task
 
     repo_root = Path(args.repo_root).resolve()
-    forwarded = ["--task-id", args.task_id, "--repo-root", str(repo_root)]
-    if args.force:
-        forwarded.append("--force")
-    return int(task_register.main(forwarded) or 0)
+    try:
+        result = register_task(
+            repo_root=repo_root,
+            task_id=args.task_id,
+            tasks_root=Path(args.tasks_root) if args.tasks_root else None,
+            force=bool(args.force),
+        )
+    except RegistrationError as exc:
+        print(f"registration failed: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"registered: {result.manifest_path}")
+    for warning in result.warnings:
+        print(f"  warning: {warning}")
+    return 0
 
 
 def cmd_run_task(args: argparse.Namespace) -> int:
@@ -202,6 +213,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_reg = sub.add_parser("register-task", help="register / refresh a task manifest")
     p_reg.add_argument("--task-id", required=True)
     p_reg.add_argument("--repo-root", default=".")
+    p_reg.add_argument("--tasks-root", default=None,
+                       help="Override tasks/ root (defaults to <repo_root>/../tasks)")
     p_reg.add_argument("--force", action="store_true")
     p_reg.set_defaults(func=cmd_register_task)
 
