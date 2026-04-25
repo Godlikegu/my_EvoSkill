@@ -7,14 +7,15 @@
   },
   "public_policy": {
     "public_data_allowlist": [
+      "requirements.txt",
       "data/raw_data.npz",
       "data/meta_data.json"
     ],
     "public_data_denylist": [
-      "ground_truth.npy",
       "ground_truth.npz",
       "reference_outputs",
-      "simu.hdf5"
+      "data/ground_truth.npz",
+      "evaluation/metric_adapter.py"
     ],
     "readme_policy": {
       "preserve_sections": [
@@ -41,11 +42,7 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "venv_pip",
-    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\109c4505cdd38b94\\build.log",
-    "env_hash": "109c4505cdd38b94",
-    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\109c4505cdd38b94\\install_report.json",
-    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\109c4505cdd38b94\\Scripts\\python.exe",
+    "backend": "conda_or_system",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\conventional_ptychography\\requirements.txt"
   },
@@ -57,7 +54,7 @@
     "work_dir": "work"
   },
   "runtime_policy": {
-    "execution_budget_seconds": 900,
+    "execution_budget_seconds": 7200,
     "model_timeout_seconds": 240
   },
   "source_task_dir": "../tasks/conventional_ptychography",
