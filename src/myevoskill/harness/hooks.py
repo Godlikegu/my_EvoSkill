@@ -20,9 +20,14 @@ from __future__ import annotations
 import logging
 from typing import Any, Awaitable, Callable, Mapping
 
+from ..workspace.bash_parser import parse_bash_writes
 from ..workspace.policy import WorkspacePolicy, collect_path_args
 from .plan_guard import CODE_MODIFY_TOOLS, PLAN_FILENAME, PlanGuard
 from .trajectory import TrajectoryWriter
+
+# Tools that *create or modify* a file at ``file_path``. We must reject these
+# unless the target is in a writable subdir (work/, output/).
+_WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +64,9 @@ def make_pre_tool_use_hook(
             )
             return _deny(deny_reason)
 
-        # 3. Bash-specific checks.
+        # 3. Bash-specific checks: dangerous-pattern denylist + parsed
+        # read/write target enforcement (work/output only for writes,
+        # workspace boundary + forbidden-substring for reads).
         if tool_name == "Bash":
             command = str(tool_input.get("command") or "")
             bash_reason = policy.find_dangerous_bash(command)
@@ -75,6 +82,82 @@ def make_pre_tool_use_hook(
                     {"tool": tool_name, "reason": msg, "kind": "bash"},
                 )
                 return _deny(msg)
+
+            access = parse_bash_writes(command)
+            if access.dynamic:
+                msg = (
+                    "Bash command rejected: the harness could not statically"
+                    " determine its filesystem targets ("
+                    + "; ".join(access.dynamic[:3])
+                    + "). Use the Read/Write tools, or rewrite the command"
+                    " with literal paths under work/ or output/."
+                )
+                trajectory.env_feedback(
+                    round_idx,
+                    "policy_deny",
+                    {"tool": tool_name, "reason": msg, "kind": "bash_dynamic"},
+                )
+                return _deny(msg)
+            for target in access.writes:
+                # Substring deny for forbidden hidden-asset names.
+                sub = policy.find_forbidden(target)
+                if sub:
+                    msg = (
+                        f"Bash write target '{target}' contains forbidden"
+                        f" substring '{sub}'."
+                    )
+                    trajectory.env_feedback(
+                        round_idx,
+                        "policy_deny",
+                        {"tool": tool_name, "reason": msg, "kind": "bash_write"},
+                    )
+                    return _deny(msg)
+                if not policy.is_inside(target):
+                    msg = (
+                        f"Bash write target '{target}' is outside the agent"
+                        f" workspace ({policy.agent_root})."
+                    )
+                    trajectory.env_feedback(
+                        round_idx,
+                        "policy_deny",
+                        {"tool": tool_name, "reason": msg, "kind": "bash_write"},
+                    )
+                    return _deny(msg)
+                if not policy.is_writable_for_write(target):
+                    msg = (
+                        f"Bash write target '{target}' is read-only. Writes"
+                        f" are only allowed under {tuple(policy.writable_subdirs)}."
+                    )
+                    trajectory.env_feedback(
+                        round_idx,
+                        "policy_deny",
+                        {"tool": tool_name, "reason": msg, "kind": "bash_write"},
+                    )
+                    return _deny(msg)
+            for target in access.reads:
+                sub = policy.find_forbidden(target)
+                if sub:
+                    msg = (
+                        f"Bash read target '{target}' contains forbidden"
+                        f" substring '{sub}'."
+                    )
+                    trajectory.env_feedback(
+                        round_idx,
+                        "policy_deny",
+                        {"tool": tool_name, "reason": msg, "kind": "bash_read"},
+                    )
+                    return _deny(msg)
+                if not policy.is_inside(target):
+                    msg = (
+                        f"Bash read target '{target}' is outside the agent"
+                        f" workspace ({policy.agent_root})."
+                    )
+                    trajectory.env_feedback(
+                        round_idx,
+                        "policy_deny",
+                        {"tool": tool_name, "reason": msg, "kind": "bash_read"},
+                    )
+                    return _deny(msg)
 
         # 4. plan.md freshness.
         plan_reason = plan_guard.should_block(tool_name, tool_input)
@@ -160,6 +243,17 @@ def _check_paths(
                     f" ({policy.agent_root}). All reads/writes must stay"
                     f" inside the workspace."
                 )
+            # 2b. For *write-flavoured* tools, the target must additionally
+            # land in a writable subdir (work/ or output/). plan.md is
+            # whitelisted via the plan-guard layer, not here.
+            if tool_name in _WRITE_TOOLS and not _path_is_plan_md(value):
+                if not policy.is_writable_for_write(value):
+                    return (
+                        f"Path '{value}' is read-only. {tool_name} may only"
+                        f" write under {tuple(policy.writable_subdirs)}; the"
+                        f" rest of the workspace (README.md, data/, meta_data,"
+                        f" agent_task_spec.json, ...) is read-only."
+                    )
 
     # 3. For Glob / Grep, the same applies to their `path`.
     if tool_name in {"Glob", "Grep"}:
@@ -171,6 +265,15 @@ def _check_paths(
             )
 
     return None
+
+
+def _path_is_plan_md(value: str) -> bool:
+    """Return True if *value* refers to plan.md (the one writable file in
+    the workspace root, gated by the plan-guard layer)."""
+
+    return value.replace("\\", "/").rstrip("/").endswith("/" + PLAN_FILENAME) or (
+        value.replace("\\", "/") == PLAN_FILENAME
+    )
 
 
 def _path_value(tool_input: Mapping[str, Any]) -> str:

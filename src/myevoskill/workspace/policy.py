@@ -138,37 +138,66 @@ class WorkspacePolicy:
 
     # ---------------------------------------------------------- path checking
 
-    def is_inside(self, candidate: Path | str) -> bool:
-        """Return True iff *candidate* resolves inside ``agent_root``."""
+    def _resolved_pair(self, candidate: Path | str) -> tuple[Path, Path] | None:
+        """Resolve *candidate* and return (resolved_candidate, resolved_root).
+
+        Returns None on OSError. Resolution is non-strict so non-existent
+        paths still get fully normalised (handles ``..`` traversals).
+        """
 
         try:
             resolved = Path(candidate).expanduser()
             if not resolved.is_absolute():
-                resolved = (self.agent_root / resolved)
+                resolved = self.agent_root / resolved
             resolved = resolved.resolve(strict=False)
             root = self.agent_root.resolve(strict=False)
-            return str(resolved).lower().startswith(str(root).lower())
+            return resolved, root
         except OSError:
-            return False
+            return None
 
-    def is_writable(self, candidate: Path | str) -> bool:
-        """Return True iff *candidate* is inside a writable subdir."""
+    def is_inside(self, candidate: Path | str) -> bool:
+        """Return True iff *candidate* resolves inside ``agent_root``.
 
-        if not self.is_inside(candidate):
+        Uses ``Path.relative_to`` semantics rather than string ``startswith``,
+        so e.g. an attacker-supplied ``<agent_root>_evil/foo`` is correctly
+        rejected (string prefix match would have falsely accepted it).
+        """
+
+        pair = self._resolved_pair(candidate)
+        if pair is None:
             return False
+        resolved, root = pair
         try:
-            rel = Path(candidate).expanduser()
-            if not rel.is_absolute():
-                rel = self.agent_root / rel
-            rel = rel.resolve(strict=False)
-            root = self.agent_root.resolve(strict=False)
-            tail = rel.relative_to(root)
-        except (OSError, ValueError):
+            resolved.relative_to(root)
+            return True
+        except ValueError:
+            return False
+
+    def is_writable_for_write(self, candidate: Path | str) -> bool:
+        """Return True iff *candidate* is inside a writable subdir.
+
+        Writable subdirs default to ``("work", "output")``; everything else
+        in the workspace (README.md, plan.md, data/, agent_task_spec.json,
+        meta_data.json, etc.) is read-only. ``plan.md`` is the one exception
+        and is allowed by the plan-guard layer, not by this policy.
+        """
+
+        pair = self._resolved_pair(candidate)
+        if pair is None:
+            return False
+        resolved, root = pair
+        try:
+            tail = resolved.relative_to(root)
+        except ValueError:
             return False
         if not tail.parts:
             return False
         head = tail.parts[0]
         return head in tuple(self.writable_subdirs)
+
+    # Backwards-compat alias kept for older callers / tests.
+    is_writable = is_writable_for_write
+
 
     def find_forbidden(self, blob: str) -> str | None:
         """Return the first forbidden substring found in *blob*, or None."""

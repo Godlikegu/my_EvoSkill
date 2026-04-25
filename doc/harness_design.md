@@ -321,3 +321,38 @@ Change / Verification *before* writing or running any code; the
 `PlanGuard` will refuse `Write` / `Edit` / `Bash` calls while `plan.md` is
 still older than the most recent code modification.  This makes the plan
 a real artefact of the agent's thinking, not a pre-filled stub.
+
+
+## 9. Sandbox hardening (commit A: fix(policy))
+
+The pre-tool-use hooks now refuse a strictly larger set of attempts. The
+guarantees are layered so each tool the agent can call has its own check:
+
+* **`is_inside`** uses ``Path.relative_to``, not ``str.startswith``. A
+  sibling directory like ``<agent_root>_evil/foo`` is correctly rejected;
+  ``<agent_root>/work/../../etc/passwd`` is rejected after non-strict
+  resolution.
+* **`is_writable_for_write`** is the policy half of the write
+  permission. Any tool that mutates a file (``Write``, ``Edit``,
+  ``MultiEdit``, ``NotebookEdit``, plus ``Bash`` write targets) must
+  land under ``writable_subdirs`` (default: ``work/``, ``output/``).
+  ``plan.md`` is the *one* writable file outside those subdirs and is
+  gated by the plan-guard layer, not by the policy.
+* **`workspace.bash_parser.parse_bash_writes`** statically extracts every
+  read/write target out of a ``Bash`` command before it is allowed to
+  run. It handles shell redirections (`>`, `>>`, `tee`, `tee -a`),
+  `cp`/`mv`/`rm`/`mkdir`/`touch`/`chmod`/`ln` with their last positional,
+  and `python -c "..."` / `python <<EOF ... EOF` heredocs which it
+  AST-walks for ``open(<lit>, 'w')``, ``Path(<lit>).write_text``,
+  ``os.remove/rename/replace``, ``shutil.copy*/move/rmtree``, and the
+  ``np.save*`` / ``json.dump`` family. Any non-literal path, eval/exec,
+  command substitution or process substitution is tagged ``dynamic`` and
+  the entire ``Bash`` call is denied with an explanation telling the
+  agent to use the explicit ``Read``/``Write`` tools instead.
+
+The regression suite ``tests/test_sandbox_hardening.py`` covers five
+concrete hack vectors (H1..H5): ground-truth substring, root-write,
+``python -c`` smuggle, prefix-confusion sibling directory, command
+substitution / eval. All denials are routed through
+``trajectory.env_feedback`` so the agent observes them as a normal turn
+(no silent kill).
