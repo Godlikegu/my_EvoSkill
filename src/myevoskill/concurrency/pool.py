@@ -15,15 +15,20 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
+
+from ..harness.sandbox import (
+    cleanup_isolated_home,
+    env_overrides_for,
+    make_isolated_home,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,36 +100,25 @@ def _run_one_subprocess(
     extra_run_args: Mapping[str, Any],
     timeout_seconds: int,
 ) -> SubprocessOutcome:
-    """Spawn one ``python -m myevoskill.cli run`` for *task_id*."""
+    """Spawn one ``python -m myevoskill.cli run-task`` for *task_id*.
 
-    # Per-run temp HOME to isolate the claude CLI's history. We *seed* the
-    # temp HOME from the user's real ~/.claude so that critical settings such
-    # as ``model`` and ``apiBaseUrl`` (used by 3rd-party Claude gateways) are
-    # preserved, but ``projects/`` and ``sessions/`` start empty so per-run
-    # conversation history is isolated and trivially deletable.
-    tmp_home = Path(tempfile.mkdtemp(prefix=f"myevoskill_home_{task_id}_"))
+    Each subprocess gets its own isolated $HOME (see
+    :mod:`myevoskill.harness.sandbox`) so concurrent runs cannot stomp on
+    each other's Claude conversation history. Cleanup runs in ``finally``
+    so a crashed child still releases its sandbox.
+    """
+
+    # Allocate a stable run_id up front so the sandbox path matches what
+    # the child process will record in its run_summary.json.
+    pool_run_id = f"pool-{int(time.time())}-{uuid.uuid4().hex[:6]}"
+    sandbox = make_isolated_home(
+        repo_root=repo_root, task_id=task_id, run_id=pool_run_id
+    )
+
     env = os.environ.copy()
-
-    real_home = Path(os.environ.get("USERPROFILE") or os.environ.get("HOME") or "")
-    real_claude = real_home / ".claude" if real_home else None
-    if real_claude is not None and real_claude.is_dir():
-        dest_claude = tmp_home / ".claude"
-        dest_claude.mkdir(parents=True, exist_ok=True)
-        # Whitelist the small files that hold model / endpoint configuration
-        # (anything else - sessions, projects, caches, plans - is intentionally
-        # NOT copied so we don't leak prior task context).
-        for fname in ("settings.json", "config.json"):
-            src_f = real_claude / fname
-            if src_f.exists() and src_f.is_file():
-                try:
-                    shutil.copy2(src_f, dest_claude / fname)
-                except OSError:
-                    pass
-
-    env["HOME"] = str(tmp_home)
-    env["USERPROFILE"] = str(tmp_home)  # Windows
-    env["PYTHONIOENCODING"] = "utf-8"
-    # Pin our own myevoskill on PYTHONPATH.
+    env.update(env_overrides_for(sandbox))
+    # Pin our own myevoskill on PYTHONPATH so the child can `import myevoskill`
+    # without needing the package to be pip-installed.
     env["PYTHONPATH"] = os.pathsep.join(
         [str((repo_root / "src").resolve()), env.get("PYTHONPATH", "")]
     )
@@ -152,6 +146,7 @@ def _run_one_subprocess(
             continue
         cmd.extend([flag, str(v)])
 
+    keep_sandbox = bool(extra_run_args.get("keep-sandbox"))
     started = time.time()
     try:
         completed = subprocess.run(
@@ -170,9 +165,9 @@ def _run_one_subprocess(
         stderr = exc.stderr.decode("utf-8", "replace") if exc.stderr else ""
         ok = False
     finally:
-        # Always nuke the per-run HOME so we don't bloat user disk with
-        # claude conversation caches.
-        shutil.rmtree(tmp_home, ignore_errors=True)
+        # Always release the per-run sandbox so we don't bloat user disk
+        # with stale claude conversation caches; honour --keep-sandbox.
+        cleanup_isolated_home(sandbox, keep=keep_sandbox)
 
     runtime = time.time() - started
     summary_path: str | None = None

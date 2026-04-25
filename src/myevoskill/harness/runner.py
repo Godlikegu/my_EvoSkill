@@ -48,6 +48,11 @@ from ..workspace.builder import WorkspaceBuild, build_workspace
 from .hooks import make_post_tool_use_hook, make_pre_tool_use_hook
 from .plan_guard import PlanGuard
 from .prompts import SYSTEM_PROMPT, feedback_user_prompt, initial_user_prompt
+from .sandbox import (
+    cleanup_isolated_home,
+    env_overrides_for,
+    make_isolated_home,
+)
 from .trajectory import TrajectoryWriter
 
 logger = logging.getLogger(__name__)
@@ -72,6 +77,8 @@ class HarnessConfig:
     show_metric_status: bool = False  # if True, tell agent which metric failed (still no values)
     keep_workspace_on_success: bool = False
     log_root: Path | None = None  # default: artifacts/logs/<task>/<run_id>
+    sandbox_root: Path | None = None  # default: artifacts/sandboxes/<task>/<run>/home
+    keep_sandbox: bool = False  # opt-out of post-run sandbox cleanup
 
 
 @dataclass
@@ -124,6 +131,25 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
         python_executable=config.judge_python,
     )
 
+    # Per-run isolated $HOME so the spawned `claude` Node CLI does not write
+    # into the operator's real ~/.claude (avoids state leakage between tasks
+    # *and* avoids bloating user disk with conversation caches). Cleaned up
+    # unconditionally in the finally below unless --keep-sandbox is set.
+    sandbox = make_isolated_home(
+        repo_root=repo_root,
+        task_id=task_id,
+        run_id=run_id,
+        sandbox_root=Path(config.sandbox_root) if config.sandbox_root else None,
+    )
+    trajectory.env_feedback(
+        0,
+        "sandbox_ready",
+        {
+            "home_root": str(sandbox.home_root),
+            "seeded_files": list(sandbox.seeded_files),
+        },
+    )
+
     # Mutable round counter exposed to the hooks via closure.
     round_state = {"round": 1}
 
@@ -164,10 +190,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
             "PreToolUse": [HookMatcher(matcher="*", hooks=[pre_hook])],
             "PostToolUse": [HookMatcher(matcher="*", hooks=[post_hook])],
         },
-        env={
-            # Force pinned Python so any subprocess Bash uses the same env.
-            "PYTHONIOENCODING": "utf-8",
-        },
+        env=env_overrides_for(sandbox),
         setting_sources=None,  # don't pick up user-level CLAUDE.md etc.
     )
 
@@ -176,8 +199,9 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
     final_verdict: str | None = None
     error_message: str | None = None
 
-    async with ClaudeSDKClient(options=options) as client:
-        for round_index in range(1, config.max_rounds + 1):
+    try:
+      async with ClaudeSDKClient(options=options) as client:
+       for round_index in range(1, config.max_rounds + 1):
             round_state["round"] = round_index
             elapsed = time.time() - started
             remaining = max(1, config.budget_seconds - int(elapsed))
@@ -256,9 +280,14 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
             if (time.time() - started) >= config.budget_seconds:
                 final_verdict = "TIMEOUT"
                 break
-        else:
+       else:
             # max_rounds exhausted without PASS
             final_verdict = feedback_history[-1]["feedback"]["verdict"] if feedback_history else INVALID
+    finally:
+        # Always wipe (or keep, with --keep-sandbox) the per-run isolated
+        # $HOME so we never leak state between tasks. We do this in finally
+        # so a crashed agent or SDK exception still cleans up.
+        cleanup_isolated_home(sandbox, keep=bool(config.keep_sandbox))
 
     runtime = time.time() - started
     summary = {

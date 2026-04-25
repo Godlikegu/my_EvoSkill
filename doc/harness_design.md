@@ -4,22 +4,49 @@ This document describes the design of the **clean** Claude-Code harness that
 lives under `MyEvoSkill/src/myevoskill/`.  It supersedes the legacy `executor.py`
 and ad-hoc scripts that were quarantined on the `01_feedback_iteration` branch.
 
-## 0. Current module layout (post-cleanup, master @ 46cef74)
+## 0. Current module layout (post-cleanup, master @ 0f458bb)
 
 ```
 src/myevoskill/
 ├── __init__.py             re-exports the live API only
 ├── cli.py                  register-task | run-task | run-batch
 ├── registration.py         deterministic v2-only manifest builder (no LLM)
-├── concurrency/pool.py     run_tasks_parallel
+├── concurrency/pool.py     run_tasks_parallel (uses harness.sandbox)
 ├── harness/                runner.py + hooks.py + plan_guard.py + prompts.py
-│                           + trajectory.py
+│                           + trajectory.py + sandbox.py
 ├── judge/bridge.py         JudgeRunner (subprocess) + JudgeFeedback
-├── workspace/              policy.py + builder.py + agent_spec.py
+├── workspace/              policy.py + bash_parser.py + builder.py + agent_spec.py
 └── (judge-adapter API, frozen for tasks/*/evaluation/judge_adapter.py)
     models.py · judging.py · task_contract.py · task_runtime.py
     resource_probe.py
 ```
+
+### `harness/sandbox.py` — per-run isolated `$HOME`
+
+The Claude CLI persists conversation history, plan sidecars, MCP cache and
+other state under the operator's real `~/.claude/`.  We never want that:
+
+* it leaks state between tasks (and between concurrent runs of the same task);
+* it bloats the user's disk with hundreds of MB per long task;
+* it makes deterministic cleanup hard.
+
+`sandbox.py` provides three primitives shared by both `harness/runner.py`
+(in-process SDK) and `concurrency/pool.py` (subprocess child):
+
+* `make_isolated_home(repo_root, task_id, run_id, sandbox_root=None)` —
+  creates `artifacts/sandboxes/<task_id>/<run_id>/home`, wipes any
+  pre-existing contents, then **whitelist-seeds** only
+  `~/.claude/{settings.json, config.json}` from the real HOME so that
+  3rd-party gateway URLs and the user's chosen model are preserved.
+  Critically, `~/.claude/projects/` and `~/.claude/sessions/` are
+  **never** copied — that's the leak vector for prior conversation
+  history, and is covered by `tests/test_sandbox_isolation.py`.
+* `env_overrides_for(home)` — returns the `HOME` / `USERPROFILE` /
+  `PYTHONIOENCODING` env-var dict to hand to `ClaudeAgentOptions(env=...)`
+  or `subprocess.run(env=...)`.
+* `cleanup_isolated_home(home, keep=False)` — invoked from a `finally`
+  block so a crashed agent or SDK exception still releases the sandbox;
+  `--keep-sandbox` opts out for debugging.
 
 The five "judge-adapter API" modules at the bottom of the tree are **frozen**:
 they are imported by every `tasks/*/evaluation/judge_adapter.py` and may only

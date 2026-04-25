@@ -128,6 +128,8 @@ def cmd_run_task(args: argparse.Namespace) -> int:
         judge_python=args.judge_python,
         show_metric_status=bool(args.show_metric_status),
         keep_workspace_on_success=bool(args.keep_workspace),
+        sandbox_root=Path(args.sandbox_root) if args.sandbox_root else None,
+        keep_sandbox=bool(args.keep_sandbox),
     )
 
     outcome = run_task_once(config)
@@ -172,6 +174,8 @@ def cmd_run_batch(args: argparse.Namespace) -> int:
         extra["model"] = resolved_model
     if args.judge_python:
         extra["judge-python"] = args.judge_python
+    if args.keep_sandbox:
+        extra["keep-sandbox"] = True
 
     outcomes = run_tasks_parallel(
         repo_root=repo_root,
@@ -229,6 +233,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--judge-python", default=None)
     p_run.add_argument("--show-metric-status", action="store_true")
     p_run.add_argument("--keep-workspace", action="store_true")
+    p_run.add_argument("--keep-sandbox", action="store_true",
+                       help="do not wipe the per-run isolated $HOME on exit (debug only)")
+    p_run.add_argument("--sandbox-root", default=None,
+                       help="override sandbox dir (default: artifacts/sandboxes/<task>/<run>/home)")
     p_run.add_argument("--json", action="store_true", help="emit one JSON summary line at end")
     p_run.set_defaults(func=cmd_run_task)
 
@@ -242,6 +250,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_batch.add_argument("--max-turns-per-round", type=int, default=60)
     p_batch.add_argument("--model", default=None)
     p_batch.add_argument("--judge-python", default=None)
+    p_batch.add_argument("--keep-sandbox", action="store_true",
+                         help="propagate --keep-sandbox to every child run-task")
     p_batch.set_defaults(func=cmd_run_batch)
 
     return parser
