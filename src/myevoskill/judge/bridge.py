@@ -78,7 +78,21 @@ class JudgeRunner:
         self.manifest = dict(manifest)
         self.log_root = Path(log_root)
         self.log_root.mkdir(parents=True, exist_ok=True)
-        self.python_executable = python_executable or sys.executable
+        # Resolution order for the judge subprocess interpreter:
+        #   1. explicit ``python_executable`` argument from the harness;
+        #   2. ``runtime_env.python_executable`` recorded in the manifest
+        #      (i.e. the per-task venv built by scripts/setup_task_env.sh);
+        #   3. ``sys.executable`` of the harness process (last-resort
+        #      fallback for tasks that don't need extra deps).
+        manifest_py = ""
+        runtime_env = self.manifest.get("runtime_env") or {}
+        if isinstance(runtime_env, Mapping):
+            manifest_py = str(runtime_env.get("python_executable") or "").strip()
+        self.python_executable = (
+            python_executable
+            or (manifest_py if manifest_py and Path(manifest_py).exists() else "")
+            or sys.executable
+        )
         self.timeout_seconds = int(timeout_seconds)
 
     # ------------------------------------------------------------------ run

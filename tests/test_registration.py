@@ -261,6 +261,100 @@ def test_public_main_py_is_forced_private(tmp_path: Path):
     assert "main.py" in pp["public_data_denylist"]
 
 
+# ----------------------------------------------------------- runtime_env block
+
+
+def _write_setup_state(repo_root: Path, task_id: str, **fields) -> Path:
+    """Write the runtime_logs/setup/<task_id>.json file the bash setup
+    script would have produced."""
+    setup_dir = repo_root / "runtime_logs" / "setup"
+    setup_dir.mkdir(parents=True, exist_ok=True)
+    state_path = setup_dir / f"{task_id}.json"
+    state_path.write_text(json.dumps(fields), encoding="utf-8")
+    return state_path
+
+
+def test_runtime_env_picks_up_per_task_venv(tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    tasks_root = tmp_path / "tasks"
+    repo_root.mkdir()
+    tasks_root.mkdir()
+    _write_v2_task(tasks_root, "demo")
+    venv_python = tmp_path / "fake_venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("# fake interpreter\n", encoding="utf-8")
+    _write_setup_state(
+        repo_root,
+        "demo",
+        ready=True,
+        python_executable=str(venv_python),
+        requirements_path=str(tasks_root / "demo" / "requirements.txt"),
+        requirements_sha256="deadbeef",
+        created_at_unix=12345,
+    )
+
+    result = register_task(
+        repo_root=repo_root, task_id="demo", tasks_root=tasks_root, force=True
+    )
+    runtime_env = result.manifest["runtime_env"]
+    assert runtime_env["backend"] == "per_task_venv"
+    assert runtime_env["ready"] is True
+    assert runtime_env["python_executable"] == str(venv_python)
+    assert runtime_env["requirements_sha256"] == "deadbeef"
+
+
+def test_runtime_env_falls_back_when_state_missing(tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    tasks_root = tmp_path / "tasks"
+    repo_root.mkdir()
+    tasks_root.mkdir()
+    _write_v2_task(tasks_root, "demo")
+
+    result = register_task(repo_root=repo_root, task_id="demo", tasks_root=tasks_root)
+    runtime_env = result.manifest["runtime_env"]
+    assert runtime_env["backend"] == "harness_python_fallback"
+    assert runtime_env["ready"] is True
+    assert runtime_env["python_executable"] == ""
+
+
+def test_require_task_env_refuses_when_missing(tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    tasks_root = tmp_path / "tasks"
+    repo_root.mkdir()
+    tasks_root.mkdir()
+    _write_v2_task(tasks_root, "demo")
+
+    with pytest.raises(RegistrationError, match="per-task venv state"):
+        register_task(
+            repo_root=repo_root,
+            task_id="demo",
+            tasks_root=tasks_root,
+            require_task_env=True,
+        )
+
+
+def test_require_task_env_refuses_when_not_ready(tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    tasks_root = tmp_path / "tasks"
+    repo_root.mkdir()
+    tasks_root.mkdir()
+    _write_v2_task(tasks_root, "demo")
+    _write_setup_state(
+        repo_root,
+        "demo",
+        ready=False,
+        error="pip install failed",
+    )
+
+    with pytest.raises(RegistrationError, match="not ready"):
+        register_task(
+            repo_root=repo_root,
+            task_id="demo",
+            tasks_root=tasks_root,
+            require_task_env=True,
+        )
+
+
 def test_public_plan_dir_is_forced_private(tmp_path: Path):
     """Author plans under ``plan/`` are private brainstorm; never expose them."""
     repo_root = tmp_path / "repo"

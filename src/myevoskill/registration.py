@@ -258,26 +258,88 @@ def _primary_output_path(contract: Mapping[str, Any]) -> str:
     return path
 
 
+SETUP_STATE_REL = "runtime_logs/setup/{task_id}.json"
+
+
+def _load_task_env_state(repo_root: Path, task_id: str) -> dict[str, Any] | None:
+    """Read the per-task venv state file written by setup_task_env.sh.
+
+    Returns the parsed dict, or None when the state file does not exist
+    (in that case the task has *not* been provisioned through the
+    standard bash workflow). Malformed JSON is treated as "not ready"
+    rather than raising, so a stale file from a crashed setup never
+    blocks registration silently.
+    """
+
+    state_path = repo_root / SETUP_STATE_REL.format(task_id=task_id)
+    if not state_path.exists():
+        return None
+    try:
+        return json.loads(state_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"ready": False, "error": "state file is not valid JSON"}
+
+
 def _detect_runtime_env(
     *,
     repo_root: Path,
     task_root: Path,
     task_id: str,
+    require_task_env: bool = False,
 ) -> dict[str, Any]:
-    """Return a *minimal* runtime_env block.
+    """Return the runtime_env block for the manifest.
 
-    The full task-environment build (per-task venv with pip install) is
-    deliberately *not* triggered here: registration is fast and offline.
-    Environment provisioning is the user's responsibility (see
-    ``scripts/setup_env.sh``); the harness will discover the per-task venv
-    at run time via ``runtime_env.python_executable`` if present, otherwise
-    fall back to ``sys.executable`` of the harness conda env.
+    Resolution order:
+
+    1. If ``runtime_logs/setup/<task_id>.json`` is present and its
+       ``ready`` flag is true, the per-task venv path is forwarded to
+       the harness (and the judge bridge) via ``python_executable``.
+    2. If the state file is missing or ``ready=false`` and
+       ``require_task_env`` is True, registration *refuses* with a
+       :class:`RegistrationError` telling the user to run
+       ``scripts/setup_task_env.sh <task_id>``.
+    3. If ``require_task_env`` is False (default for backwards-compat
+       and CI), we fall back to a "ready, no per-task venv" block --
+       the harness/judge will then re-use ``sys.executable``.
+
+    The returned dict is purely declarative; running the venv setup is
+    explicitly *not* a side effect of registration.
     """
 
     requirements = task_root / "requirements.txt"
+    state = _load_task_env_state(repo_root, task_id)
+
+    if state is not None and bool(state.get("ready")):
+        return {
+            "backend": "per_task_venv",
+            "ready": True,
+            "python_executable": str(state.get("python_executable") or ""),
+            "requirements_path": state.get("requirements_path")
+            or (str(requirements.resolve()) if requirements.exists() else None),
+            "requirements_sha256": state.get("requirements_sha256"),
+            "setup_state_path": str(
+                (repo_root / SETUP_STATE_REL.format(task_id=task_id)).resolve()
+            ),
+            "created_at_unix": state.get("created_at_unix"),
+        }
+
+    if require_task_env:
+        detail = (
+            f"missing"
+            if state is None
+            else f"not ready: {state.get('error') or 'see runtime_logs/setup/'}"
+        )
+        raise RegistrationError(
+            f"per-task venv state for task_id={task_id!r} is {detail}.\n"
+            f"Run:  bash scripts/setup_task_env.sh {task_id}\n"
+            f"and then re-run register-task. To bypass this check pass "
+            f"--no-require-task-env."
+        )
+
     env_block: dict[str, Any] = {
-        "backend": "conda_or_system",
+        "backend": "harness_python_fallback",
         "ready": True,
+        "python_executable": "",
     }
     if requirements.exists():
         env_block["requirements_path"] = str(requirements.resolve())
@@ -293,6 +355,7 @@ def register_task(
     task_id: str,
     tasks_root: Path | None = None,
     force: bool = False,
+    require_task_env: bool = False,
 ) -> RegistrationResult:
     """Build / refresh the registry manifest for a single task.
 
@@ -371,7 +434,10 @@ def register_task(
     runtime_layout = _build_runtime_layout(contract)
     primary_output = _primary_output_path(contract)
     runtime_env = _detect_runtime_env(
-        repo_root=repo_root, task_root=task_root, task_id=task_id
+        repo_root=repo_root,
+        task_root=task_root,
+        task_id=task_id,
+        require_task_env=require_task_env,
     )
 
     # source_task_dir is stored as a path relative to repo_root (so the
@@ -432,6 +498,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--tasks-root", default=None)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--require-task-env",
+        action="store_true",
+        help=(
+            "refuse to register the task unless runtime_logs/setup/<task>.json "
+            "is present and ready=true (use scripts/setup_task_env.sh first)"
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -440,6 +514,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             task_id=args.task_id,
             tasks_root=Path(args.tasks_root) if args.tasks_root else None,
             force=bool(args.force),
+            require_task_env=bool(args.require_task_env),
         )
     except RegistrationError as exc:
         print(f"registration failed: {exc}", file=__import__("sys").stderr)

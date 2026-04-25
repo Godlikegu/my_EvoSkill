@@ -100,6 +100,7 @@ def cmd_register_task(args: argparse.Namespace) -> int:
             task_id=args.task_id,
             tasks_root=Path(args.tasks_root) if args.tasks_root else None,
             force=bool(args.force),
+            require_task_env=bool(getattr(args, "require_task_env", False)),
         )
     except RegistrationError as exc:
         print(f"registration failed: {exc}", file=sys.stderr)
@@ -220,6 +221,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_reg.add_argument("--tasks-root", default=None,
                        help="Override tasks/ root (defaults to <repo_root>/../tasks)")
     p_reg.add_argument("--force", action="store_true")
+    p_reg.add_argument(
+        "--require-task-env",
+        action="store_true",
+        help=(
+            "Refuse to register unless runtime_logs/setup/<task_id>.json "
+            "reports a ready per-task venv (produced by setup_task_env.sh)."
+        ),
+    )
     p_reg.set_defaults(func=cmd_register_task)
 
     # run-task
