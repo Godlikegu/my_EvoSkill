@@ -43,6 +43,37 @@ def _load_manifest(repo_root: Path, task_id: str) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _resolve_default_model(cli_model: str | None) -> str | None:
+    """Resolve the model name with precedence:
+
+    1. ``--model`` flag (explicit override).
+    2. ``MYEVOSKILL_MODEL`` environment variable.
+    3. ``model`` field in ``~/.claude/settings.json`` (so the harness uses
+       the same model the user already configured for the Claude CLI,
+       e.g. ``Vendor2/Claude-4.6-opus`` on a 3rd-party gateway).
+    4. None - let the SDK pick its own default.
+    """
+
+    import os as _os
+
+    if cli_model:
+        return cli_model
+    env_model = _os.environ.get("MYEVOSKILL_MODEL")
+    if env_model:
+        return env_model
+    home = Path(_os.environ.get("USERPROFILE") or _os.environ.get("HOME") or "")
+    settings_path = home / ".claude" / "settings.json"
+    if settings_path.exists():
+        try:
+            data = json.loads(settings_path.read_text(encoding="utf-8"))
+            m = data.get("model")
+            if isinstance(m, str) and m.strip():
+                return m.strip()
+        except (OSError, json.JSONDecodeError):
+            pass
+    return None
+
+
 def _setup_logging(verbose: bool) -> None:
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
@@ -73,13 +104,16 @@ def cmd_run_task(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).resolve()
     manifest = _load_manifest(repo_root, args.task_id)
 
+    resolved_model = _resolve_default_model(args.model)
+    if resolved_model:
+        logger.info("using model: %s", resolved_model)
     config = HarnessConfig(
         repo_root=repo_root,
         manifest=manifest,
         max_rounds=args.max_rounds,
         budget_seconds=args.budget_seconds,
         max_turns_per_round=args.max_turns_per_round,
-        model=args.model,
+        model=resolved_model,
         judge_python=args.judge_python,
         show_metric_status=bool(args.show_metric_status),
         keep_workspace_on_success=bool(args.keep_workspace),
@@ -121,8 +155,10 @@ def cmd_run_batch(args: argparse.Namespace) -> int:
         "budget-seconds": args.budget_seconds,
         "max-turns-per-round": args.max_turns_per_round,
     }
-    if args.model:
-        extra["model"] = args.model
+    resolved_model = _resolve_default_model(args.model)
+    if resolved_model:
+        logger.info("using model: %s", resolved_model)
+        extra["model"] = resolved_model
     if args.judge_python:
         extra["judge-python"] = args.judge_python
 

@@ -141,7 +141,16 @@ def _run_one_subprocess(
         "--json",
     ]
     for k, v in extra_run_args.items():
-        cmd.extend([f"--{k.replace('_', '-')}", str(v)])
+        flag = f"--{k.replace('_', '-')}"
+        # Treat ``True`` / empty-string as a boolean flag (no value).
+        if isinstance(v, bool):
+            if v:
+                cmd.append(flag)
+            continue
+        if v is None or v == "":
+            cmd.append(flag)
+            continue
+        cmd.extend([flag, str(v)])
 
     started = time.time()
     try:
