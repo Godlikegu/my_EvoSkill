@@ -22,6 +22,14 @@ from typing import Iterable, List, Mapping, Sequence
 # Hard-coded substrings that must never appear in any path-shaped tool input,
 # regardless of the task. They cover the standard hidden assets and are merged
 # with any task-specific denylist coming from the registry manifest.
+# These cover hidden task assets (ground truth, evaluation harness, reference
+# solutions). They are matched as substrings against tool inputs *in addition
+# to* the workspace-boundary check.  We deliberately do NOT include patterns
+# like ``/main.py`` or ``/src/`` here, because those legitimately occur inside
+# the agent's own writable workspace (e.g. ``work/main.py``).  The workspace
+# builder is responsible for not copying source-task implementation files into
+# the workspace; if it does its job, the agent simply cannot reach them, and
+# we don't need a substring guard.
 GLOBAL_FORBIDDEN_SUBSTRINGS: tuple[str, ...] = (
     "ground_truth",
     "evaluation/",
@@ -32,14 +40,6 @@ GLOBAL_FORBIDDEN_SUBSTRINGS: tuple[str, ...] = (
     "task_contract.json",
     "task_contract.public.json",
     "judge_adapter.py",
-    "/main.py",
-    "\\main.py",
-    "/src/",
-    "\\src\\",
-    "/notebooks/",
-    "\\notebooks\\",
-    "/plan/",
-    "\\plan\\",
     "registration_contract.json",
 )
 
