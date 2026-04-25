@@ -1,0 +1,120 @@
+"""Trajectory writer.
+
+Records exactly the four event kinds we care about for skill distillation:
+
+    1. ``assistant_text``   - assistant prose / "thinking"
+    2. ``tool_call``         - tool name + sanitised input
+    3. ``tool_result``       - stdout/stderr or text returned by the tool
+    4. ``env_feedback``      - synthetic message we inject (judge result,
+                               plan-guard reminder, hook denial)
+
+Each event is one JSON line, written to ``trajectory.jsonl`` under the run's
+log root. The writer is process-safe via a per-instance ``threading.Lock``.
+
+The writer is the *only* place we serialise SDK message objects. Everything
+above it speaks plain dicts.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+import time
+from pathlib import Path
+from typing import Any, Mapping
+
+
+class TrajectoryWriter:
+    """Append-only JSONL writer for one run."""
+
+    def __init__(self, log_root: Path, run_id: str) -> None:
+        self.log_root = Path(log_root)
+        self.log_root.mkdir(parents=True, exist_ok=True)
+        self.path = self.log_root / "trajectory.jsonl"
+        self.run_id = run_id
+        self._lock = threading.Lock()
+        # Always start fresh; callers can copy old files if they want.
+        self.path.write_text("", encoding="utf-8")
+
+    # --------------------------------------------------------------- helpers
+
+    def _emit(self, kind: str, round_index: int, payload: Mapping[str, Any]) -> None:
+        record = {
+            "ts": time.time(),
+            "run_id": self.run_id,
+            "round": int(round_index),
+            "kind": kind,
+            **payload,
+        }
+        line = json.dumps(record, ensure_ascii=False, default=str)
+        with self._lock:
+            with self.path.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+
+    # --------------------------------------------------------------- writers
+
+    def assistant_text(self, round_index: int, text: str) -> None:
+        text = (text or "").strip()
+        if not text:
+            return
+        self._emit("assistant_text", round_index, {"text": text})
+
+    def assistant_thinking(self, round_index: int, text: str) -> None:
+        text = (text or "").strip()
+        if not text:
+            return
+        self._emit("assistant_thinking", round_index, {"text": text})
+
+    def tool_call(
+        self,
+        round_index: int,
+        tool_name: str,
+        tool_input: Mapping[str, Any],
+        tool_use_id: str | None = None,
+    ) -> None:
+        self._emit(
+            "tool_call",
+            round_index,
+            {
+                "tool": tool_name,
+                "tool_use_id": tool_use_id,
+                "input": _summarise_tool_input(tool_input),
+            },
+        )
+
+    def tool_result(
+        self,
+        round_index: int,
+        tool_use_id: str | None,
+        text: str,
+        is_error: bool,
+    ) -> None:
+        text = text or ""
+        if len(text) > 4000:
+            text = text[:2000] + f"\n... [{len(text) - 4000} chars truncated] ...\n" + text[-2000:]
+        self._emit(
+            "tool_result",
+            round_index,
+            {"tool_use_id": tool_use_id, "text": text, "is_error": bool(is_error)},
+        )
+
+    def env_feedback(self, round_index: int, kind: str, payload: Mapping[str, Any]) -> None:
+        self._emit("env_feedback", round_index, {"feedback_kind": kind, "payload": dict(payload)})
+
+    def round_marker(self, round_index: int, status: str, payload: Mapping[str, Any]) -> None:
+        self._emit("round_marker", round_index, {"status": status, "payload": dict(payload)})
+
+
+# --------------------------------------------------------------------- helpers
+
+
+def _summarise_tool_input(tool_input: Mapping[str, Any]) -> dict[str, Any]:
+    """Trim long string fields to keep the trajectory readable."""
+
+    out: dict[str, Any] = {}
+    for k, v in dict(tool_input or {}).items():
+        if isinstance(v, str) and len(v) > 2000:
+            out[k] = v[:1000] + f"\n... [{len(v) - 2000} chars truncated] ...\n" + v[-1000:]
+        else:
+            out[k] = v
+    return out
