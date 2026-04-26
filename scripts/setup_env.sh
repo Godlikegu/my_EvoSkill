@@ -4,6 +4,19 @@
 # Usage:  bash MyEvoSkill/scripts/setup_env.sh
 #
 # Idempotent: if the env already exists we run `conda env update`.
+#
+# Note: MyEvoSkill is intentionally NOT installed as a package (no
+# pyproject.toml, no `pip install -e .`). All entry points are run as
+# `python -m myevoskill.cli ...` with `PYTHONPATH=<repo>/src` prepended.
+# The companion scripts (register_task.sh / run_task.sh / run_smoke_three.sh)
+# do that for you. If you launch `python -m myevoskill.cli` by hand, run:
+#
+#     export PYTHONPATH="<repo>/MyEvoSkill/src:${PYTHONPATH:-}"
+#
+# Per-task runtime dependencies live in their OWN venvs under
+# `MyEvoSkill/.venvs/<task_id>/` and are provisioned by
+# `scripts/setup_task_env.sh <task_id>`. Conda is only used for this
+# harness env (`evoskill`).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,8 +39,15 @@ else
     conda env create -n "${ENV_NAME}" -f "${ENV_FILE}"
 fi
 
-conda activate "${ENV_NAME}"
-echo "[setup_env] installing MyEvoSkill in editable mode ..."
-pip install -e "${REPO_ROOT}"
+cat <<EOF
+[setup_env] OK.
 
-echo "[setup_env] OK. Activate with:  conda activate ${ENV_NAME}"
+Activate with:   conda activate ${ENV_NAME}
+Then export:     export PYTHONPATH="${REPO_ROOT}/src:\${PYTHONPATH:-}"
+                 (the helper scripts in MyEvoSkill/scripts/ do this for you)
+
+Three-step pipeline per task:
+  bash ${REPO_ROOT}/scripts/setup_task_env.sh <task_id>
+  bash ${REPO_ROOT}/scripts/register_task.sh <task_id>
+  bash ${REPO_ROOT}/scripts/run_task.sh      <task_id>
+EOF

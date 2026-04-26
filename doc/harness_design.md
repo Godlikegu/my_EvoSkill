@@ -383,3 +383,40 @@ concrete hack vectors (H1..H5): ground-truth substring, root-write,
 substitution / eval. All denials are routed through
 ``trajectory.env_feedback`` so the agent observes them as a normal turn
 (no silent kill).
+
+## 12. Deployment / packaging
+
+MyEvoSkill is intentionally **not** a pip-installable package. The
+repository has no `pyproject.toml`; pytest is configured via
+`pytest.ini` (`testpaths=tests`, `pythonpath=src`).
+
+Two-tier environment:
+
+- **Harness env (conda, name `evoskill`)** built from
+  `environment.yml` by `scripts/setup_env.sh`. This env hosts the CLI,
+  the SDK loop, the judge bridge, and the test suite. The CLI is run as
+  `python -m myevoskill.cli ...` with
+  `PYTHONPATH=$REPO_ROOT/src:$PYTHONPATH` exported; the
+  `setup_env.sh`, `register_task.sh`, `run_task.sh`, and
+  `run_smoke_three.sh` helpers all do this automatically.
+- **Per-task venv** at `MyEvoSkill/.venvs/<task_id>/`, built by
+  `scripts/setup_task_env.sh <task_id>` from
+  `tasks/<task_id>/requirements.txt`. The build status is recorded in
+  `runtime_logs/setup/<task_id>.json`. `register-task` reads that file
+  and refuses to mark the manifest live-ready unless `ready=true` (you
+  can override with `--no-task-env` for tasks with no extra deps).
+  The runner pre-pends this venv's `bin/` (POSIX) or `Scripts/`
+  (Windows) to `PATH` so the agent's `python` and the judge bridge's
+  default `python_executable` both resolve to the task venv.
+
+Three-step pipeline per task:
+
+```bash
+bash MyEvoSkill/scripts/setup_env.sh                 # once per checkout
+bash MyEvoSkill/scripts/setup_task_env.sh  <task_id> # once per task
+bash MyEvoSkill/scripts/register_task.sh   <task_id>
+bash MyEvoSkill/scripts/run_task.sh        <task_id>
+```
+
+Conda is **only** used for the `evoskill` harness env; tasks never see
+conda. There are no editable installs of MyEvoSkill itself.

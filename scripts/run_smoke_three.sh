@@ -3,36 +3,44 @@
 #
 # Tasks chosen for shape diversity + small data:
 #   - cars_spectroscopy   (1D spectral CARS unmixing)
-#   - ct_sparse_view      (2D CT sparse-view reconstruction)
 #   - mri_grappa          (multi-coil MRI parallel imaging)
+#   - xray_tooth_gridrec  (3D X-ray CT gridrec reconstruction)
 #
-# Per-task budget defaults to 600 s and max_rounds=3 so the smoke is cheap
-# (a few minutes total against Claude Sonnet, ~few-USD budget). Override by
+# Per-task budget defaults to 1800 s (30 min) and max_rounds=4 so the
+# smoke is meaningful without being prohibitively expensive. Override by
 # exporting BUDGET_SECONDS / MAX_ROUNDS / MAX_WORKERS.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_NAME="${EVOSKILL_ENV_NAME:-evoskill}"
-BUDGET_SECONDS="${BUDGET_SECONDS:-600}"
-MAX_ROUNDS="${MAX_ROUNDS:-3}"
+BUDGET_SECONDS="${BUDGET_SECONDS:-1800}"
+MAX_ROUNDS="${MAX_ROUNDS:-4}"
 MAX_WORKERS="${MAX_WORKERS:-3}"
 
 TASKS=(
     "cars_spectroscopy"
-    "ct_sparse_view"
     "mri_grappa"
+    "xray_tooth_gridrec"
 )
 
 # shellcheck disable=SC1091
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate "${ENV_NAME}"
 
+# Run as `python -m myevoskill.cli` without requiring `pip install -e .`.
+export PYTHONPATH="${REPO_ROOT}/src:${PYTHONPATH:-}"
+
 cd "${REPO_ROOT}"
+
+echo "[smoke] provisioning per-task venvs ..."
+for t in "${TASKS[@]}"; do
+    bash "${REPO_ROOT}/scripts/setup_task_env.sh" "${t}"
+done
 
 echo "[smoke] registering ${#TASKS[@]} tasks ..."
 for t in "${TASKS[@]}"; do
     python -m myevoskill.cli register-task \
-        --repo-root "${REPO_ROOT}" --task-id "${t}" --force
+        --repo-root "${REPO_ROOT}" --task-id "${t}" --force --require-task-env
 done
 
 echo "[smoke] running batch with budget=${BUDGET_SECONDS}s rounds=${MAX_ROUNDS} workers=${MAX_WORKERS}"

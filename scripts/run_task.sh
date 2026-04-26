@@ -23,6 +23,9 @@ ENV_NAME="${EVOSKILL_ENV_NAME:-evoskill}"
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate "${ENV_NAME}"
 
+# Run as `python -m myevoskill.cli` without requiring `pip install -e .`.
+export PYTHONPATH="${REPO_ROOT}/src:${PYTHONPATH:-}"
+
 cd "${REPO_ROOT}"
 
 # Sensible defaults; user may override by passing the same flag again.
