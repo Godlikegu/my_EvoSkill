@@ -213,8 +213,15 @@ is exactly the four channels required for skill distillation: model reply,
 model thinking, tool call, environment feedback (which subsumes tool result
 and judge verdict).
 
-A short human-readable `run_summary.json` is also written, plus the
-per-round `judge_result.json` (kept on disk for debugging but never shown to
+A short human-readable `run_summary.json` is also written (now including a
+`plan_history` array), plus the per-round `judge_result.json` and a fresh
+per-round `plan_round_NN.md` snapshot of `plan.md` (with an index in
+`plan_history.jsonl`: `{round, timestamp, sha256, size_bytes, diff_lines,
+note}`) so we can audit what the agent claimed to be trying each round even
+after the workspace is wiped on PASS. Snapshots are taken right after the
+agent finishes the round and before the judge runs, ensuring we capture the
+plan state the judge actually evaluated against. Kept on disk for debugging
+but never shown to
 the agent).  Workspaces are deleted on success unless `--keep-workspace`.
 
 ## 6. Concurrency + cleanup

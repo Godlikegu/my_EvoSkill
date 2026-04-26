@@ -47,6 +47,7 @@ from ..judge.bridge import JudgeFeedback, JudgeRunner, FAIL, INVALID, PASS
 from ..workspace.builder import WorkspaceBuild, build_workspace
 from .hooks import make_post_tool_use_hook, make_pre_tool_use_hook
 from .plan_guard import PlanGuard
+from .plan_history import PlanHistoryRecorder
 from .prompts import SYSTEM_PROMPT, feedback_user_prompt, initial_user_prompt
 from .sandbox import (
     cleanup_isolated_home,
@@ -123,6 +124,9 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
     # 1. Build the workspace.
     build = build_workspace(repo_root=repo_root, manifest=manifest, run_id=run_id)
     plan_guard = PlanGuard(build.agent_root)
+    plan_history = PlanHistoryRecorder(
+        workspace_root=build.agent_root, log_root=log_root
+    )
     trajectory = TrajectoryWriter(log_root, run_id)
     judge = JudgeRunner(
         repo_root=repo_root,
@@ -252,7 +256,24 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                 final_verdict = "ERROR"
                 break
 
-            # Round complete: invoke the judge.
+            # Round complete: snapshot plan.md *before* the judge runs so we
+            # capture exactly what the agent claimed it was attempting this
+            # round, even if the judge is what flips the run into TIMEOUT/
+            # ERROR on the very next round.
+            plan_snap = plan_history.snapshot(round_index)
+            trajectory.env_feedback(
+                round_index,
+                "plan_snapshot",
+                {
+                    "snapshot_path": str(plan_snap.snapshot_path),
+                    "size_bytes": plan_snap.size_bytes,
+                    "sha256": plan_snap.sha256,
+                    "diff_lines": plan_snap.diff_lines,
+                    "note": plan_snap.note,
+                },
+            )
+
+            # Now invoke the judge.
             judge_run = judge.run(
                 round_index=round_index,
                 run_id=run_id,
@@ -306,6 +327,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
         },
         "copied_files": list(build.copied_files),
         "skipped_files": list(build.skipped_files),
+        "plan_history": plan_history.read_history(),
         "error": error_message,
     }
     summary_path = log_root / "run_summary.json"
