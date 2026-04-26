@@ -100,8 +100,73 @@ def _read_readme(task_root: Path) -> str:
     return ""
 
 
+# --- ground-truth heading filter (commit F) --------------------------------
+#
+# We deliberately strip *only* ground-truth-referencing headings. Sections
+# that describe the metric, evaluation channel, or reference/solution
+# **methodology** are kept: leaking the *method* is the agent's job to
+# discover (and cribbing it back is fine - the task contract explicitly
+# permits the agent to study `meta_data.json` + README), but the actual
+# numerical ground truth (and any cell pointing at the ``ground_truth*``
+# artefact) must not appear.
+#
+# The headings below are matched case-insensitively, with optional leading
+# emoji / decorative punctuation tolerated, against H1..H6 markdown
+# headings only. Anything inside a matched heading up to (but not
+# including) the next heading at the same or shallower level is removed.
+
+_GROUND_TRUTH_HEADING_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^ground[\s\-_]*truth\b.*$", re.IGNORECASE),
+    re.compile(r"^reference\s+(answer|target|values?)\b.*$", re.IGNORECASE),
+    re.compile(r"^expected\s+(output|values?)\b.*$", re.IGNORECASE),
+)
+
+# Cells / rows whose presence in a markdown table flips us into
+# "drop the whole table" mode. We only drop tables that *literally*
+# point at the ground-truth artefact -- generic metric or threshold
+# tables are preserved.
+_GROUND_TRUTH_TABLE_NEEDLES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"ground[\s\-_]*truth", re.IGNORECASE),
+    re.compile(r"reference[_\s]+(?:answer|target|values?|outputs?)", re.IGNORECASE),
+    re.compile(r"\bexpected[_\s]+(?:output|values?)\b", re.IGNORECASE),
+)
+
+
+def _heading_is_ground_truth(title: str) -> bool:
+    """``True`` iff ``title`` looks like a ground-truth section heading.
+
+    Tolerates a leading emoji / punctuation prefix (e.g.
+    ``"🟥 Ground-Truth (private)"``).
+    """
+
+    cleaned = title.strip()
+    # strip any leading run of non-letter/non-digit characters (emoji,
+    # decorative bullets, brackets, ...). We keep going until we hit the
+    # first letter or end-of-string.
+    i = 0
+    while i < len(cleaned) and not (cleaned[i].isalnum()):
+        i += 1
+    cleaned = cleaned[i:]
+    return any(p.match(cleaned) for p in _GROUND_TRUTH_HEADING_PATTERNS)
+
+
 def _sanitise_readme(text: str, readme_policy: Mapping[str, object]) -> str:
-    """Strip references to hidden assets from the README."""
+    """Strip ground-truth references from the README.
+
+    Always removes (commit F default):
+
+    * any markdown heading whose title matches a ground-truth pattern,
+      together with the entire section it heads (down to the next heading
+      at the same or shallower level);
+    * any markdown table that contains at least one cell mentioning the
+      ground-truth artefact (header row or body row, case-insensitive).
+
+    Additionally honours the legacy contract-driven knobs:
+
+    * ``remove_path_patterns``  -- per-line regex denylist;
+    * ``remove_sections``       -- explicit extra section titles to drop;
+    * ``preserve_sections``     -- whitelist that wins over both above.
+    """
 
     if not text:
         return ""
@@ -128,8 +193,19 @@ def _sanitise_readme(text: str, readme_policy: Mapping[str, object]) -> str:
             continue
         extra.append(re.escape(sub))
 
+    # Order matters:
+    #   1. drop GT-referencing tables (whole-block) first, otherwise the
+    #      per-line filter below would replace the offending row with a
+    #      comment placeholder and break our table detection regex,
+    #      leaving the surrounding rows orphaned.
+    #   2. drop GT-headed sections.
+    #   3. apply the per-line denylist (paths, etc.) on what remains.
+    #   4. apply contract-level extra/preserve sections.
+    cleaned = _strip_ground_truth_tables(text)
+    cleaned = _strip_ground_truth_sections(cleaned, preserve_sections)
+
     cleaned_lines: list[str] = []
-    for line in text.splitlines():
+    for line in cleaned.splitlines():
         drop = False
         for pat in extra:
             try:
@@ -150,6 +226,33 @@ def _sanitise_readme(text: str, readme_policy: Mapping[str, object]) -> str:
 
 
 _SECTION_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+
+
+def _strip_ground_truth_sections(text: str, preserve_sections: Sequence[str]) -> str:
+    """Remove any heading recognised by ``_heading_is_ground_truth``."""
+
+    preserve = {s.strip().lower() for s in preserve_sections}
+    out: list[str] = []
+    skipping = False
+    skip_level = 0
+    for line in text.splitlines():
+        m = _SECTION_RE.match(line)
+        if m:
+            level = len(m.group(1))
+            title = m.group(2).strip()
+            if skipping and level <= skip_level:
+                skipping = False
+            if (
+                not skipping
+                and _heading_is_ground_truth(title)
+                and title.lower() not in preserve
+            ):
+                skipping = True
+                skip_level = level
+                continue
+        if not skipping:
+            out.append(line)
+    return "\n".join(out)
 
 
 def _strip_sections(
@@ -173,6 +276,49 @@ def _strip_sections(
                 continue
         if not skipping:
             out.append(line)
+    return "\n".join(out)
+
+
+_TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
+
+
+def _line_mentions_ground_truth(line: str) -> bool:
+    return any(p.search(line) for p in _GROUND_TRUTH_TABLE_NEEDLES)
+
+
+def _strip_ground_truth_tables(text: str) -> str:
+    """Remove markdown tables that reference ground-truth artefacts.
+
+    A markdown table is detected as a contiguous run of lines matching
+    ``^\\s*\\|.*\\|\\s*$``. If *any* row of that block (header, separator,
+    or body) contains a ground-truth needle we drop the whole block.
+    Plain prose in between tables is untouched -- callers must pair this
+    with ``_strip_ground_truth_sections`` to handle non-table mentions.
+    """
+
+    lines = text.splitlines()
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not _TABLE_ROW_RE.match(line):
+            out.append(line)
+            i += 1
+            continue
+
+        # Collect the contiguous table block.
+        j = i
+        while j < len(lines) and _TABLE_ROW_RE.match(lines[j]):
+            j += 1
+        block = lines[i:j]
+        block_has_gt = any(_line_mentions_ground_truth(b) for b in block)
+        if block_has_gt:
+            out.append(
+                "<!-- ground-truth-referencing table removed by workspace sanitiser -->"
+            )
+        else:
+            out.extend(block)
+        i = j
     return "\n".join(out)
 
 
