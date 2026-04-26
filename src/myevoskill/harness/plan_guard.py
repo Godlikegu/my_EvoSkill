@@ -1,19 +1,21 @@
 """plan.md update enforcement.
 
 Behaviour:
-    * Before any code-modifying tool (Write / Edit / Bash that writes a .py)
-      or before launching code (Bash python ...), the agent MUST have edited
-      ``plan.md`` *more recently* than the last code-modification.
-    * On the very first round we seed an empty plan.md the agent then has to
-      flesh out.
+    * Before the first code-modifying tool or code run in judge round N, the
+      agent MUST have authored a top-level ``## Round N`` section in
+      ``plan.md``.
+    * Once that round section exists, all code edits and runs within the same
+      judge round are allowed. A failed judge result advances the harness to
+      the next round, which requires a new ``## Round N+1`` section.
     * The check is implemented as part of the PreToolUse hook chain.
 
-The point is to keep plan.md and code in lock-step so the trajectory shows
-explicit reasoning before each new attempt.
+The point is to keep plan.md aligned with judge attempts without forcing a
+new plan entry before every single incremental edit inside one attempt.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Mapping
 
@@ -22,67 +24,69 @@ CODE_MODIFY_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 CODE_RUN_TOOLS = {"Bash"}
 
 PLAN_FILENAME = "plan.md"
-# The seed file is intentionally a *template only*: it explains the required
-# structure but does NOT pre-fill any "Round 1" entry.  The agent must author
-# its own Round 1 block before it is allowed to edit/run code (enforced by
-# PlanGuard.should_block).  This keeps the trajectory honest -- every plan
-# entry the agent produces is authentically its own reasoning, not a fill-in
-# of a template that was already on disk.
-PLAN_SEED = (
-    "# Plan\n\n"
-    "Update this file **before** every coding action.  Append a new section\n"
-    "for every iteration using the structure below.  The harness refuses to\n"
-    "run or edit code while this file is older than your most recent code\n"
-    "modification.\n\n"
-    "Required structure for every entry:\n\n"
-    "    ## Round <N> - <one line summary>\n"
-    "    **Hypothesis:** what you think is wrong (or, for Round 1, what you\n"
-    "    think the task needs).\n"
-    "    **Change:** the *single* concrete edit you will make next.\n"
-    "    **Verification:** the signal you will inspect after running\n"
-    "    (printed value, output shape, sanity-check on a small slice, ...).\n\n"
-    "Write your Round 1 block below before you touch any code.\n"
-)
+PLAN_SEED = "# Plan\n\n"
 
 
 class PlanGuard:
-    """Track plan.md vs code mtimes for one workspace."""
+    """Enforce one authored plan section per judge round."""
 
     def __init__(self, agent_root: Path) -> None:
         self.agent_root = Path(agent_root)
         self.plan_path = self.agent_root / PLAN_FILENAME
-        self._last_code_mtime: float = 0.0
         if not self.plan_path.exists():
             self.plan_path.write_text(PLAN_SEED, encoding="utf-8")
 
     # ----------------------------------------------------------- predicates
 
-    def _plan_mtime(self) -> float:
-        try:
-            return self.plan_path.stat().st_mtime
-        except OSError:
-            return 0.0
+    def has_round_plan(self, round_index: int) -> bool:
+        """Return True iff plan.md contains a top-level ``## Round N``.
 
-    def is_plan_fresh(self) -> bool:
-        return self._plan_mtime() >= self._last_code_mtime
+        The heading must start at column zero. Indented examples such as
+        ``    ## Round 1`` are intentionally ignored.
+        """
+
+        if round_index < 1:
+            return False
+        try:
+            text = self.plan_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+        pattern = re.compile(rf"(?m)^##\s+Round\s+{round_index}\b")
+        return bool(pattern.search(text))
+
+    def is_plan_fresh(self, round_index: int = 1) -> bool:
+        """Backwards-compatible predicate for tests/callers.
+
+        Freshness now means "the current judge round has a plan", not "plan.md
+        has a newer mtime than the last code edit".
+        """
+
+        return self.has_round_plan(round_index)
 
     def note_code_modification(self) -> None:
-        # Stamp a tick after the agent edited code so the next plan.md edit
-        # has to come *after* this point.
-        import time
+        """Deprecated no-op kept for older callers/tests.
 
-        self._last_code_mtime = max(self._last_code_mtime, time.time())
+        Plan freshness is round-based now; code edits inside a round do not
+        make the plan stale.
+        """
 
     # -------------------------------------------------------------- checks
 
-    def should_block(self, tool_name: str, tool_input: Mapping[str, object]) -> str | None:
+    def should_block(
+        self,
+        tool_name: str,
+        tool_input: Mapping[str, object],
+        *,
+        round_index: int = 1,
+    ) -> str | None:
         """Return a deny reason or None.
 
         Allow:
             * any non-code tool (Read, Glob, Grep, ...)
             * any tool whose target IS plan.md (the only way to refresh it)
         Deny:
-            * code-modifying / code-running tools while plan.md is stale
+            * code-modifying / code-running tools while this round lacks a
+              top-level ``## Round N`` entry
         """
 
         target = _tool_path(tool_input)
@@ -91,23 +95,23 @@ class PlanGuard:
             if target.endswith(PLAN_FILENAME):
                 # Editing plan.md itself is always fine.
                 return None
-            if not self.is_plan_fresh():
-                return self._reason("edit code")
+            if not self.has_round_plan(round_index):
+                return self._reason("edit code", round_index)
             return None
 
         if tool_name in CODE_RUN_TOOLS:
             command = str(tool_input.get("command") or "")
-            if _is_code_run(command) and not self.is_plan_fresh():
-                return self._reason("run code")
+            if _is_code_run(command) and not self.has_round_plan(round_index):
+                return self._reason("run code", round_index)
         return None
 
     @staticmethod
-    def _reason(action: str) -> str:
+    def _reason(action: str, round_index: int) -> str:
         return (
-            f"Plan check failed: you must update `plan.md` (with a new"
-            f" 'Round N' entry describing your hypothesis, change, and"
-            f" verification) before you {action}. Edit plan.md first, then"
-            f" retry."
+            f"Plan check failed: before you {action} in judge round"
+            f" {round_index}, update `plan.md` with a top-level"
+            f" `## Round {round_index}` entry describing your hypothesis,"
+            f" change, and verification. Then retry."
         )
 
 
@@ -125,17 +129,10 @@ def _tool_path(tool_input: Mapping[str, object]) -> str:
 def _is_code_run(command: str) -> bool:
     if not command:
         return False
-    head = command.strip().split()
-    if not head:
-        return False
-    first = head[0].lower()
-    return first in {
-        "python",
-        "python3",
-        "py",
-        "pytest",
-        "pip",
-        "uv",
-        "ipython",
-        "jupyter",
-    }
+    return bool(
+        re.search(
+            r"(?i)(?:^|[;&|]\s*)"
+            r"(?:python|python3|py|pytest|pip|uv|ipython|jupyter)\b",
+            command.strip(),
+        )
+    )

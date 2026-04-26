@@ -42,9 +42,13 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "conda_or_system",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777185169,
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\cars_spectroscopy\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\cars_spectroscopy\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\cars_spectroscopy\\requirements.txt",
+    "requirements_sha256": "764bff2f7690db93a217672706a42bb0d0b18b04561b8ce797a0b3b5adcde573",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\cars_spectroscopy.json"
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",

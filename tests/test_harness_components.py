@@ -14,16 +14,17 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import time
 from pathlib import Path
 
 import pytest
+from claude_agent_sdk import AssistantMessage, ToolUseBlock
 
 from myevoskill.harness.hooks import make_pre_tool_use_hook
 from myevoskill.harness.plan_guard import PLAN_FILENAME, PlanGuard
+from myevoskill.harness.prompts import feedback_user_prompt, initial_user_prompt
+from myevoskill.harness.runner import _record_message, agent_runtime_env_overrides
 from myevoskill.harness.trajectory import TrajectoryWriter
-from myevoskill.judge.bridge import FAIL, INVALID, PASS, JudgeRunner
+from myevoskill.judge.bridge import FAIL, INVALID, PASS, JudgeFeedback, JudgeRunner
 from myevoskill.workspace.policy import WorkspacePolicy
 
 
@@ -121,37 +122,126 @@ def test_plan_guard_seeds_plan(tmp_path: Path) -> None:
     root.mkdir()
     g = PlanGuard(root)
     assert (root / PLAN_FILENAME).exists()
-    assert g.is_plan_fresh()  # nothing edited yet
+    assert (root / PLAN_FILENAME).read_text(encoding="utf-8") == "# Plan\n\n"
+    assert not g.is_plan_fresh(round_index=1)
+    reason = g.should_block(
+        "Write",
+        {"file_path": str(root / "work" / "main.py")},
+        round_index=1,
+    )
+    assert reason is not None
+    assert "Round 1" in reason
 
 
-def test_plan_guard_blocks_stale(tmp_path: Path) -> None:
+def test_plan_guard_allows_repeated_code_actions_within_same_round(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "work").mkdir()
+    g = PlanGuard(root)
+    (root / "plan.md").write_text(
+        "# Plan\n\n"
+        "## Round 1 - initial solver\n"
+        "**Hypothesis:** use the public measurements.\n"
+        "**Change:** create work/main.py.\n"
+        "**Verification:** output shape check.\n",
+        encoding="utf-8",
+    )
+    assert g.is_plan_fresh(round_index=1)
+    assert (
+        g.should_block(
+            "Write",
+            {"file_path": str(root / "work" / "main.py")},
+            round_index=1,
+        )
+        is None
+    )
+    g.note_code_modification()
+    assert (
+        g.should_block(
+            "Edit",
+            {"file_path": str(root / "work" / "main.py")},
+            round_index=1,
+        )
+        is None
+    )
+    assert g.should_block("Bash", {"command": "python work/main.py"}, round_index=1) is None
+    assert (
+        g.should_block(
+            "Bash",
+            {"command": f'cd "{root}" && python -c "print(1)"'},
+            round_index=1,
+        )
+        is None
+    )
+
+
+def test_plan_guard_blocks_chained_python_before_round_one_plan(tmp_path: Path) -> None:
     root = tmp_path / "ws"
     root.mkdir()
     g = PlanGuard(root)
-    # Force plan.md mtime backwards so _last_code_mtime is strictly newer.
-    old_t = time.time() - 60
-    os.utime(root / "plan.md", (old_t, old_t))
-    g.note_code_modification()
-    reason = g.should_block("Write", {"file_path": str(root / "work" / "main.py")})
+    reason = g.should_block(
+        "Bash",
+        {"command": f'cd "{root}" && python -c "print(1)"'},
+        round_index=1,
+    )
+    assert reason is not None
+    assert "Round 1" in reason
+
+
+def test_plan_guard_requires_new_heading_after_round_advances(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    g = PlanGuard(root)
+    (root / "plan.md").write_text(
+        "# Plan\n\n## Round 1 - first\nready\n",
+        encoding="utf-8",
+    )
+    assert g.should_block("Write", {"file_path": str(root / "work" / "main.py")}, round_index=1) is None
+    reason = g.should_block(
+        "Write",
+        {"file_path": str(root / "work" / "main.py")},
+        round_index=2,
+    )
 
     assert reason is not None
-    assert "plan.md" in reason
+    assert "Round 2" in reason
     # Editing plan.md itself is always allowed.
-    assert g.should_block("Write", {"file_path": str(root / "plan.md")}) is None
+    assert g.should_block("Write", {"file_path": str(root / "plan.md")}, round_index=2) is None
 
 
-def test_plan_guard_allows_after_plan_refresh(tmp_path: Path) -> None:
+def test_plan_guard_allows_round_two_after_round_two_heading(tmp_path: Path) -> None:
     root = tmp_path / "ws"
     root.mkdir()
     g = PlanGuard(root)
-    g.note_code_modification()
-    time.sleep(0.01)
-    (root / "plan.md").write_text("# Plan\n## Round 2\nrefreshed", encoding="utf-8")
-    # Touch the file mtime forward, just in case.
-    new_t = time.time() + 1
-    os.utime(root / "plan.md", (new_t, new_t))
-    assert g.is_plan_fresh()
-    assert g.should_block("Write", {"file_path": str(root / "work" / "x.py")}) is None
+    (root / "plan.md").write_text(
+        "# Plan\n\n## Round 1\ninitial\n\n## Round 2\nrefreshed\n",
+        encoding="utf-8",
+    )
+    assert g.is_plan_fresh(round_index=2)
+    assert (
+        g.should_block(
+            "Write",
+            {"file_path": str(root / "work" / "x.py")},
+            round_index=2,
+        )
+        is None
+    )
+
+
+def test_plan_guard_ignores_indented_round_example(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    g = PlanGuard(root)
+    (root / "plan.md").write_text(
+        "# Plan\n\n    ## Round 1 - example only\n",
+        encoding="utf-8",
+    )
+    reason = g.should_block(
+        "Write",
+        {"file_path": str(root / "work" / "x.py")},
+        round_index=1,
+    )
+    assert reason is not None
 
 
 # ------------------------------------------------------------------ trajectory
@@ -177,6 +267,31 @@ def test_trajectory_writes_jsonl(tmp_path: Path) -> None:
         "round_marker",
     ]
     assert all(json.loads(l)["run_id"] == "r1" for l in lines)
+
+
+def test_record_message_does_not_duplicate_tool_calls(tmp_path: Path) -> None:
+    log_root = tmp_path / "logs"
+    tw = TrajectoryWriter(log_root, run_id="r1")
+    msg = AssistantMessage(
+        content=[ToolUseBlock(id="tool1", name="Read", input={"file_path": "README.md"})],
+        model="test",
+    )
+    _record_message(tw, 1, msg)
+    lines = (log_root / "trajectory.jsonl").read_text(encoding="utf-8").splitlines()
+    assert lines == []
+
+
+def test_clean_trajectory_filters_thinking_and_duplicate_tool_calls(tmp_path: Path) -> None:
+    log_root = tmp_path / "logs"
+    tw = TrajectoryWriter(log_root, run_id="r1")
+    tw.assistant_thinking(1, "private scratch")
+    tw.tool_call(1, "Read", {"file_path": "README.md"}, tool_use_id="tool1")
+    tw.tool_call(1, "Read", {"file_path": "README.md"}, tool_use_id="tool1")
+    tw.tool_result(1, "tool1", "ok", is_error=False)
+
+    events = tw.read_clean_events()
+    assert [e["kind"] for e in events] == ["tool_call", "tool_result"]
+    assert len([e for e in events if e["kind"] == "tool_call"]) == 1
 
 
 # ------------------------------------------------------------------- pre-hook
@@ -276,13 +391,9 @@ def test_pre_hook_allows_inside_read(tmp_path: Path) -> None:
     assert "hookSpecificOutput" not in out
 
 
-def test_pre_hook_blocks_code_when_plan_stale(tmp_path: Path) -> None:
+def test_pre_hook_blocks_code_when_round_plan_missing(tmp_path: Path) -> None:
     policy = _policy(tmp_path)
     plan_guard = PlanGuard(policy.agent_root)
-    # Force plan.md mtime backwards so _last_code_mtime is strictly newer.
-    old_t = time.time() - 60
-    os.utime(policy.agent_root / "plan.md", (old_t, old_t))
-    plan_guard.note_code_modification()
 
     traj = TrajectoryWriter(tmp_path / "logs", run_id="r1")
     hook = make_pre_tool_use_hook(
@@ -305,7 +416,62 @@ def test_pre_hook_blocks_code_when_plan_stale(tmp_path: Path) -> None:
         )
     )
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
-    assert "plan.md" in out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "Round 2" in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_pre_hook_allows_repeated_code_in_same_round_after_plan(tmp_path: Path) -> None:
+    policy = _policy(tmp_path)
+    plan_guard = PlanGuard(policy.agent_root)
+    (policy.agent_root / "plan.md").write_text(
+        "# Plan\n\n## Round 1 - implement\nready\n",
+        encoding="utf-8",
+    )
+    traj = TrajectoryWriter(tmp_path / "logs", run_id="r1")
+    hook = make_pre_tool_use_hook(
+        policy=policy,
+        plan_guard=plan_guard,
+        trajectory=traj,
+        round_index_getter=lambda: 1,
+    )
+
+    write_out = asyncio.run(
+        hook(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": str(policy.agent_root / "work" / "solver.py"),
+                    "content": "print(1)",
+                },
+            },
+            "use6",
+            None,
+        )
+    )
+    edit_out = asyncio.run(
+        hook(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(policy.agent_root / "work" / "solver.py"),
+                    "old_string": "1",
+                    "new_string": "2",
+                },
+            },
+            "use7",
+            None,
+        )
+    )
+    run_out = asyncio.run(
+        hook(
+            {"tool_name": "Bash", "tool_input": {"command": "python work/solver.py"}},
+            "use8",
+            None,
+        )
+    )
+
+    assert "hookSpecificOutput" not in write_out
+    assert "hookSpecificOutput" not in edit_out
+    assert "hookSpecificOutput" not in run_out
 
 
 # --------------------------------------------------------------- judge bridge
@@ -364,7 +530,63 @@ def test_judge_feedback_invalid(tmp_path: Path) -> None:
 
 def test_judge_invalid_helper(tmp_path: Path) -> None:
     r = _make_runner(tmp_path)
-    res = r._invalid("missing_judge_adapter", "no adapter")
+    res = r._invalid(3, "missing_judge_adapter", "no adapter")
     assert res.feedback.verdict == INVALID
     assert res.feedback.failure_tags == ("missing_judge_adapter",)
     assert res.success is False
+    persisted = tmp_path / "logs" / "judge_round_03.json"
+    assert persisted.exists()
+    data = json.loads(persisted.read_text(encoding="utf-8"))
+    assert data["judge_result"]["_detail"] == "no adapter"
+    assert "stdout_tail" in data
+    assert "stderr_tail" in data
+
+
+def test_judge_feedback_identifies_infrastructure_error() -> None:
+    fb = JudgeFeedback(verdict=INVALID, failure_tags=("judge_runtime_error",))
+    assert fb.is_infrastructure_error is True
+    user_fixable = JudgeFeedback(verdict=INVALID, failure_tags=("missing_output",))
+    assert user_fixable.is_infrastructure_error is False
+
+
+def test_agent_runtime_env_uses_manifest_venv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    scripts = tmp_path / ".venv" / "Scripts"
+    scripts.mkdir(parents=True)
+    python = scripts / "python.exe"
+    python.write_text("", encoding="utf-8")
+    monkeypatch.setenv("PATH", "OLDPATH")
+
+    env = agent_runtime_env_overrides(
+        {"runtime_env": {"ready": True, "python_executable": str(python)}}
+    )
+
+    assert env["PATH"].split(";")[0] == str(scripts)
+    assert env["VIRTUAL_ENV"] == str(tmp_path / ".venv")
+
+
+def test_agent_runtime_env_falls_back_without_ready_python(tmp_path: Path) -> None:
+    env = agent_runtime_env_overrides(
+        {"runtime_env": {"ready": False, "python_executable": str(tmp_path / "python")}}
+    )
+    assert env == {}
+
+
+def test_prompts_prefer_workspace_root_execution(tmp_path: Path) -> None:
+    prompt = initial_user_prompt(
+        task_id="demo",
+        primary_output_rel="output/x.npz",
+        workspace_root=tmp_path,
+        budget_seconds=60,
+    )
+    assert "python work/main.py" in prompt
+    assert "do not\n        `cd work`" in prompt
+
+
+def test_feedback_prompt_describes_previous_round() -> None:
+    prompt = feedback_user_prompt(
+        round_index=2,
+        feedback=JudgeFeedback(verdict=FAIL),
+        primary_output_rel="output/x.npz",
+    )
+    assert "Previous round judgement" in prompt
+    assert "now starting Round 2" in prompt

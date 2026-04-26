@@ -50,19 +50,23 @@ Workspace contract
 
 Iteration discipline
 ====================
-* Maintain `plan.md` at the workspace root. **Before every edit or run** you
-  must update `plan.md` with a new `## Round <N>` block stating your current
-  Hypothesis, Change, and Verification. The harness will refuse code edits or
-  Bash runs while `plan.md` is stale.
+* Maintain `plan.md` at the workspace root. At the start of each judge round,
+  before that round's first code edit or code run, add a top-level
+  `## Round <N>` block stating your Hypothesis, Change, and Verification.
+  Once the current round's block exists, you may freely iterate on code and
+  run checks within that same round.
 * The harness will tell you when an attempt failed; you will *not* be given
   the actual metric values or thresholds. Your only feedback is PASS / FAIL
   (or INVALID, when your output cannot be parsed).
-* On a FAIL, reflect inside `plan.md`, change *one* thing, and re-run.
+* On a FAIL or INVALID, reflect inside a new `## Round <N+1>` block before
+  making the next round's code changes.
 
 Coding style
 ============
 * Use the Python interpreter the harness pins via `PATH`. Do not install
   packages (`pip install` / `conda install` are blocked).
+* Run commands from the workspace root. Prefer `python work/main.py`; do not
+  `cd work` and then reach back into `../data` or `../output`.
 * Be deterministic: set seeds; write a single primary output file at the
   required path; print short progress lines so the trajectory is useful.
 * Failing fast (an early `assert`) is preferred over silently wrong output.
@@ -101,16 +105,16 @@ def initial_user_prompt(
         "        contract, then `README.md` and `meta_data.json` for the\n"
         "        human description and task parameters. Then list `data/`\n"
         "        to confirm the inputs you actually have.\n"
-        "Step 2: open `plan.md` (the harness has seeded a template-only file).\n"
-        "        **Author your Round 1 block from scratch** under the existing\n"
-        "        guidance: a one-line summary, your Hypothesis about what the\n"
-        "        task needs, the single concrete Change you will make, and\n"
-        "        the Verification signal you will inspect. The harness will\n"
-        "        refuse any code edit or `python ...` run while plan.md is\n"
-        "        older than your last code modification, so always update\n"
-        "        plan.md *first*.\n"
+        "Step 2: open `plan.md` and author a top-level `## Round 1` block\n"
+        "        before your first code edit or code run. Include a one-line\n"
+        "        summary, your Hypothesis about what the task needs, the concrete\n"
+        "        Change you will make this round, and the Verification signal you\n"
+        "        will inspect. The harness will refuse code edits and `python ...`\n"
+        "        runs until `## Round 1` exists.\n"
         "Step 3: implement in `work/`, run, and produce the primary output\n"
-        "        file at the path above with every required key.\n"
+        "        file at the path above with every required key. Always run\n"
+        "        from the workspace root, e.g. `python work/main.py`; do not\n"
+        "        `cd work`.\n"
         "When the output exists, reply with the single word `READY` so the\n"
         "judge can evaluate it."
     )
@@ -130,7 +134,10 @@ def feedback_user_prompt(
     failure bucket it landed in (FAIL vs INVALID) and let it reflect.
     """
 
-    head = f"Round {round_index} judgement: **{feedback.verdict}**.\n\n"
+    head = (
+        f"Previous round judgement: **{feedback.verdict}**.\n"
+        f"You are now starting Round {round_index}.\n\n"
+    )
 
     if feedback.verdict == "INVALID":
         body = (
@@ -141,8 +148,8 @@ def feedback_user_prompt(
             "  * a required array key is missing or has the wrong shape/dtype,\n"
             "  * the array contains NaN/Inf values.\n\n"
             "Re-read `agent_task_spec.json:output` for the exact required keys"
-            " and shapes, then update `plan.md` (add a new `## Round N+1`"
-            " block), fix the output, and try again."
+            f" and shapes, then update `plan.md` with a new top-level"
+            f" `## Round {round_index}` block, fix the output, and try again."
         )
     else:  # FAIL
         body = (
@@ -150,9 +157,10 @@ def feedback_user_prompt(
             " hidden threshold. You will not be told which metric or by how"
             " much. Reflect on what could be wrong with your method (model"
             " mis-fit, regularisation, scaling, sign, units, ...), update"
-            " `plan.md` with a new `## Round N+1` block describing the *one*"
-            " hypothesis you'll test next, change your code accordingly, run"
-            " it, and reply with `READY` when the new output is on disk."
+            f" `plan.md` with a new top-level `## Round {round_index}` block"
+            " describing the hypothesis you'll test next, change your code"
+            " accordingly, run it, and reply with `READY` when the new output"
+            " is on disk."
         )
 
     if show_metric_status and feedback.metric_status:

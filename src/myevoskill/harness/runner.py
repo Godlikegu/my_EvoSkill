@@ -38,9 +38,11 @@ from claude_agent_sdk import (
     SystemMessage,
     TextBlock,
     ThinkingBlock,
-    ToolUseBlock,
     UserMessage,
     ResultMessage,
+    TaskNotificationMessage,
+    TaskProgressMessage,
+    TaskStartedMessage,
 )
 
 from ..judge.bridge import JudgeFeedback, JudgeRunner, FAIL, INVALID, PASS
@@ -48,6 +50,7 @@ from ..workspace.builder import WorkspaceBuild, build_workspace
 from .hooks import make_post_tool_use_hook, make_pre_tool_use_hook
 from .plan_guard import PlanGuard
 from .plan_history import PlanHistoryRecorder
+from .process_reaper import ReapResult, make_run_markers, reap_descendant_processes
 from .prompts import SYSTEM_PROMPT, feedback_user_prompt, initial_user_prompt
 from .sandbox import (
     cleanup_isolated_home,
@@ -99,6 +102,63 @@ class HarnessOutcome:
     feedback_history: list[dict[str, Any]] = field(default_factory=list)
 
 
+@dataclass
+class ActiveTask:
+    """Claude Code background task tracked by SDK system messages."""
+
+    task_id: str
+    description: str = ""
+    tool_use_id: str | None = None
+    task_type: str | None = None
+    status: str = "started"
+
+
+class ActiveTaskRegistry:
+    """Small state holder for Claude Code local Bash task lifecycle."""
+
+    def __init__(self) -> None:
+        self._active: dict[str, ActiveTask] = {}
+
+    def start(self, message: TaskStartedMessage) -> ActiveTask:
+        task = ActiveTask(
+            task_id=message.task_id,
+            description=message.description,
+            tool_use_id=message.tool_use_id,
+            task_type=message.task_type,
+            status="started",
+        )
+        self._active[task.task_id] = task
+        return task
+
+    def progress(self, message: TaskProgressMessage) -> ActiveTask | None:
+        task = self._active.get(message.task_id)
+        if task is not None:
+            task.status = "running"
+        return task
+
+    def finish(self, message: TaskNotificationMessage) -> ActiveTask:
+        task = self._active.pop(
+            message.task_id,
+            ActiveTask(
+                task_id=message.task_id,
+                description=message.summary,
+                tool_use_id=message.tool_use_id,
+                status=message.status,
+            ),
+        )
+        task.status = message.status
+        return task
+
+    def active(self) -> list[ActiveTask]:
+        return list(self._active.values())
+
+    def clear(self) -> None:
+        self._active.clear()
+
+    def __bool__(self) -> bool:
+        return bool(self._active)
+
+
 # --------------------------------------------------------------------- runner
 
 
@@ -128,6 +188,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
         workspace_root=build.agent_root, log_root=log_root
     )
     trajectory = TrajectoryWriter(log_root, run_id)
+    task_registry = ActiveTaskRegistry()
     judge = JudgeRunner(
         repo_root=repo_root,
         manifest=manifest,
@@ -170,6 +231,22 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
         trajectory=trajectory, round_index_getter=round_getter
     )
 
+    agent_env = env_overrides_for(sandbox)
+    venv_env = agent_runtime_env_overrides(manifest)
+    if venv_env:
+        agent_env.update(venv_env)
+    else:
+        trajectory.env_feedback(
+            0,
+            "runtime_env_warning",
+            {
+                "reason": (
+                    "manifest has no ready runtime_env.python_executable; "
+                    "agent Bash will use inherited PATH"
+                )
+            },
+        )
+
     options = ClaudeAgentOptions(
         system_prompt=SYSTEM_PROMPT,
         cwd=build.agent_root,
@@ -194,7 +271,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
             "PreToolUse": [HookMatcher(matcher="*", hooks=[pre_hook])],
             "PostToolUse": [HookMatcher(matcher="*", hooks=[post_hook])],
         },
-        env=env_overrides_for(sandbox),
+        env=agent_env,
         setting_sources=None,  # don't pick up user-level CLAUDE.md etc.
     )
 
@@ -202,9 +279,12 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
     feedback_history: list[dict[str, Any]] = []
     final_verdict: str | None = None
     error_message: str | None = None
+    claude_pid: int | None = None
+    cleanup_errors: list[dict[str, Any]] = []
 
     try:
       async with ClaudeSDKClient(options=options) as client:
+       claude_pid = _client_transport_pid(client)
        for round_index in range(1, config.max_rounds + 1):
             round_state["round"] = round_index
             elapsed = time.time() - started
@@ -240,20 +320,77 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                     timeout=remaining,
                 )
                 async for message in _bounded_receive(client, deadline=started + config.budget_seconds):
-                    _record_message(trajectory, round_index, message)
+                    _record_message(
+                        trajectory,
+                        round_index,
+                        message,
+                        task_registry=task_registry,
+                    )
                     if isinstance(message, ResultMessage):
                         break
             except asyncio.TimeoutError:
                 trajectory.round_marker(round_index, "timeout", {"phase": "agent"})
-                final_verdict = "TIMEOUT"
+                clean = await _cleanup_agent_processes(
+                    client=client,
+                    task_registry=task_registry,
+                    trajectory=trajectory,
+                    round_index=round_index,
+                    claude_pid=claude_pid,
+                    run_id=run_id,
+                    workspace_root=build.agent_root,
+                    sandbox_root=sandbox.home_root,
+                    phase="agent_timeout",
+                    require_clean=True,
+                )
+                cleanup_errors.extend(clean.get("errors", []))
+                if clean["ok"]:
+                    final_verdict = "TIMEOUT"
+                else:
+                    final_verdict = "ERROR"
+                    error_message = "process cleanup failed after agent timeout"
                 break
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Agent round failed")
                 trajectory.round_marker(
                     round_index, "error", {"phase": "agent", "error": repr(exc)}
                 )
-                error_message = repr(exc)
+                clean = await _cleanup_agent_processes(
+                    client=client,
+                    task_registry=task_registry,
+                    trajectory=trajectory,
+                    round_index=round_index,
+                    claude_pid=claude_pid,
+                    run_id=run_id,
+                    workspace_root=build.agent_root,
+                    sandbox_root=sandbox.home_root,
+                    phase="agent_error",
+                    require_clean=True,
+                )
+                cleanup_errors.extend(clean.get("errors", []))
+                error_message = (
+                    repr(exc)
+                    if clean["ok"]
+                    else f"{repr(exc)}; process cleanup failed after agent error"
+                )
                 final_verdict = "ERROR"
+                break
+
+            clean = await _cleanup_agent_processes(
+                client=client,
+                task_registry=task_registry,
+                trajectory=trajectory,
+                round_index=round_index,
+                claude_pid=claude_pid,
+                run_id=run_id,
+                workspace_root=build.agent_root,
+                sandbox_root=sandbox.home_root,
+                phase="before_judge",
+                require_clean=True,
+            )
+            cleanup_errors.extend(clean.get("errors", []))
+            if not clean["ok"]:
+                final_verdict = "ERROR"
+                error_message = "process cleanup failed before judge"
                 break
 
             # Round complete: snapshot plan.md *before* the judge runs so we
@@ -293,6 +430,14 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                 {"verdict": judge_run.feedback.verdict, "failure_tags": list(judge_run.feedback.failure_tags)},
             )
 
+            if judge_run.feedback.is_infrastructure_error:
+                final_verdict = "ERROR"
+                error_message = (
+                    "judge infrastructure error: "
+                    + ",".join(judge_run.feedback.failure_tags)
+                )
+                break
+
             if judge_run.feedback.verdict == PASS:
                 final_verdict = PASS
                 break
@@ -304,7 +449,36 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
        else:
             # max_rounds exhausted without PASS
             final_verdict = feedback_history[-1]["feedback"]["verdict"] if feedback_history else INVALID
+       final_clean = await _cleanup_agent_processes(
+            client=client,
+            task_registry=task_registry,
+            trajectory=trajectory,
+            round_index=max(1, len(feedback_history)),
+            claude_pid=claude_pid,
+            run_id=run_id,
+            workspace_root=build.agent_root,
+            sandbox_root=sandbox.home_root,
+            phase="session_final",
+            require_clean=False,
+       )
+       cleanup_errors.extend(final_clean.get("errors", []))
     finally:
+        if claude_pid is not None:
+            final_reap = _reap_run_processes(
+                claude_pid=claude_pid,
+                run_id=run_id,
+                workspace_root=build.agent_root,
+                sandbox_root=sandbox.home_root,
+                kill=True,
+            )
+            if final_reap.killed or final_reap.remaining or final_reap.errors:
+                trajectory.env_feedback(
+                    max(1, len(feedback_history)),
+                    "process_cleanup_final",
+                    final_reap.to_dict(),
+                )
+                if not final_reap.ok:
+                    cleanup_errors.append(final_reap.to_dict())
         # Always wipe (or keep, with --keep-sandbox) the per-run isolated
         # $HOME so we never leak state between tasks. We do this in finally
         # so a crashed agent or SDK exception still cleans up.
@@ -328,6 +502,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
         "copied_files": list(build.copied_files),
         "skipped_files": list(build.skipped_files),
         "plan_history": plan_history.read_history(),
+        "process_cleanup_errors": cleanup_errors,
         "error": error_message,
     }
     summary_path = log_root / "run_summary.json"
@@ -367,8 +542,147 @@ async def _bounded_receive(client: ClaudeSDKClient, *, deadline: float):
             return
 
 
+async def _cleanup_agent_processes(
+    *,
+    client: ClaudeSDKClient,
+    task_registry: ActiveTaskRegistry,
+    trajectory: TrajectoryWriter,
+    round_index: int,
+    claude_pid: int | None,
+    run_id: str,
+    workspace_root: Path,
+    sandbox_root: Path,
+    phase: str,
+    require_clean: bool,
+) -> dict[str, Any]:
+    """Stop Claude background tasks and reap leftover run-scoped children."""
+
+    active = task_registry.active()
+    for task in active:
+        trajectory.env_feedback(
+            round_index,
+            "task_stop_requested",
+            {
+                "phase": phase,
+                "task_id": task.task_id,
+                "tool_use_id": task.tool_use_id,
+                "description": task.description,
+            },
+        )
+        try:
+            await client.stop_task(task.task_id)
+        except Exception as exc:  # noqa: BLE001
+            trajectory.env_feedback(
+                round_index,
+                "task_stop_error",
+                {"phase": phase, "task_id": task.task_id, "error": repr(exc)},
+            )
+
+    if active:
+        await _drain_task_notifications(
+            client=client,
+            task_registry=task_registry,
+            trajectory=trajectory,
+            round_index=round_index,
+            timeout_seconds=10.0,
+        )
+
+    reap = _reap_run_processes(
+        claude_pid=claude_pid,
+        run_id=run_id,
+        workspace_root=workspace_root,
+        sandbox_root=sandbox_root,
+        kill=True,
+    )
+    if reap.killed or reap.remaining or reap.errors or active:
+        trajectory.env_feedback(
+            round_index,
+            "process_cleanup_barrier",
+            {
+                "phase": phase,
+                "active_tasks_before": [asdict(t) for t in active],
+                **reap.to_dict(),
+            },
+        )
+    if active and reap.ok and claude_pid is not None:
+        # Claude may not emit a stopped notification for tasks killed by the
+        # OS-level fallback. Once no matching child processes remain, the
+        # registry should not block judge execution.
+        task_registry.clear()
+
+    ok = not require_clean or (not task_registry.active() and reap.ok)
+    errors = []
+    if not ok:
+        payload = {
+            "phase": phase,
+            "active_tasks": [asdict(t) for t in task_registry.active()],
+            **reap.to_dict(),
+        }
+        trajectory.env_feedback(round_index, "process_cleanup_failed", payload)
+        errors.append(payload)
+    return {"ok": ok, "errors": errors, "reap": reap.to_dict()}
+
+
+async def _drain_task_notifications(
+    *,
+    client: ClaudeSDKClient,
+    task_registry: ActiveTaskRegistry,
+    trajectory: TrajectoryWriter,
+    round_index: int,
+    timeout_seconds: float,
+) -> None:
+    deadline = time.time() + timeout_seconds
+    messages = client.receive_messages()
+    while task_registry.active() and time.time() < deadline:
+        remaining = max(0.05, deadline - time.time())
+        try:
+            message = await asyncio.wait_for(
+                messages.__anext__(),
+                timeout=remaining,
+            )
+        except (asyncio.TimeoutError, StopAsyncIteration):
+            return
+        _record_message(
+            trajectory,
+            round_index,
+            message,
+            task_registry=task_registry,
+        )
+
+
+def _client_transport_pid(client: ClaudeSDKClient) -> int | None:
+    transport = getattr(client, "_transport", None)
+    process = getattr(transport, "_process", None)
+    pid = getattr(process, "pid", None)
+    return int(pid) if pid is not None else None
+
+
+def _reap_run_processes(
+    *,
+    claude_pid: int | None,
+    run_id: str,
+    workspace_root: Path,
+    sandbox_root: Path,
+    kill: bool,
+) -> ReapResult:
+    markers = make_run_markers(
+        run_id=run_id,
+        workspace_root=workspace_root,
+        sandbox_root=sandbox_root,
+    )
+    return reap_descendant_processes(
+        root_pid=claude_pid,
+        markers=markers,
+        kill=kill,
+    )
+
+
 def _record_message(
-    trajectory: TrajectoryWriter, round_index: int, message: Any
+    trajectory: TrajectoryWriter,
+    round_index: int,
+    message: Any,
+    *,
+    task_registry: ActiveTaskRegistry | None = None,
 ) -> None:
     """Translate an SDK message into trajectory events."""
 
@@ -378,16 +692,48 @@ def _record_message(
                 trajectory.assistant_text(round_index, block.text)
             elif isinstance(block, ThinkingBlock):
                 trajectory.assistant_thinking(round_index, getattr(block, "thinking", "") or "")
-            elif isinstance(block, ToolUseBlock):
-                # tool_use events are also captured by the PreToolUse hook,
-                # but we additionally emit them here for trajectories where
-                # the hook didn't fire (e.g. denied at PermissionRequest).
-                trajectory.tool_call(
-                    round_index,
-                    getattr(block, "name", "") or "",
-                    dict(getattr(block, "input", {}) or {}),
-                    tool_use_id=getattr(block, "id", None),
-                )
+    elif isinstance(message, TaskStartedMessage):
+        task = task_registry.start(message) if task_registry is not None else None
+        trajectory.env_feedback(
+            round_index,
+            "task_started",
+            {
+                "task_id": message.task_id,
+                "tool_use_id": message.tool_use_id,
+                "description": message.description,
+                "task_type": message.task_type,
+                "active": asdict(task) if task else None,
+            },
+        )
+    elif isinstance(message, TaskProgressMessage):
+        task = task_registry.progress(message) if task_registry is not None else None
+        trajectory.env_feedback(
+            round_index,
+            "task_progress",
+            {
+                "task_id": message.task_id,
+                "tool_use_id": message.tool_use_id,
+                "description": message.description,
+                "last_tool_name": message.last_tool_name,
+                "usage": dict(message.usage or {}),
+                "active": asdict(task) if task else None,
+            },
+        )
+    elif isinstance(message, TaskNotificationMessage):
+        task = task_registry.finish(message) if task_registry is not None else None
+        trajectory.env_feedback(
+            round_index,
+            f"task_{message.status}",
+            {
+                "task_id": message.task_id,
+                "tool_use_id": message.tool_use_id,
+                "status": message.status,
+                "summary": message.summary,
+                "output_file": message.output_file,
+                "usage": dict(message.usage or {}),
+                "active": asdict(task) if task else None,
+            },
+        )
     elif isinstance(message, SystemMessage):
         # We don't surface system messages to the user; just record their
         # subtype for debugging.
@@ -401,3 +747,38 @@ def _record_message(
             if v is not None:
                 payload[attr] = v
         trajectory.round_marker(round_index, "agent_done", payload)
+
+
+def agent_runtime_env_overrides(manifest: Mapping[str, Any]) -> dict[str, str]:
+    """Return env overrides that make agent Bash use the per-task venv.
+
+    The judge may be explicitly overridden with ``--judge-python``; the agent
+    environment instead follows the registered task runtime. If no ready
+    per-task interpreter exists, callers should use the inherited PATH.
+    """
+
+    runtime_env = manifest.get("runtime_env") or {}
+    if not isinstance(runtime_env, Mapping):
+        return {}
+    if not bool(runtime_env.get("ready")):
+        return {}
+    python_executable = str(runtime_env.get("python_executable") or "").strip()
+    if not python_executable:
+        return {}
+    python_path = Path(python_executable)
+    if not python_path.exists():
+        return {}
+
+    bin_dir = python_path.parent
+    if bin_dir.name.lower() == "scripts":
+        venv_root = bin_dir.parent
+    elif bin_dir.name == "bin":
+        venv_root = bin_dir.parent
+    else:
+        venv_root = bin_dir.parent
+
+    old_path = os.environ.get("PATH", "")
+    return {
+        "PATH": str(bin_dir) + os.pathsep + old_path,
+        "VIRTUAL_ENV": str(venv_root),
+    }

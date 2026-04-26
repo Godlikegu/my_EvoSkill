@@ -13,5 +13,6 @@ runtime_logs/*
 artifacts/*
 !artifacts/.gitkeep
 .conda_env/
+.venvs/
 .pytest_tmp/
 .v/

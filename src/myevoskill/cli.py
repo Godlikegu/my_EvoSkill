@@ -8,6 +8,7 @@ Subcommands
                        one Claude session, multi-round with judge feedback).
 * ``run-batch``        Run several tasks concurrently in isolated subprocesses,
                        deleting per-run claude history afterwards.
+* ``setup-task-env``   Build the per-task venv consumed by registration.
 
 Everything else (compilation, visualisation, legacy bootstrap, ...) lives in
 its own module under ``myevoskill/`` and is invoked directly via
@@ -112,6 +113,27 @@ def cmd_register_task(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_setup_task_env(args: argparse.Namespace) -> int:
+    from .task_env import TaskEnvSetupError, setup_task_env
+
+    try:
+        result = setup_task_env(
+            repo_root=Path(args.repo_root),
+            task_id=args.task_id,
+            tasks_root=Path(args.tasks_root) if args.tasks_root else None,
+            force=bool(args.force),
+            base_python=Path(args.python) if args.python else None,
+        )
+    except TaskEnvSetupError as exc:
+        print(f"setup-task-env failed: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"setup-task-env: {result.task_id}")
+    print(f"  state:  {result.state_path}")
+    print(f"  python: {result.python_executable}")
+    return 0
+
+
 def cmd_run_task(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).resolve()
     manifest = _load_manifest(repo_root, args.task_id)
@@ -213,6 +235,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    # setup-task-env
+    p_env = sub.add_parser(
+        "setup-task-env",
+        help="create/update the per-task venv used by register-task",
+    )
+    p_env.add_argument("--task-id", required=True)
+    p_env.add_argument("--repo-root", default=".")
+    p_env.add_argument("--tasks-root", default=None,
+                       help="Override tasks/ root (defaults to <repo_root>/../tasks)")
+    p_env.add_argument("--force", action="store_true")
+    p_env.add_argument("--python", default=None,
+                       help="base Python executable used to create the venv")
+    p_env.set_defaults(func=cmd_setup_task_env)
 
     # register-task
     p_reg = sub.add_parser("register-task", help="register / refresh a task manifest")

@@ -49,6 +49,16 @@ class JudgeFeedback:
     failure_tags: tuple[str, ...] = field(default_factory=tuple)
     metric_status: dict[str, bool] = field(default_factory=dict)
 
+    @property
+    def is_infrastructure_error(self) -> bool:
+        infra_tags = {
+            "judge_runtime_error",
+            "judge_timeout",
+            "judge_unparsable",
+            "missing_judge_adapter",
+        }
+        return any(t.split(":", 1)[0] in infra_tags for t in self.failure_tags)
+
 
 @dataclass
 class JudgeRunResult:
@@ -109,6 +119,7 @@ class JudgeRunner:
         adapter_path = task_root / "evaluation" / "judge_adapter.py"
         if not adapter_path.exists():
             return self._invalid(
+                round_index,
                 "missing_judge_adapter",
                 f"judge_adapter.py not found at {adapter_path}",
             )
@@ -188,7 +199,9 @@ class JudgeRunner:
                 cwd=str(self.repo_root),
             )
         except subprocess.TimeoutExpired as exc:
-            return self._invalid("judge_timeout", f"judge timed out: {exc}")
+            return self._invalid(
+                round_index, "judge_timeout", f"judge timed out: {exc}"
+            )
         runtime = time.time() - start
 
         stdout = completed.stdout or ""
@@ -197,6 +210,7 @@ class JudgeRunner:
             parsed = json.loads(stdout)
         except json.JSONDecodeError:
             return self._invalid(
+                round_index,
                 "judge_unparsable",
                 f"judge stdout not JSON. stderr={stderr[-500:]}",
                 stdout=stdout,
@@ -205,6 +219,7 @@ class JudgeRunner:
 
         if not parsed.get("ok"):
             return self._invalid(
+                round_index,
                 "judge_runtime_error",
                 str(parsed.get("error", "")),
                 stdout=stdout,
@@ -256,10 +271,6 @@ class JudgeRunner:
             "missing_output",
             "missing_required_field",
             "invalid_output_schema",
-            "judge_runtime_error",
-            "judge_timeout",
-            "judge_unparsable",
-            "missing_judge_adapter",
         }
         if any(t.split(":", 1)[0] in invalid_tags for t in failure_tags):
             verdict = INVALID
@@ -279,6 +290,7 @@ class JudgeRunner:
 
     def _invalid(
         self,
+        round_index: int,
         tag: str,
         detail: str,
         *,
@@ -301,6 +313,7 @@ class JudgeRunner:
             stderr=stderr,
             success=False,
         )
+        self._persist(round_index, result)
         return result
 
     def _persist(self, round_index: int, result: JudgeRunResult) -> None:
@@ -309,6 +322,7 @@ class JudgeRunner:
             "judge_result": result.judge_result_raw,
             "runtime_seconds": result.runtime_seconds,
             "success": result.success,
+            "stdout_tail": result.stdout[-2000:],
             "stderr_tail": result.stderr[-2000:],
         }
         path = self.log_root / f"judge_round_{round_index:02d}.json"

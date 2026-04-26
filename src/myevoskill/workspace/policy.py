@@ -86,6 +86,7 @@ DANGEROUS_BASH_PATTERNS: tuple[str, ...] = (
     # workspace; we additionally forbid `cd <abs path>` and `cd ..` chains.
     r"(?i)(^|;|&&|\|\|)\s*cd\s+/",
     r"(?i)(^|;|&&|\|\|)\s*cd\s+[A-Za-z]:[\\/]",
+    r"(?i)(^|;|&&|\|\|)\s*cd\s+\.\.(?:$|\s|[\\/])",
     r"(?i)(^|;|&&|\|\|)\s*cd\s+\.\.(\\|/)?\.\.",
     # Cat/head/tail/less/more/type/grep/find on absolute paths leaving cwd.
     r"(?i)\b(cat|head|tail|less|more|type|grep|rg|find|ls|dir)\b[^\n]*\s(/|[A-Za-z]:[\\/])",

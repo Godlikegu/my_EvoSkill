@@ -28,7 +28,8 @@ Two-tier environment layout:
 - **Per-task venv (`MyEvoSkill/.venvs/<task_id>/`)** — isolated runtime
   used by the agent and the judge to execute the task's `main.py`,
   `judge_adapter.py`, etc. Provisioned by
-  `scripts/setup_task_env.sh <task_id>` from each task's
+  `python -m myevoskill.cli setup-task-env --task-id <task_id>` or the
+  shell wrapper `scripts/setup_task_env.sh <task_id>` from each task's
   `tasks/<task_id>/requirements.txt`.
 
 `pytest` is configured by `pytest.ini` (testpaths=`tests`,
@@ -42,6 +43,8 @@ pythonpath=`src`). The harness scripts export
 bash MyEvoSkill/scripts/setup_env.sh
 
 # 2. Provision the task's runtime venv (once per task / per requirements change)
+python -m myevoskill.cli setup-task-env --repo-root MyEvoSkill --task-id <task_id>
+# Equivalent shell wrapper on POSIX/Git Bash:
 bash MyEvoSkill/scripts/setup_task_env.sh <task_id>
 
 # 3. Register the task manifest and judge adapter
@@ -100,6 +103,15 @@ conda env):
 python -m myevoskill.cli run-task --repo-root . --task-id conventional_ptychography
 ```
 
+On Windows from the repository root, the direct module form is:
+
+```powershell
+$env:PYTHONPATH='src'
+.\.conda_env\python.exe -m myevoskill.cli setup-task-env --repo-root . --task-id conventional_ptychography
+.\.conda_env\python.exe -m myevoskill.cli register-task --repo-root . --task-id conventional_ptychography --force --require-task-env
+.\.conda_env\python.exe -m myevoskill.cli run-task --repo-root . --task-id conventional_ptychography --max-rounds 5 --budget-seconds 7200
+```
+
 To explicitly allow the Execution Agent to use the network during a
 live run, forward `--allow-network` through `run_task.sh`:
 
@@ -123,6 +135,12 @@ Live execution is gated by:
 - `manifest.runtime_env.ready == true`
 - a valid `task_contract.json`
 - a ready generated judge adapter
+
+During each live run, the Claude SDK harness keeps a single multi-round
+conversation, requires one authored `## Round N` plan before the first code
+action in each judge round, feeds back only pass/fail by default, and cleans up
+Claude Bash/Python child tasks before judging so stale background processes
+cannot keep mutating `output/`.
 
 ## Public Bundle Rules
 

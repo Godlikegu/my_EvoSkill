@@ -76,10 +76,30 @@ def test_h3_python_dash_c_open_read_outside_detected() -> None:
     assert "../tasks/mri_grappa/ground_truth/k.npy" in access.reads
 
 
+def test_h3_json_load_open_literal_is_not_dynamic() -> None:
+    cmd = "python -c \"import json; meta = json.load(open('data/meta_data.json')); print(meta)\""
+    access = parse_bash_writes(cmd)
+    assert "data/meta_data.json" in access.reads
+    assert access.dynamic == []
+
+
+def test_h3_json_load_file_object_is_not_dynamic() -> None:
+    cmd = "python -c \"import json; f = open('data/meta_data.json'); meta = json.load(f); f.close()\""
+    access = parse_bash_writes(cmd)
+    assert "data/meta_data.json" in access.reads
+    assert access.dynamic == []
+
+
 def test_h3_python_dash_c_dynamic_path_marked_dynamic() -> None:
     cmd = "python -c \"import sys; open(sys.argv[1], 'w').write('x')\""
     access = parse_bash_writes(cmd)
     assert access.dynamic, "non-literal open() must be marked dynamic"
+
+
+def test_h3_numpy_load_dynamic_path_marked_dynamic() -> None:
+    cmd = "python -c \"import numpy as np, sys; np.load(sys.argv[1])\""
+    access = parse_bash_writes(cmd)
+    assert access.dynamic, "non-literal np.load() must be marked dynamic"
 
 
 def test_h3_pathlib_write_text_detected() -> None:
@@ -142,6 +162,9 @@ def test_h5_tee_append_detected() -> None:
         "pip install requests",
         "cd /etc",
         "cd C:\\Windows",
+        "cd ..",
+        "cd ../x",
+        "echo ok && cd ..",
         "cd ../../..",
     ],
 )

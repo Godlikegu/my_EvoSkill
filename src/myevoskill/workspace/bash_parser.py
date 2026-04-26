@@ -59,7 +59,6 @@ _READ_FUNCS_POS: dict[tuple[str, ...], int] = {
     ("open",): 0,  # only when mode is read; handled in walker
     ("np", "load"): 0,
     ("numpy", "load"): 0,
-    ("json", "load"): 0,
 }
 
 

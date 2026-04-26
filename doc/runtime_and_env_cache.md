@@ -19,55 +19,49 @@ task-specific dependencies by default.
 
 ## Current Backend
 
-The current runtime backend is `venv_pip`.
+The current live backend is `per_task_venv`.
 
-For each task, MyEvoSkill builds or reuses a cached runtime environment by:
+For each task, MyEvoSkill builds or refreshes a task-local virtual environment
+under `.venvs/<task_id>` by:
 
 1. running the control-plane Python with `-m venv`
-2. running task-env Python with `-m pip install --upgrade pip setuptools wheel`
-3. running task-env Python with `-m pip install -r requirements.txt`
-4. recording `pip freeze`
+2. running task-env Python with `-m pip install -r requirements.txt` when the
+   task has a requirements file
+3. writing `runtime_logs/setup/<task_id>.json`
 
 The environment is considered ready only when:
 
 - the task-env Python executable exists
-- `install_report.json.success == true`
+- `runtime_logs/setup/<task_id>.json` reports `ready == true`
 
-## EnvSpec And Hashing
+## Setup State
 
-`EnvSpec` is hashed into `env_hash` using a stable serialized description.
+The task-facing state records:
 
-The task-facing fields that currently drive the hash are:
+- `backend = "per_task_venv"` in the registry manifest
+- resolved `python_executable`
+- `requirements_path`
+- `requirements_sha256`
+- setup state path
 
-- `backend = "venv_pip"`
-- host Python major/minor version
-- normalized `requirements.txt` lines
-- `task_id`
-- `task_family`
-
-Requirement normalization removes blank lines and comments while preserving the
-remaining requirement order.
+The requirements hash is used as an audit/debug signal for now; registration
+does not rebuild the environment and does not silently repair missing setup
+state when `--require-task-env` is used.
 
 ## Cache Layout
 
-Shared runtime environment caches live under:
+Task runtime environments live under:
 
-- `artifacts/env_cache/task_envs/<env_hash>/`
+- `.venvs/<task_id>/`
 
-Each task environment cache writes:
+Setup state and pip logs live under:
 
-- `env_spec.json`
-- `requirements.txt`
-- `install_report.json`
-- `pip_freeze.txt`
-- `build.log`
-- `venv/`
+- `runtime_logs/setup/<task_id>.json`
+- `runtime_logs/setup/<task_id>.pip.log`
 
-`install_report.json` records whether the build succeeded, the commands run,
-the resolved Python executable, and the paths to the log and freeze outputs.
-
-Additional cache directories are still maintained for dataset, artifact, and
-checkpoint reuse, but task runtime reuse is keyed by `env_hash`.
+Additional cache directories may still be maintained for dataset, artifact, and
+checkpoint reuse, but the live task Python runtime is the explicit per-task
+venv recorded in setup state.
 
 ## Workspace Policy
 
@@ -102,19 +96,22 @@ This ensures iteration does not reconfigure the environment from scratch.
 
 ## Register And Live Integration
 
-Confirmed registration eagerly builds or reuses the task runtime environment
-from `tasks/<task_id>/requirements.txt`.
+Task environment setup is an explicit step, not a side effect of registration:
+
+```bash
+python -m myevoskill.cli setup-task-env --repo-root . --task-id <task_id>
+python -m myevoskill.cli register-task --repo-root . --task-id <task_id> --require-task-env
+```
 
 Registration embeds the resulting metadata into the manifest as `runtime_env`,
 including:
 
 - `backend`
-- `env_hash`
 - `requirements_path`
 - `python_executable`
 - `ready`
-- `build_log_path`
-- `install_report_path`
+- `requirements_sha256`
+- `setup_state_path`
 
 Live execution refuses to start unless:
 
@@ -122,9 +119,9 @@ Live execution refuses to start unless:
 - `runtime_env.ready == true`
 - the confirmed registration contract is present and valid
 
-If the registered environment is missing locally, the live runner may rebuild
-it from the task root and then verify that the rebuilt `env_hash` matches the
-manifest.
+If the registered environment is missing locally, rerun `setup-task-env` and
+then `register-task --require-task-env`. The live runner does not silently
+create the environment.
 
 ## Runtime Consistency
 
@@ -134,7 +131,6 @@ control-plane `sys.executable`.
 That shared task runtime Python is used for:
 
 - `python work/main.py`
-- `python evaluation/self_eval.py`
 - post-run audit and replay
 - task-local judge subprocess execution
 

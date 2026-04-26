@@ -104,6 +104,17 @@ class TrajectoryWriter:
     def round_marker(self, round_index: int, status: str, payload: Mapping[str, Any]) -> None:
         self._emit("round_marker", round_index, {"status": status, "payload": dict(payload)})
 
+    def read_clean_events(self) -> list[dict[str, Any]]:
+        """Return trajectory events suitable as a distillation starting point.
+
+        Raw logs keep all SDK detail for debugging. The clean view removes
+        assistant thinking and deduplicates tool calls by ``tool_use_id`` so
+        downstream skill distillation does not learn from duplicated action
+        records or private scratch reasoning.
+        """
+
+        return read_clean_events(self.path)
+
 
 # --------------------------------------------------------------------- helpers
 
@@ -117,4 +128,23 @@ def _summarise_tool_input(tool_input: Mapping[str, Any]) -> dict[str, Any]:
             out[k] = v[:1000] + f"\n... [{len(v) - 2000} chars truncated] ...\n" + v[-1000:]
         else:
             out[k] = v
+    return out
+
+
+def read_clean_events(path: Path) -> list[dict[str, Any]]:
+    seen_tool_calls: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        if rec.get("kind") == "assistant_thinking":
+            continue
+        if rec.get("kind") == "tool_call":
+            tool_use_id = str(rec.get("tool_use_id") or "")
+            if tool_use_id:
+                if tool_use_id in seen_tool_calls:
+                    continue
+                seen_tool_calls.add(tool_use_id)
+        out.append(rec)
     return out

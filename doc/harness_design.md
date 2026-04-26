@@ -4,7 +4,7 @@ This document describes the design of the **clean** Claude-Code harness that
 lives under `MyEvoSkill/src/myevoskill/`.  It supersedes the legacy `executor.py`
 and ad-hoc scripts that were quarantined on the `01_feedback_iteration` branch.
 
-## 0. Current module layout (post-cleanup, master @ 0f458bb)
+## 0. Current module layout
 
 ```
 src/myevoskill/
@@ -12,8 +12,9 @@ src/myevoskill/
 ├── cli.py                  register-task | run-task | run-batch
 ├── registration.py         deterministic v2-only manifest builder (no LLM)
 ├── concurrency/pool.py     run_tasks_parallel (uses harness.sandbox)
+├── task_env.py             cross-platform per-task venv setup
 ├── harness/                runner.py + hooks.py + plan_guard.py + prompts.py
-│                           + trajectory.py + sandbox.py
+│                           + trajectory.py + sandbox.py + process_reaper.py
 ├── judge/bridge.py         JudgeRunner (subprocess) + JudgeFeedback
 ├── workspace/              policy.py + bash_parser.py + builder.py + agent_spec.py
 └── (judge-adapter API, frozen for tasks/*/evaluation/judge_adapter.py)
@@ -86,7 +87,7 @@ The design directly answers the eight problems the user reported:
 | 5 | Code base is bloated and confusing | Single package layout under `myevoskill/{workspace,harness,judge,concurrency}` and one CLI entry point (`cli.py`) |
 | 6 | Branch hygiene | `master` is the trunk; `03_clean_harness` is the active feature branch; legacy state archived as tags |
 | 7 | Iteration context is lost | `harness/runner.py` reuses one `ClaudeSDKClient` for the whole task, with the **same conversation** across rounds |
-| 8 | `plan.md` looks identical every round | `harness/plan_guard.py` (`PlanGuard`) requires plan.md to be **strictly newer** than any code edit before the next code edit is allowed |
+| 8 | `plan.md` looks identical every round | `harness/plan_guard.py` (`PlanGuard`) requires a top-level `## Round N` plan before the first code action in each judge round |
 
 ## 1. Layered architecture
 
@@ -112,7 +113,8 @@ The design directly answers the eight problems the user reported:
               │     ┌─ inject prompt (first vs iteration) ──┐     │
               │     │  hooks.PreToolUse intercepts every    │     │
               │     │  tool call, blocks policy violations  │     │
-              │     │  PlanGuard blocks code if plan stale  │     │
+              │     │  PlanGuard blocks code if this round  │     │
+              │     │  has no authored plan                 │     │
               │     │  trajectory.py records every event    │     │
               │     └─► judge/bridge.py runs judge_adapter  │     │
               │         on agent_root + ground_truth, hidden│     │
@@ -155,21 +157,23 @@ actually runs.  It also means the agent cannot fail the task post-hoc just for
 
 `PlanGuard` (in `harness/plan_guard.py`) implements the rule:
 
-> Before any code-modifying tool call (`Write`/`Edit`/`MultiEdit` on `*.py`,
-> or `Bash` containing `python … main.py`) the agent **must** have updated
-> `plan.md` since the last code edit.
+> At the start of judge round N, before the first code-writing or code-running
+> tool call, the agent must author a top-level `## Round N` section in
+> `plan.md`.
 
-It enforces this by:
+The seed file is only:
 
-1. Seeding `plan.md` at workspace creation if missing.
-2. Tracking `_last_code_mtime` whenever a code-modifying tool succeeds.
-3. On the next code-modifying tool, comparing `plan.md` mtime to
-   `_last_code_mtime`; if plan is not newer, the hook returns `deny` with
-   reason `"plan.md is stale; describe what changed for round N first"`.
+```md
+# Plan
 
-Editing `plan.md` itself is always allowed.  This is what produces a *visibly
-different* plan.md across rounds (problem 8): the agent has to write something
-new there to be allowed to touch code again.
+```
+
+There is deliberately no templated `## Round 1`, so seed-only content never
+counts as a real plan.  Once the current round heading exists, the agent may
+write, edit, and run code multiple times inside that same round.  A failed
+judge result advances the harness to round N+1, where the first code action is
+blocked until `## Round N+1` exists.  Indented examples such as
+`    ## Round 1` do not count. Editing `plan.md` itself is always allowed.
 
 ## 4. Iterative judge feedback (problems 2, 3, 7)
 
@@ -177,9 +181,9 @@ new there to be allowed to touch code again.
   Across rounds, the conversation is preserved -- the agent remembers what it
   tried, what failed, and what the judge said.
 * Round 1 prompt (`prompts.first_round_user_prompt`):
-  *"Read README.md and meta_data.json. Write plan.md before any code. When
-  ready, run your code and write `output/<primary_output>`. Do not access
-  ground truth or evaluation/."*
+  *"Read README.md, meta_data.json, and agent_task_spec.json. Write
+  `## Round 1` in plan.md before the first code action. Run from the workspace
+  root with `python work/main.py`. Do not access ground truth or evaluation/."*
 * Round k>1 prompt (`prompts.iteration_user_prompt`) is composed from the
   judge's `JudgeFeedback`:
     * If `feedback_mode == "pass_fail"` (default), the agent is told only
@@ -190,6 +194,11 @@ new there to be allowed to touch code again.
 * The judge runs on the **hidden** task source (`tasks/<id>/evaluation/`),
   in a separate Python process, with `agent_root` and `ground_truth_path`
   passed via CLI.  Its stdout/stderr never reach the agent.
+* Agent-fixable output problems (`missing_output`, schema errors, NaN/Inf,
+  etc.) are reported as `INVALID` and may enter another round. Harness or judge
+  infrastructure failures (`judge_runtime_error`, `judge_unparsable`,
+  `judge_timeout`, `missing_judge_adapter`) are classified as harness `ERROR`
+  and stop the run instead of being fed back as an agent task.
 
 This is the loop that the user described: "Judge as environment signal,
 agent in same conversation iterates until success or budget".
@@ -205,17 +214,24 @@ assistant_think  – thinking blocks (only kept if agent emits any)
 tool_call        – {tool_name, tool_input, tool_use_id}
 tool_result      – {tool_use_id, output_truncated, is_error}
 env_feedback     – policy denials, plan_guard denials, judge verdict
+task_started     – Claude Code background task started
+task_progress    – Claude Code background task progress/notification
+task_completed   – Claude Code background task completed
+task_failed      – Claude Code background task failed
+task_stopped     – Claude Code background task stopped by cleanup
 round_marker     – round started / judged / aborted
 ```
 
-That is *all* we keep; the noisy SDK message dumps are gone.  The trajectory
-is exactly the four channels required for skill distillation: model reply,
-model thinking, tool call, environment feedback (which subsumes tool result
-and judge verdict).
+PreToolUse hook events are the authoritative source for `tool_call`, so the
+runner does not duplicate `ToolUseBlock` events from assistant messages.  Raw
+`assistant_think` is retained for operator debugging; distillation export should
+filter thinking blocks and keep the clean sequence of assistant text, tool
+calls/results, environment feedback, and task lifecycle events.
 
-A short human-readable `run_summary.json` is also written (now including a
-`plan_history` array), plus the per-round `judge_result.json` and a fresh
-per-round `plan_round_NN.md` snapshot of `plan.md` (with an index in
+A short human-readable `run_summary.json` is also written (including
+`plan_history` and `process_cleanup_errors`), plus per-round
+`judge_round_NN.json` and a fresh per-round `plan_round_NN.md` snapshot of
+`plan.md` (with an index in
 `plan_history.jsonl`: `{round, timestamp, sha256, size_bytes, diff_lines,
 note}`) so we can audit what the agent claimed to be trying each round even
 after the workspace is wiped on PASS. Snapshots are taken right after the
@@ -239,6 +255,16 @@ the agent).  Workspaces are deleted on success unless `--keep-workspace`.
 This satisfies the "many tasks in parallel + no claude history left on the
 user's machine" requirement.
 
+Within a live Claude SDK run, `runner.py` also treats background Bash/Python
+tasks as harness-owned resources. It tracks SDK task lifecycle messages, calls
+`client.stop_task(task_id)` for active tasks at the end of each agent round,
+and then runs a best-effort process reaper scoped to the Claude CLI process
+tree. The reaper only targets Bash/Python descendants whose command line or
+lineage mentions the current `run_id`, workspace path, or sandbox path, and it
+kills leaf-first so child processes are not orphaned. If a matching process is
+still alive before judge, the run is marked harness `ERROR` and judge is not
+called, because output may still be changing.
+
 ## 7. Branch hygiene (problem 6)
 
 * `master` -- trunk, contains the clean rewrite once it lands.
@@ -260,7 +286,7 @@ user's machine" requirement.
 | Read any file matching `ground_truth` | DENY | substring |
 | `cd /`, `cd ..\..`, absolute paths in cat/grep/find | DENY | dangerous_bash regex |
 | `curl`, `wget`, `pip install`, `sudo` | DENY | dangerous_bash regex |
-| Write code without first updating plan.md | DENY (this round) | PlanGuard |
+| First code action in round N without `## Round N` in `plan.md` | DENY | PlanGuard |
 
 All denials are visible to the agent as the SDK `permissionDecisionReason`
 string, **without** revealing thresholds, ground truth contents, or judge
@@ -351,10 +377,11 @@ Tests live in `tests/test_agent_spec.py`:
 `PLAN_SEED` deliberately ships **without a templated `## Round 1` block**.
 The agent is told (via the system prompt and the first-round user prompt)
 that it must author a fresh `## Round 1` entry containing Hypothesis /
-Change / Verification *before* writing or running any code; the
-`PlanGuard` will refuse `Write` / `Edit` / `Bash` calls while `plan.md` is
-still older than the most recent code modification.  This makes the plan
-a real artefact of the agent's thinking, not a pre-filled stub.
+Change / Verification before the first code action in Round 1. After a
+failed judge attempt, the feedback prompt starts the next round and requires
+`## Round N` before that round's first code action. The guard is round-based,
+not mtime-based: repeated edits/runs inside one judge round do not require
+re-writing the plan.
 
 
 ## 9. Sandbox hardening (commit A: fix(policy))
@@ -406,7 +433,8 @@ Two-tier environment:
   `PYTHONPATH=$REPO_ROOT/src:$PYTHONPATH` exported; the
   `setup_env.sh`, `register_task.sh`, `run_task.sh`, and
   `run_smoke_three.sh` helpers all do this automatically.
-- **Per-task venv** at `MyEvoSkill/.venvs/<task_id>/`, built by
+- **Per-task venv** at `MyEvoSkill/.venvs/<task_id>/`, built by either
+  `python -m myevoskill.cli setup-task-env --task-id <task_id>` or
   `scripts/setup_task_env.sh <task_id>` from
   `tasks/<task_id>/requirements.txt`. The build status is recorded in
   `runtime_logs/setup/<task_id>.json`. `register-task` reads that file
@@ -420,6 +448,7 @@ Three-step pipeline per task:
 
 ```bash
 bash MyEvoSkill/scripts/setup_env.sh                 # once per checkout
+python -m myevoskill.cli setup-task-env --task-id <task_id>
 bash MyEvoSkill/scripts/setup_task_env.sh  <task_id> # once per task
 bash MyEvoSkill/scripts/register_task.sh   <task_id>
 bash MyEvoSkill/scripts/run_task.sh        <task_id>

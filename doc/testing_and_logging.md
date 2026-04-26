@@ -25,10 +25,17 @@ Unit tests must cover:
 - semantic output schema validation for hidden-judge task adapters
 - workspace-agent path validation for read-only public files and writable
   `work/` / `output/` / `checkpoints/`
-- harness-generated `evaluation/self_eval.py` creation and execution
-- Claude SDK protocol handling when `self_eval.py` passes but no final
-  `ResultMessage` arrives
+- round-based PlanGuard enforcement (`## Round N` before the first code action
+  in each judge round, with repeated in-round edits/runs allowed)
+- Claude SDK protocol handling for assistant/tool/result streams and background
+  task lifecycle messages
 - manifest-driven workspace prompt rendering without hidden-judge optimization text
+- Bash policy checks for literal path reads/writes, dynamic path rejection, and
+  `cd ..` escape rejection
+- process cleanup barriers that stop/reap run-scoped Bash/Python descendants
+  before judge
+- judge classification: agent-fixable output errors as `INVALID`, harness/judge
+  infrastructure failures as terminal `ERROR`
 
 Integration tests must cover:
 
@@ -61,34 +68,21 @@ Each run writes a dedicated log directory containing:
 - `raw_response.txt`
 - `parsed_response.json` or a parse-failure artifact for model-backed runs
 - round-level workspace artifacts such as:
-  - `agent_prompt_round_N.txt`
-  - `agent_summary_round_N.json`
-  - `files_written_round_N.json`
-  - `commands_run_round_N.json`
-  - `submit_result_calls_round_N.json` when a submission stop oracle is active
-  - `submission_events_round_N.json` when a submission stop oracle is active
-  - `public_self_eval_round_N.json`
-  - `public_self_eval_stdout_round_N.log`
-  - `public_self_eval_stderr_round_N.log`
-  - `sdk_messages_round_N.json`
-  - `stdout_round_N.log`
-  - `stderr_round_N.log`
-  - `claude_sdk_diagnostics_round_N.json` when SDK summary parsing or timeout diagnostics are relevant
-  - runtime evaluator assets:
-    - `evaluation/self_eval.py`
-    - `evaluation/self_eval_spec.json`
-    - note: these public self-eval artifacts are absent when the run uses
-      `workspace_stop_oracle = "hidden_judge_submit"`
+  - `trajectory.jsonl`
+  - `judge_round_NN.json`
+  - `plan_round_NN.md`
+  - `plan_history.jsonl`
 - trajectory artifacts for every run result, including success, timeout, `max_turns`,
   permission failures, and judge failures:
-  - `trajectory_native.jsonl`
-  - `trajectory_normalized.json`
-  - `trajectory_summary.json`
-  - `trajectory_redaction_report.json`
-  - `vendor_session_ref.json`
+  - assistant text/thinking
+  - PreToolUse-authoritative tool calls
+  - tool results
+  - environment feedback
+  - task started/progress/completed/failed/stopped events
+  - process cleanup failures when present
 - optional `artifacts_manifest.json`
 - optional `proxy_feedback.json`
-- optional `judge_result.json`
+- optional `judge_round_NN.json`
 
 Persistent live and manual runs should write under:
 
@@ -108,8 +102,7 @@ Timeout failures must additionally preserve:
 - `summary.json` with timeout scope
 - `stderr.log` with timeout message
 - effective timeout metadata in executor artifacts
-- Claude SDK protocol diagnostics, including whether `python evaluation/self_eval.py`
-  appeared in trace before the failure
+- Claude SDK protocol diagnostics and any process cleanup failures
 
 ## Testing Policy Notes
 
@@ -143,5 +136,5 @@ Current live workspace-agent smoke prerequisites:
 Recommended command:
 
 ```bash
-./.conda_env/bin/python -m pytest -q -m external_network tests/test_integration_pipeline.py -k real_manifest_live
+PYTHONPATH=src ./.conda_env/bin/python -m myevoskill.cli run-task --repo-root . --task-id cars_spectroscopy --max-rounds 2 --budget-seconds 1200 --json
 ```

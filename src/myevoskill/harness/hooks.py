@@ -22,7 +22,7 @@ from typing import Any, Awaitable, Callable, Mapping
 
 from ..workspace.bash_parser import parse_bash_writes
 from ..workspace.policy import WorkspacePolicy, collect_path_args
-from .plan_guard import CODE_MODIFY_TOOLS, PLAN_FILENAME, PlanGuard
+from .plan_guard import PLAN_FILENAME, PlanGuard
 from .trajectory import TrajectoryWriter
 
 # Tools that *create or modify* a file at ``file_path``. We must reject these
@@ -159,8 +159,10 @@ def make_pre_tool_use_hook(
                     )
                     return _deny(msg)
 
-        # 4. plan.md freshness.
-        plan_reason = plan_guard.should_block(tool_name, tool_input)
+        # 4. Per-round plan.md check.
+        plan_reason = plan_guard.should_block(
+            tool_name, tool_input, round_index=round_idx
+        )
         if plan_reason:
             trajectory.env_feedback(
                 round_idx,
@@ -168,13 +170,6 @@ def make_pre_tool_use_hook(
                 {"tool": tool_name, "reason": plan_reason},
             )
             return _deny(plan_reason)
-
-        # If this call is a code modification, mark a tick *after* the call
-        # is allowed; the next plan.md edit will then count as fresher.
-        if tool_name in CODE_MODIFY_TOOLS:
-            target = _path_value(tool_input)
-            if not target.endswith(PLAN_FILENAME):
-                plan_guard.note_code_modification()
 
         return {}
 
@@ -274,14 +269,6 @@ def _path_is_plan_md(value: str) -> bool:
     return value.replace("\\", "/").rstrip("/").endswith("/" + PLAN_FILENAME) or (
         value.replace("\\", "/") == PLAN_FILENAME
     )
-
-
-def _path_value(tool_input: Mapping[str, Any]) -> str:
-    for key in ("file_path", "path", "notebook_path"):
-        v = tool_input.get(key)
-        if isinstance(v, str) and v:
-            return v.replace("\\", "/")
-    return ""
 
 
 def _extract_text(response: Any) -> str:

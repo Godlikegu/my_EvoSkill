@@ -32,6 +32,9 @@ available on `PATH`.
 - `environment.yml`
 - `scripts/create_dev_env.sh`
 - `scripts/print_env_info.py`
+- `scripts/setup_task_env.sh`
+- Python CLI equivalent:
+  `python -m myevoskill.cli setup-task-env --repo-root . --task-id <task_id>`
 
 ## Policy
 
@@ -74,6 +77,8 @@ export ANTHROPIC_API_KEY="$MYEVOSKILL_CLAUDE_API_KEY"
   integration regression work.
 - Windows is currently the preferred fallback host for live Claude SDK task
   runs when the Linux server cannot install Claude Code CLI.
+- On Windows, use the Python CLI entry points for task env setup, registration,
+  and live runs instead of relying on Bash scripts.
 - Documentation and test commands should make this split explicit so developers
   do not confuse "default regression environment" with "live SDK execution
   environment".
