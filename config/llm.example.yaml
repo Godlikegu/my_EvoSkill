@@ -1,0 +1,15 @@
+models:
+  "example-claude-gateway":
+    api_type: "claude_gateway"
+    gateway_protocol: "anthropic"
+    base_url: "https://your-anthropic-compatible-gateway.example.com"
+    api_key_env: "EXAMPLE_GATEWAY_API_KEY"
+    model_name: "example-model-name"
+    temperature: 0.7
+
+  "example-openai-only":
+    api_type: "claude_gateway"
+    base_url: "https://your-openai-compatible-gateway.example.com/v1"
+    api_key_env: "EXAMPLE_OPENAI_API_KEY"
+    model_name: "example-model-name"
+    temperature: 0.7

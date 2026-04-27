@@ -49,11 +49,45 @@ endpoints without redesigning the executor interface.
 
 Security rules:
 
-- only `api_key_env` is stored in config and logs
-- the resolved API key must come from environment variables
+- `config/llm.yaml` is local-only and ignored by git
+- `config/llm.example.yaml` documents the shareable schema
+- inline `api_key` is tolerated only for local compatibility and must be
+  redacted from every log, summary, probe result, and CLI message
+- `api_key_env` is preferred over inline `api_key` when both are present
 - real secret values must never be written to repo files or run logs
 - live external-network tests must inject the secret through the current shell
   environment only
+
+## Local `llm.yaml`
+
+The local config shape is:
+
+- `models.<model_id>.api_type`
+- `models.<model_id>.base_url`
+- `models.<model_id>.api_key_env` or local-only `api_key`
+- `models.<model_id>.model_name`
+- `models.<model_id>.gateway_protocol`
+- optional `timeout`, `max_tokens`, `temperature`, `extra_headers`
+
+For the current Claude Code SDK harness, only entries with
+`api_type="claude_gateway"` and `gateway_protocol="anthropic"` may be used
+through `--model-id`. Plain `api_type="openai"` entries are parsed as config
+only and fail before the harness starts with a protocol-compatibility error.
+
+Use `scripts/probe_llm_gateways.py` before marking an endpoint as
+`claude_gateway`. The probe checks Anthropic Messages candidates such as
+`/v1/messages`, records only redacted diagnostics under `runtime_logs/`, and
+classifies entries as `anthropic_compatible`, `openai_only`, `auth_failed`,
+`network_error`, or `unknown_error`.
+
+When a model id resolves to a Claude gateway, the CLI injects these environment
+variables into the Claude SDK subprocess:
+
+- `ANTHROPIC_BASE_URL`
+- `ANTHROPIC_AUTH_TOKEN`
+- `ANTHROPIC_API_KEY`
+- `CLAUDE_API_KEY`
+- `MYEVOSKILL_MODEL`
 
 ## Claude SDK Notes
 

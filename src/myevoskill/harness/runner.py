@@ -77,6 +77,8 @@ class HarnessConfig:
     budget_seconds: int = 7200  # 2h per task
     max_turns_per_round: int = DEFAULT_MAX_TURNS_PER_ROUND
     model: str | None = None  # let SDK pick the default
+    model_provider_env: Mapping[str, str] = field(default_factory=dict)
+    model_provider_summary: Mapping[str, Any] = field(default_factory=dict)
     judge_python: str | None = None
     show_metric_status: bool = False  # if True, tell agent which metric failed (still no values)
     keep_workspace_on_success: bool = True
@@ -247,6 +249,8 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                 )
             },
         )
+    if config.model_provider_env:
+        agent_env.update(dict(config.model_provider_env))
 
     options = ClaudeAgentOptions(
         system_prompt=SYSTEM_PROMPT,
@@ -510,6 +514,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
             "sdk_thinking": "default" if config.record_thinking else "disabled",
             "record_thinking": bool(config.record_thinking),
         },
+        "model_provider": dict(config.model_provider_summary),
         "error": error_message,
     }
     summary_path = log_root / "run_summary.json"

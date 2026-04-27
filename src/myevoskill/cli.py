@@ -28,6 +28,11 @@ from typing import Any
 
 from .concurrency import run_tasks_parallel
 from .harness import HarnessConfig, run_task_once
+from .model_provider import (
+    ModelProviderError,
+    default_llm_config_path,
+    load_model_provider_registry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +79,36 @@ def _resolve_default_model(cli_model: str | None) -> str | None:
         except (OSError, json.JSONDecodeError):
             pass
     return None
+
+
+def _resolve_model_provider_for_cli(
+    *,
+    repo_root: Path,
+    model_id: str | None,
+    llm_config: str | None,
+) -> tuple[str | None, dict[str, str], dict[str, Any]] | None:
+    if not model_id:
+        return None
+
+    config_path = (
+        Path(llm_config).resolve()
+        if llm_config
+        else default_llm_config_path(repo_root).resolve()
+    )
+    registry = load_model_provider_registry(config_path)
+    runtime = registry.resolve_claude_gateway_runtime(model_id)
+    summary = runtime.safe_log_config()
+    if summary.get("api_key_source") == "inline":
+        logger.warning(
+            "model_id %s uses an inline api_key from %s; keep this file out of git",
+            model_id,
+            config_path,
+        )
+    logger.info(
+        "using model provider: %s",
+        json.dumps(summary, ensure_ascii=False, sort_keys=True),
+    )
+    return runtime.model_config.model_name, dict(runtime.env), summary
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -297,7 +332,22 @@ def cmd_run_task(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).resolve()
     manifest = _load_manifest(repo_root, args.task_id)
 
-    resolved_model = _resolve_default_model(args.model)
+    model_provider_env: dict[str, str] = {}
+    model_provider_summary: dict[str, Any] = {}
+    try:
+        provider_runtime = _resolve_model_provider_for_cli(
+            repo_root=repo_root,
+            model_id=getattr(args, "model_id", None),
+            llm_config=getattr(args, "llm_config", None),
+        )
+    except (FileNotFoundError, ModelProviderError) as exc:
+        print(f"model provider error: {exc}", file=sys.stderr)
+        return 2
+
+    if provider_runtime is not None:
+        resolved_model, model_provider_env, model_provider_summary = provider_runtime
+    else:
+        resolved_model = _resolve_default_model(args.model)
     if resolved_model:
         logger.info("using model: %s", resolved_model)
     config = HarnessConfig(
@@ -307,6 +357,8 @@ def cmd_run_task(args: argparse.Namespace) -> int:
         budget_seconds=args.budget_seconds,
         max_turns_per_round=args.max_turns_per_round,
         model=resolved_model,
+        model_provider_env=model_provider_env,
+        model_provider_summary=model_provider_summary,
         judge_python=args.judge_python,
         show_metric_status=bool(args.show_metric_status),
         keep_workspace_on_success=bool(args.keep_workspace),
@@ -351,10 +403,15 @@ def cmd_run_batch(args: argparse.Namespace) -> int:
         "budget-seconds": args.budget_seconds,
         "max-turns-per-round": args.max_turns_per_round,
     }
-    resolved_model = _resolve_default_model(args.model)
-    if resolved_model:
-        logger.info("using model: %s", resolved_model)
-        extra["model"] = resolved_model
+    if getattr(args, "model_id", None):
+        extra["model-id"] = args.model_id
+        if getattr(args, "llm_config", None):
+            extra["llm-config"] = args.llm_config
+    else:
+        resolved_model = _resolve_default_model(args.model)
+        if resolved_model:
+            logger.info("using model: %s", resolved_model)
+            extra["model"] = resolved_model
     if args.judge_python:
         extra["judge-python"] = args.judge_python
     if args.keep_sandbox:
@@ -496,6 +553,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--budget-seconds", type=int, default=7200)
     p_run.add_argument("--max-turns-per-round", type=int, default=60)
     p_run.add_argument("--model", default=None)
+    p_run.add_argument("--model-id", default=None,
+                       help="model id from config/llm.yaml; requires an Anthropic-compatible gateway")
+    p_run.add_argument("--llm-config", default=None,
+                       help="path to llm.yaml (default: <repo_root>/config/llm.yaml)")
     p_run.add_argument("--judge-python", default=None)
     p_run.add_argument("--show-metric-status", action="store_true")
     p_run.add_argument(
@@ -529,6 +590,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_batch.add_argument("--budget-seconds", type=int, default=7200)
     p_batch.add_argument("--max-turns-per-round", type=int, default=60)
     p_batch.add_argument("--model", default=None)
+    p_batch.add_argument("--model-id", default=None,
+                         help="model id from config/llm.yaml; requires an Anthropic-compatible gateway")
+    p_batch.add_argument("--llm-config", default=None,
+                         help="path to llm.yaml (default: <repo_root>/config/llm.yaml)")
     p_batch.add_argument("--judge-python", default=None)
     p_batch.add_argument("--keep-sandbox", action="store_true",
                          help="propagate --keep-sandbox to every child run-task")

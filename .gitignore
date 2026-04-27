@@ -16,3 +16,4 @@ artifacts/*
 .venvs/
 .pytest_tmp/
 .v/
+config/llm.yaml
