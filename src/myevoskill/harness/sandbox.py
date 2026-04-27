@@ -11,7 +11,8 @@ sidecars, and various other artefacts under the user's real
 
 The fix is simple: every harness run gets its own ``$HOME`` (pointing at
 a freshly-created sandbox dir under
-``MyEvoSkill/artifacts/sandboxes/<task_id>/<run_id>/home``), and the only
+``MyEvoSkill/artifacts/sandboxes/<model>/<task_id>/<run_id>/home`` for new
+harness runs), and the only
 files copied across from the real ``~/.claude`` are the small
 ``settings.json`` / ``config.json`` files that hold the model name and
 gateway URL. Everything else (``projects/``, ``sessions/``, ``plan/``,
@@ -59,9 +60,24 @@ class IsolatedHome:
     seeded_files: tuple[str, ...]
 
 
-def default_sandbox_root(repo_root: Path, task_id: str, run_id: str) -> Path:
+def default_sandbox_root(
+    repo_root: Path,
+    task_id: str,
+    run_id: str,
+    artifact_model_slug: str | None = None,
+) -> Path:
     """Compute the canonical sandbox path under the repo's artifacts dir."""
 
+    if artifact_model_slug:
+        return (
+            Path(repo_root)
+            / "artifacts"
+            / "sandboxes"
+            / artifact_model_slug
+            / task_id
+            / run_id
+            / "home"
+        )
     return Path(repo_root) / "artifacts" / "sandboxes" / task_id / run_id / "home"
 
 
@@ -71,6 +87,7 @@ def make_isolated_home(
     task_id: str,
     run_id: str,
     sandbox_root: Path | None = None,
+    artifact_model_slug: str | None = None,
 ) -> IsolatedHome:
     """Materialise an isolated ``$HOME`` for one harness run.
 
@@ -91,7 +108,7 @@ def make_isolated_home(
     target = (
         Path(sandbox_root)
         if sandbox_root is not None
-        else default_sandbox_root(repo_root, task_id, run_id)
+        else default_sandbox_root(repo_root, task_id, run_id, artifact_model_slug)
     )
     target = target.resolve()
     if target.exists():

@@ -3,7 +3,8 @@
 The builder is *deterministic* and does not require any LLM. It reads the
 manifest produced by ``myevoskill register-task`` and produces:
 
-    artifacts/workspaces/<task>/<run_id>/
+    artifacts/workspaces/<model>/<task>/<run_id>/ for new harness runs
+    (legacy callers may still use artifacts/workspaces/<task>/<run_id>/)
         README.md            # sanitised public README
         meta_data.json       # task metadata visible to the agent
         data/                # symlinked or copied public data files
@@ -360,6 +361,7 @@ def build_workspace(
     repo_root: Path,
     manifest: Mapping[str, object],
     run_id: str,
+    workspace_parent: Path | None = None,
 ) -> WorkspaceBuild:
     """Materialise a clean per-run workspace and return its policy."""
 
@@ -370,7 +372,11 @@ def build_workspace(
     task_root = _resolve_task_root(repo_root, manifest)
 
     # 1. Decide layout.
-    workspace_root = repo_root / "artifacts" / "workspaces" / task_id / run_id
+    workspace_root = (
+        Path(workspace_parent) / run_id
+        if workspace_parent is not None
+        else repo_root / "artifacts" / "workspaces" / task_id / run_id
+    )
     if workspace_root.exists():
         shutil.rmtree(workspace_root, ignore_errors=True)
     workspace_root.mkdir(parents=True, exist_ok=True)

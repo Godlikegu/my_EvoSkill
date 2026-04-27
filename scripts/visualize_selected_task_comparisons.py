@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -16,6 +17,12 @@ from scipy.io import loadmat
 
 ROOT = Path(__file__).resolve().parents[2]
 MYEVOSKILL_ROOT = ROOT / "MyEvoSkill"
+SRC_ROOT = MYEVOSKILL_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from myevoskill.artifact_paths import resolve_workspace_output_path
+
 ARTIFACTS_DIR = MYEVOSKILL_ROOT / "artifacts"
 TASKS_DIR = ROOT / "tasks"
 OUTPUT_DIR = ARTIFACTS_DIR / "visualizations" / "passed_and_one_metric_failed"
@@ -66,7 +73,11 @@ def _selected_tasks(summary: dict[str, Any]) -> list[SelectionSpec]:
 
 
 def _workspace_output_path(task_id: str, run_id: str) -> Path:
-    return MYEVOSKILL_ROOT / "artifacts" / "workspaces" / task_id / run_id / "output"
+    return resolve_workspace_output_path(
+        repo_root=MYEVOSKILL_ROOT,
+        task_id=task_id,
+        run_id=run_id,
+    )
 
 
 def _load_npz(path: Path) -> dict[str, np.ndarray]:

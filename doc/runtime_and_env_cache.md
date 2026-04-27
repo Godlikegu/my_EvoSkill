@@ -79,11 +79,11 @@ staged into stable relative paths so solver code can read `data/...` and write
 
 For persistent live and manual runs, the runtime root should be resolved under:
 
-- `artifacts/workspaces/<task_id>/<run_id>/`
+- `artifacts/workspaces/<model_slug>/<task_id>/<run_id>/`
 
 The matching log root should be:
 
-- `artifacts/logs/<task_id>/<run_id>/`
+- `artifacts/logs/<model_slug>/<task_id>/<run_id>/`
 
 On rerun:
 

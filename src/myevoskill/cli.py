@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from .concurrency import run_tasks_parallel
+from .artifact_paths import model_slug
 from .harness import HarnessConfig, run_task_once
 from .model_provider import (
     ModelProviderError,
@@ -86,7 +87,7 @@ def _resolve_model_provider_for_cli(
     repo_root: Path,
     model_id: str | None,
     llm_config: str | None,
-) -> tuple[str | None, dict[str, str], dict[str, Any]] | None:
+) -> tuple[str | None, dict[str, str], dict[str, Any], str] | None:
     if not model_id:
         return None
 
@@ -108,7 +109,12 @@ def _resolve_model_provider_for_cli(
         "using model provider: %s",
         json.dumps(summary, ensure_ascii=False, sort_keys=True),
     )
-    return runtime.model_config.model_name, dict(runtime.env), summary
+    return (
+        runtime.model_config.model_name,
+        dict(runtime.env),
+        summary,
+        model_slug(str(summary.get("model_id") or runtime.model_config.model_name)),
+    )
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -334,6 +340,7 @@ def cmd_run_task(args: argparse.Namespace) -> int:
 
     model_provider_env: dict[str, str] = {}
     model_provider_summary: dict[str, Any] = {}
+    artifact_model_slug = None
     try:
         provider_runtime = _resolve_model_provider_for_cli(
             repo_root=repo_root,
@@ -345,9 +352,15 @@ def cmd_run_task(args: argparse.Namespace) -> int:
         return 2
 
     if provider_runtime is not None:
-        resolved_model, model_provider_env, model_provider_summary = provider_runtime
+        (
+            resolved_model,
+            model_provider_env,
+            model_provider_summary,
+            artifact_model_slug,
+        ) = provider_runtime
     else:
         resolved_model = _resolve_default_model(args.model)
+        artifact_model_slug = model_slug(resolved_model)
     if resolved_model:
         logger.info("using model: %s", resolved_model)
     config = HarnessConfig(
@@ -359,6 +372,7 @@ def cmd_run_task(args: argparse.Namespace) -> int:
         model=resolved_model,
         model_provider_env=model_provider_env,
         model_provider_summary=model_provider_summary,
+        artifact_model_slug=artifact_model_slug,
         judge_python=args.judge_python,
         show_metric_status=bool(args.show_metric_status),
         keep_workspace_on_success=bool(args.keep_workspace),
@@ -575,7 +589,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--keep-sandbox", action="store_true",
                        help="do not wipe the per-run isolated $HOME on exit (debug only)")
     p_run.add_argument("--sandbox-root", default=None,
-                       help="override sandbox dir (default: artifacts/sandboxes/<task>/<run>/home)")
+                       help="override sandbox dir (default: artifacts/sandboxes/<model>/<task>/<run>/home)")
     p_run.add_argument("--json", action="store_true", help="emit one JSON summary line at end")
     p_run.add_argument("--record-thinking", action="store_true",
                        help="debug only: keep SDK thinking blocks in raw trajectory")

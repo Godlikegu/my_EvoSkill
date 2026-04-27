@@ -16,6 +16,21 @@ def test_resolve_run_paths_uses_project_artifacts_layout(tmp_path):
     assert paths.log_root == tmp_path / "artifacts" / "logs" / "cars_spectroscopy" / "run-1"
 
 
+def test_resolve_run_paths_supports_model_layout(tmp_path):
+    paths = resolve_run_paths(
+        tmp_path,
+        "cars_spectroscopy",
+        "run-1",
+        artifact_model_slug="Vendor2/Gemini",
+    )
+    assert paths.workspace_root == (
+        tmp_path / "artifacts" / "workspaces" / "Vendor2_Gemini" / "cars_spectroscopy" / "run-1"
+    )
+    assert paths.log_root == (
+        tmp_path / "artifacts" / "logs" / "Vendor2_Gemini" / "cars_spectroscopy" / "run-1"
+    )
+
+
 def test_ensure_clean_run_directory_only_resets_target_run(tmp_path):
     sibling = tmp_path / "task-a" / "run-a"
     target = tmp_path / "task-a" / "run-b"

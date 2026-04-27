@@ -27,6 +27,19 @@ def test_default_sandbox_root_layout(tmp_path: Path) -> None:
     assert p == tmp_path / "artifacts" / "sandboxes" / "mytask" / "run-x" / "home"
 
 
+def test_default_sandbox_root_model_layout(tmp_path: Path) -> None:
+    p = default_sandbox_root(tmp_path, "mytask", "run-x", "model-a")
+    assert p == (
+        tmp_path
+        / "artifacts"
+        / "sandboxes"
+        / "model-a"
+        / "mytask"
+        / "run-x"
+        / "home"
+    )
+
+
 def test_make_isolated_home_creates_directory(tmp_path: Path) -> None:
     home = make_isolated_home(
         repo_root=tmp_path, task_id="mytask", run_id="run-1"

@@ -15,6 +15,7 @@ from .models import (
     RunPaths,
     TaskBundle,
 )
+from .artifact_paths import model_slug
 from .task_contract import task_contract_primary_output_path
 
 
@@ -87,12 +88,22 @@ def resolve_runtime_paths(
     }
 
 
-def resolve_run_paths(repo_root: Path, task_id: str, run_id: str) -> RunPaths:
+def resolve_run_paths(
+    repo_root: Path,
+    task_id: str,
+    run_id: str,
+    artifact_model_slug: str | None = None,
+) -> RunPaths:
     """Resolve persistent workspace and log roots inside the project."""
 
     base = Path(repo_root)
-    workspace_root = base / "artifacts" / "workspaces" / task_id / run_id
-    log_root = base / "artifacts" / "logs" / task_id / run_id
+    if artifact_model_slug:
+        slug = model_slug(artifact_model_slug)
+        workspace_root = base / "artifacts" / "workspaces" / slug / task_id / run_id
+        log_root = base / "artifacts" / "logs" / slug / task_id / run_id
+    else:
+        workspace_root = base / "artifacts" / "workspaces" / task_id / run_id
+        log_root = base / "artifacts" / "logs" / task_id / run_id
     return RunPaths(
         repo_root=base,
         task_id=task_id,

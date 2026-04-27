@@ -193,8 +193,8 @@ across different scientific tasks.
 
 For live and manual runs, the default persistent project-local layout is:
 
-- `artifacts/workspaces/<task_id>/<run_id>/`
-- `artifacts/logs/<task_id>/<run_id>/`
+- `artifacts/workspaces/<model_slug>/<task_id>/<run_id>/`
+- `artifacts/logs/<model_slug>/<task_id>/<run_id>/`
 
 This keeps generated solvers, staged data, outputs, checkpoints, and logs
 inside the repository tree without mixing different task/run instances.

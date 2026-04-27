@@ -46,6 +46,7 @@ from claude_agent_sdk import (
 )
 
 from ..judge.bridge import JudgeFeedback, JudgeRunner, FAIL, INVALID, PASS
+from ..artifact_paths import ARTIFACT_LAYOUT_VERSION, model_artifact_root, model_slug
 from ..workspace.builder import WorkspaceBuild, build_workspace
 from .hooks import make_post_tool_use_hook, make_pre_tool_use_hook
 from .plan_guard import PlanGuard
@@ -79,11 +80,12 @@ class HarnessConfig:
     model: str | None = None  # let SDK pick the default
     model_provider_env: Mapping[str, str] = field(default_factory=dict)
     model_provider_summary: Mapping[str, Any] = field(default_factory=dict)
+    artifact_model_slug: str | None = None
     judge_python: str | None = None
     show_metric_status: bool = False  # if True, tell agent which metric failed (still no values)
     keep_workspace_on_success: bool = True
-    log_root: Path | None = None  # default: artifacts/logs/<task>/<run_id>
-    sandbox_root: Path | None = None  # default: artifacts/sandboxes/<task>/<run>/home
+    log_root: Path | None = None  # default: artifacts/logs/<model>/<task>/<run>
+    sandbox_root: Path | None = None  # default: artifacts/sandboxes/<model>/<task>/<run>/home
     keep_sandbox: bool = False  # opt-out of post-run sandbox cleanup
     record_thinking: bool = False  # debug only; default raw trajectories stay distillation-cleaner
 
@@ -176,16 +178,25 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
     manifest = dict(config.manifest)
     task_id = str(manifest["task_id"])
     run_id = f"run-{int(time.time())}-{uuid.uuid4().hex[:6]}"
+    artifact_model_slug = model_slug(config.artifact_model_slug)
 
     log_root = (
         Path(config.log_root)
         if config.log_root is not None
-        else (repo_root / "artifacts" / "logs" / task_id / run_id)
+        else model_artifact_root(repo_root, "logs", artifact_model_slug, task_id, run_id)
     )
     log_root.mkdir(parents=True, exist_ok=True)
 
     # 1. Build the workspace.
-    build = build_workspace(repo_root=repo_root, manifest=manifest, run_id=run_id)
+    workspace_parent = (
+        repo_root / "artifacts" / "workspaces" / artifact_model_slug / task_id
+    )
+    build = build_workspace(
+        repo_root=repo_root,
+        manifest=manifest,
+        run_id=run_id,
+        workspace_parent=workspace_parent,
+    )
     plan_guard = PlanGuard(build.agent_root)
     plan_history = PlanHistoryRecorder(
         workspace_root=build.agent_root, log_root=log_root
@@ -208,6 +219,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
         task_id=task_id,
         run_id=run_id,
         sandbox_root=Path(config.sandbox_root) if config.sandbox_root else None,
+        artifact_model_slug=artifact_model_slug,
     )
     trajectory.env_feedback(
         0,
@@ -500,6 +512,8 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
         "runtime_seconds": runtime,
         "workspace_root": str(build.agent_root),
         "log_root": str(log_root),
+        "model_slug": artifact_model_slug,
+        "artifact_layout_version": ARTIFACT_LAYOUT_VERSION,
         "feedback_history": feedback_history,
         "policy": {
             "agent_root": str(build.policy.agent_root),

@@ -58,6 +58,53 @@ def test_run_task_plain_model_keeps_existing_claude_model_behavior(tmp_path, mon
     assert rc == 0
     assert captured["config"].model == "existing-claude-name"
     assert captured["config"].model_provider_env == {}
+    assert captured["config"].artifact_model_slug == "existing-claude-name"
+
+
+def test_run_task_model_id_sets_artifact_model_slug(tmp_path, monkeypatch):
+    _write_manifest(tmp_path)
+    llm_config = tmp_path / "llm.yaml"
+    llm_config.write_text(
+        """
+models:
+  Vendor2/Gemini-3.1-pro:
+    api_type: claude_gateway
+    gateway_protocol: anthropic
+    base_url: https://gateway.example
+    api_key: test-local-secret
+""",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_run_task_once(config):
+        captured["config"] = config
+        return SimpleNamespace(
+            task_id="demo_task",
+            run_id="run-1",
+            verdict="PASS",
+            rounds_used=1,
+            runtime_seconds=0.1,
+            summary_path=tmp_path / "summary.json",
+            trajectory_path=tmp_path / "trajectory.jsonl",
+            log_root=tmp_path / "logs",
+            workspace_root=tmp_path / "workspace",
+            error=None,
+        )
+
+    monkeypatch.setattr(cli, "run_task_once", fake_run_task_once)
+
+    rc = cli.cmd_run_task(
+        _base_args(
+            tmp_path,
+            model_id="Vendor2/Gemini-3.1-pro",
+            llm_config=str(llm_config),
+        )
+    )
+
+    assert rc == 0
+    assert captured["config"].model == "Vendor2/Gemini-3.1-pro"
+    assert captured["config"].artifact_model_slug == "Vendor2_Gemini-3.1-pro"
 
 
 def test_run_task_model_id_openai_only_fails_before_harness(tmp_path, monkeypatch):
@@ -85,3 +132,35 @@ models:
     )
 
     assert rc == 2
+
+
+def test_run_batch_model_id_forwards_model_args(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run_tasks_parallel(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(cli, "run_tasks_parallel", fake_run_tasks_parallel)
+
+    args = SimpleNamespace(
+        repo_root=str(tmp_path),
+        task_ids=["task-a"],
+        max_workers=1,
+        max_rounds=1,
+        budget_seconds=60,
+        max_turns_per_round=2,
+        model=None,
+        model_id="Vendor2/Gemini-3.1-pro",
+        llm_config="config/llm.yaml",
+        judge_python=None,
+        keep_sandbox=False,
+        record_thinking=False,
+        keep_workspace=True,
+    )
+
+    rc = cli.cmd_run_batch(args)
+
+    assert rc == 0
+    assert captured["extra_run_args"]["model-id"] == "Vendor2/Gemini-3.1-pro"
+    assert captured["extra_run_args"]["llm-config"] == "config/llm.yaml"

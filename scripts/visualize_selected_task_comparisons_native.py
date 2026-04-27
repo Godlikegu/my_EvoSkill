@@ -21,6 +21,12 @@ from scipy.ndimage import convolve
 
 ROOT = Path(__file__).resolve().parents[2]
 MYEVOSKILL_ROOT = ROOT / "MyEvoSkill"
+SRC_ROOT = MYEVOSKILL_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from myevoskill.artifact_paths import resolve_workspace_output_path
+
 TASKS_DIR = ROOT / "tasks"
 ARTIFACTS_DIR = MYEVOSKILL_ROOT / "artifacts"
 SUMMARY_PATH = ARTIFACTS_DIR / "task_total_table_57.json"
@@ -111,7 +117,12 @@ def _load_json(path: Path) -> Any:
 
 
 def _workspace_output_path(task_id: str, run_id: str, filename: str = "reconstruction.npz") -> Path:
-    return MYEVOSKILL_ROOT / "artifacts" / "workspaces" / task_id / run_id / "output" / filename
+    return resolve_workspace_output_path(
+        repo_root=MYEVOSKILL_ROOT,
+        task_id=task_id,
+        run_id=run_id,
+        filename=filename,
+    )
 
 
 def _ensure_dir(path: Path) -> None:

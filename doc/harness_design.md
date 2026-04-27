@@ -35,7 +35,8 @@ other state under the operator's real `~/.claude/`.  We never want that:
 (in-process SDK) and `concurrency/pool.py` (subprocess child):
 
 * `make_isolated_home(repo_root, task_id, run_id, sandbox_root=None)` —
-  creates `artifacts/sandboxes/<task_id>/<run_id>/home`, wipes any
+  creates `artifacts/sandboxes/<model_slug>/<task_id>/<run_id>/home` for new
+  model-aware runs, wipes any
   pre-existing contents, then **whitelist-seeds** only
   `~/.claude/{settings.json, config.json}` from the real HOME so that
   3rd-party gateway URLs and the user's chosen model are preserved.
@@ -247,7 +248,8 @@ post-run debugging artifacts.
 `concurrency/pool.py` runs each task as a **separate subprocess** of
 `python -m myevoskill.cli run-task --json`.  Each child:
 
-* gets its own workspace directory under `artifacts/workspaces/<task>/<ts>/`;
+* gets its own workspace directory under
+  `artifacts/workspaces/<model_slug>/<task>/<ts>/`;
 * gets its own `~/.claude` and `~/.config/claude` directories under the
   workspace, redirected via `CLAUDE_HOME` / `XDG_CONFIG_HOME` env vars, so
   conversation history is **never written to the user's real home** and is

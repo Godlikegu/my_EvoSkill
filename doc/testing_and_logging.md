@@ -86,8 +86,12 @@ Each run writes a dedicated log directory containing:
 
 Persistent live and manual runs should write under:
 
-- `artifacts/workspaces/<task_id>/<run_id>/`
-- `artifacts/logs/<task_id>/<run_id>/`
+- `artifacts/workspaces/<model_slug>/<task_id>/<run_id>/`
+- `artifacts/logs/<model_slug>/<task_id>/<run_id>/`
+
+Older runs may still exist under `artifacts/workspaces/<task_id>/<run_id>/`
+and `artifacts/logs/<task_id>/<run_id>/`; helper scripts should treat those as
+read-only legacy fallback paths.
 
 Validation summaries must preserve:
 

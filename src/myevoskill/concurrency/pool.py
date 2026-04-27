@@ -29,6 +29,7 @@ from ..harness.sandbox import (
     env_overrides_for,
     make_isolated_home,
 )
+from ..artifact_paths import model_slug
 
 logger = logging.getLogger(__name__)
 
@@ -111,8 +112,14 @@ def _run_one_subprocess(
     # Allocate a stable run_id up front so the sandbox path matches what
     # the child process will record in its run_summary.json.
     pool_run_id = f"pool-{int(time.time())}-{uuid.uuid4().hex[:6]}"
+    artifact_model_slug = model_slug(
+        extra_run_args.get("model-id") or extra_run_args.get("model")
+    )
     sandbox = make_isolated_home(
-        repo_root=repo_root, task_id=task_id, run_id=pool_run_id
+        repo_root=repo_root,
+        task_id=task_id,
+        run_id=pool_run_id,
+        artifact_model_slug=artifact_model_slug,
     )
 
     env = os.environ.copy()

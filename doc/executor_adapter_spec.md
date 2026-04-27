@@ -223,8 +223,8 @@ in two read-only views:
 
 Default persistent run roots for live or manual execution are:
 
-- `artifacts/workspaces/<task_id>/<run_id>/`
-- `artifacts/logs/<task_id>/<run_id>/`
+- `artifacts/workspaces/<model_slug>/<task_id>/<run_id>/`
+- `artifacts/logs/<model_slug>/<task_id>/<run_id>/`
 
 The runtime environment seen by the workspace agent should be derived from the
 registered task environment:

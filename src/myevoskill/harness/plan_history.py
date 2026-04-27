@@ -13,7 +13,7 @@ For reflection / failure-mode audits we want the full history: what did
 the agent claim to be doing in round 1 vs round 2 vs ...? This module
 takes a snapshot of ``plan.md`` per round into the run's log directory:
 
-    artifacts/logs/<task>/<run_id>/
+    artifacts/logs/<model>/<task>/<run_id>/ for new harness runs
         plan_round_01.md
         plan_round_02.md
         ...
