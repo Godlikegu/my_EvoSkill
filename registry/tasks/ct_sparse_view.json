@@ -42,9 +42,17 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "conda_or_system",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777223670,
+    "cupy_info": null,
+    "filtered_requirements_path": null,
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\ct_sparse_view\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\ct_sparse_view\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\ct_sparse_view\\requirements.txt",
+    "requirements_sha256": "dcfbde365d8449633a93200ceaad9c87befeaa4cd5e39d78ed46e0facb354c93",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\ct_sparse_view.json",
+    "shared_torch_env": null,
+    "torch_info": null
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",

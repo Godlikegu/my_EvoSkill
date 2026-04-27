@@ -7,11 +7,15 @@
   },
   "public_policy": {
     "public_data_allowlist": [
+      "requirements.txt",
+      "data/meta_data",
       "data/raw_data.npz"
     ],
     "public_data_denylist": [
-      "baseline_reference.npz",
-      "reference_outputs"
+      "ground_truth.npz",
+      "reference_outputs",
+      "evaluation/reference_outputs/reconstruction.npz",
+      "evaluation/task_metric_adapter.py"
     ],
     "readme_policy": {
       "preserve_sections": [
@@ -38,13 +42,17 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "venv_pip",
-    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\62f860b095bdc5ce\\build.log",
-    "env_hash": "62f860b095bdc5ce",
-    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\62f860b095bdc5ce\\install_report.json",
-    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\62f860b095bdc5ce\\Scripts\\python.exe",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777223004,
+    "cupy_info": null,
+    "filtered_requirements_path": null,
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\confocal-nlos-fk\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\confocal-nlos-fk\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\confocal-nlos-fk\\requirements.txt",
+    "requirements_sha256": "45af19f637629ceca95a5ec065645078cc12b8740fa92a5beaea45721b9efd87",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\confocal-nlos-fk.json",
+    "shared_torch_env": null,
+    "torch_info": null
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",
@@ -54,7 +62,7 @@
     "work_dir": "work"
   },
   "runtime_policy": {
-    "execution_budget_seconds": 900,
+    "execution_budget_seconds": 7200,
     "model_timeout_seconds": 240
   },
   "source_task_dir": "../tasks/confocal-nlos-fk",

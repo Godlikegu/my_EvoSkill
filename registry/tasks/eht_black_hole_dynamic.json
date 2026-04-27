@@ -7,12 +7,17 @@
   },
   "public_policy": {
     "public_data_allowlist": [
-      "data/raw_data.npz",
-      "data/meta_data.json"
+      "requirements.txt",
+      "data/meta_data",
+      "data/meta_data.json",
+      "data/raw_data.npz"
     ],
     "public_data_denylist": [
       "ground_truth.npz",
-      "reference_outputs"
+      "reference_outputs",
+      "evaluation/reference_outputs/task_contract_refs_ground_truth.npz",
+      "evaluation/reference_outputs/ground_truth.npy",
+      "evaluation/task_metric_adapter.py"
     ],
     "readme_policy": {
       "preserve_sections": [
@@ -39,13 +44,17 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "venv_pip",
-    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\64c0478a68d7d897\\build.log",
-    "env_hash": "64c0478a68d7d897",
-    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\64c0478a68d7d897\\install_report.json",
-    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\64c0478a68d7d897\\Scripts\\python.exe",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777224004,
+    "cupy_info": null,
+    "filtered_requirements_path": null,
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\eht_black_hole_dynamic\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_dynamic\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_dynamic\\requirements.txt",
+    "requirements_sha256": "afa71038466f4a190fa9fd1c88cd503c31b9ba535bd3dfe16c1ac6d2d2787cdf",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\eht_black_hole_dynamic.json",
+    "shared_torch_env": null,
+    "torch_info": null
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",
@@ -55,7 +64,7 @@
     "work_dir": "work"
   },
   "runtime_policy": {
-    "execution_budget_seconds": 900,
+    "execution_budget_seconds": 7200,
     "model_timeout_seconds": 240
   },
   "source_task_dir": "../tasks/eht_black_hole_dynamic",

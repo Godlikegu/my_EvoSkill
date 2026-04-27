@@ -317,6 +317,11 @@ def _detect_runtime_env(
             "requirements_path": state.get("requirements_path")
             or (str(requirements.resolve()) if requirements.exists() else None),
             "requirements_sha256": state.get("requirements_sha256"),
+            "filtered_requirements_path": state.get("filtered_requirements_path"),
+            "skipped_requirements": state.get("skipped_requirements"),
+            "shared_torch_env": state.get("shared_torch_env"),
+            "torch_info": state.get("torch_info"),
+            "cupy_info": state.get("cupy_info"),
             "setup_state_path": str(
                 (repo_root / SETUP_STATE_REL.format(task_id=task_id)).resolve()
             ),

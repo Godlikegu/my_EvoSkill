@@ -17,13 +17,14 @@ import json
 from pathlib import Path
 
 import pytest
-from claude_agent_sdk import AssistantMessage, ToolUseBlock
+from claude_agent_sdk import AssistantMessage, ThinkingBlock, ToolUseBlock
 
 from myevoskill.harness.hooks import make_pre_tool_use_hook
 from myevoskill.harness.plan_guard import PLAN_FILENAME, PlanGuard
-from myevoskill.harness.prompts import feedback_user_prompt, initial_user_prompt
+from myevoskill.cli import main as cli_main
+from myevoskill.harness.prompts import SYSTEM_PROMPT, feedback_user_prompt, initial_user_prompt
 from myevoskill.harness.runner import _record_message, agent_runtime_env_overrides
-from myevoskill.harness.trajectory import TrajectoryWriter
+from myevoskill.harness.trajectory import TrajectoryWriter, read_clean_events, write_clean_events
 from myevoskill.judge.bridge import FAIL, INVALID, PASS, JudgeFeedback, JudgeRunner
 from myevoskill.workspace.policy import WorkspacePolicy
 
@@ -281,17 +282,97 @@ def test_record_message_does_not_duplicate_tool_calls(tmp_path: Path) -> None:
     assert lines == []
 
 
+def test_record_message_skips_thinking_by_default(tmp_path: Path) -> None:
+    log_root = tmp_path / "logs"
+    tw = TrajectoryWriter(log_root, run_id="r1")
+    msg = AssistantMessage(
+        content=[ThinkingBlock(thinking="debug drift", signature="sig")],
+        model="test",
+    )
+
+    _record_message(tw, 1, msg)
+
+    assert (log_root / "trajectory.jsonl").read_text(encoding="utf-8") == ""
+
+
+def test_record_message_can_record_thinking_for_debug(tmp_path: Path) -> None:
+    log_root = tmp_path / "logs"
+    tw = TrajectoryWriter(log_root, run_id="r1")
+    msg = AssistantMessage(
+        content=[ThinkingBlock(thinking="debug drift", signature="sig")],
+        model="test",
+    )
+
+    _record_message(tw, 1, msg, record_thinking=True)
+
+    lines = (log_root / "trajectory.jsonl").read_text(encoding="utf-8").splitlines()
+    assert [json.loads(line)["kind"] for line in lines] == ["assistant_thinking"]
+
+
 def test_clean_trajectory_filters_thinking_and_duplicate_tool_calls(tmp_path: Path) -> None:
     log_root = tmp_path / "logs"
     tw = TrajectoryWriter(log_root, run_id="r1")
+    tw.assistant_text(1, "visible progress")
     tw.assistant_thinking(1, "private scratch")
     tw.tool_call(1, "Read", {"file_path": "README.md"}, tool_use_id="tool1")
     tw.tool_call(1, "Read", {"file_path": "README.md"}, tool_use_id="tool1")
     tw.tool_result(1, "tool1", "ok", is_error=False)
+    tw.env_feedback(1, "judge_verdict", {"verdict": "FAIL"})
+    tw.round_marker(1, "judged", {"verdict": "FAIL"})
 
+    raw_kinds = [
+        json.loads(line)["kind"]
+        for line in tw.path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert "assistant_thinking" in raw_kinds
     events = tw.read_clean_events()
-    assert [e["kind"] for e in events] == ["tool_call", "tool_result"]
+    assert [e["kind"] for e in events] == [
+        "assistant_text",
+        "tool_call",
+        "tool_result",
+        "env_feedback",
+        "round_marker",
+    ]
     assert len([e for e in events if e["kind"] == "tool_call"]) == 1
+    assert all(e["kind"] != "assistant_thinking" for e in events)
+
+
+def test_write_clean_events_exports_jsonl(tmp_path: Path) -> None:
+    tw = TrajectoryWriter(tmp_path / "logs", run_id="r1")
+    tw.assistant_thinking(1, "debug only")
+    tw.tool_call(1, "Read", {"file_path": "README.md"}, tool_use_id="tool1")
+    tw.tool_call(1, "Read", {"file_path": "README.md"}, tool_use_id="tool1")
+    tw.tool_result(1, "tool1", "ok", is_error=False)
+
+    output = tmp_path / "clean" / "trajectory.clean.jsonl"
+    count = write_clean_events(tw.path, output)
+
+    assert count == 2
+    assert read_clean_events(tw.path) == [
+        json.loads(line)
+        for line in output.read_text(encoding="utf-8").splitlines()
+    ]
+
+
+def test_export_trajectory_cli_writes_clean_jsonl(tmp_path: Path) -> None:
+    tw = TrajectoryWriter(tmp_path / "logs", run_id="r1")
+    tw.assistant_thinking(1, "debug only")
+    tw.assistant_text(1, "visible")
+
+    output = tmp_path / "clean.jsonl"
+    code = cli_main(
+        [
+            "export-trajectory",
+            "--input",
+            str(tw.path),
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert code == 0
+    events = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    assert [e["kind"] for e in events] == ["assistant_text"]
 
 
 # ------------------------------------------------------------------- pre-hook
@@ -590,3 +671,35 @@ def test_feedback_prompt_describes_previous_round() -> None:
     )
     assert "Previous round judgement" in prompt
     assert "now starting Round 2" in prompt
+
+
+def test_system_prompt_treats_environment_feedback_as_not_user_requests() -> None:
+    prompt = SYSTEM_PROMPT.lower()
+    assert "environment signals" in prompt
+    assert "not new user requests" in prompt
+    assert "do not wait for user clarification" in prompt
+
+
+def test_fail_feedback_remains_pass_fail_only_without_extra_hints() -> None:
+    prompt = feedback_user_prompt(
+        round_index=2,
+        feedback=JudgeFeedback(
+            verdict=FAIL,
+            metric_status={"ncc_vs_ref": True, "nrmse_vs_ref": False},
+        ),
+        primary_output_rel="output/x.npz",
+        show_metric_status=False,
+    )
+    lower = prompt.lower()
+    assert "previous round judgement" in lower
+    assert "fail" in lower
+    assert "ncc" not in lower
+    assert "nrmse" not in lower
+    assert "threshold" not in lower
+    assert "shape" not in lower
+    assert "calibration" not in lower
+    assert "normalization" not in lower
+    assert "alignment" not in lower
+    assert "units" not in lower
+    assert "model assumption" not in lower
+    assert "numeric values" not in lower

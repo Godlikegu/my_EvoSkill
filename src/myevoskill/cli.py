@@ -9,6 +9,7 @@ Subcommands
 * ``run-batch``        Run several tasks concurrently in isolated subprocesses,
                        deleting per-run claude history afterwards.
 * ``setup-task-env``   Build the per-task venv consumed by registration.
+* ``export-trajectory`` Write a distillation-clean trajectory JSONL.
 
 Everything else (compilation, visualisation, legacy bootstrap, ...) lives in
 its own module under ``myevoskill/`` and is invoked directly via
@@ -123,6 +124,11 @@ def cmd_setup_task_env(args: argparse.Namespace) -> int:
             tasks_root=Path(args.tasks_root) if args.tasks_root else None,
             force=bool(args.force),
             base_python=Path(args.python) if args.python else None,
+            shared_torch_env=Path(args.shared_torch_env) if args.shared_torch_env else None,
+            torch_cuda_index_url=args.torch_cuda_index_url,
+            torch_version=args.torch_version,
+            require_gpu_torch=bool(args.require_gpu_torch),
+            skip_notebook_packages=not bool(args.install_notebook_packages),
         )
     except TaskEnvSetupError as exc:
         print(f"setup-task-env failed: {exc}", file=sys.stderr)
@@ -131,7 +137,160 @@ def cmd_setup_task_env(args: argparse.Namespace) -> int:
     print(f"setup-task-env: {result.task_id}")
     print(f"  state:  {result.state_path}")
     print(f"  python: {result.python_executable}")
+    if result.shared_torch_env:
+        print(f"  shared torch: {result.shared_torch_env}")
     return 0
+
+
+def cmd_setup_shared_torch_env(args: argparse.Namespace) -> int:
+    from .task_env import TaskEnvSetupError, setup_shared_torch_env
+
+    try:
+        info = setup_shared_torch_env(
+            repo_root=Path(args.repo_root),
+            force=bool(args.force),
+            base_python=Path(args.python) if args.python else None,
+            shared_torch_env=Path(args.shared_torch_env) if args.shared_torch_env else None,
+            torch_cuda_index_url=args.torch_cuda_index_url,
+            torch_version=args.torch_version,
+            require_gpu_torch=bool(args.require_gpu_torch),
+        )
+    except TaskEnvSetupError as exc:
+        print(f"setup-shared-torch-env failed: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(info))
+    else:
+        print(f"setup-shared-torch-env: {info['shared_torch_env']}")
+        print(f"  python: {info['python_executable']}")
+        print(f"  torch:  {info['torch_version']} cuda={info['torch_cuda']}")
+        print(f"  gpu:    {info['device_name']}")
+    return 0
+
+
+def cmd_export_trajectory(args: argparse.Namespace) -> int:
+    from .harness.trajectory import write_clean_events
+
+    input_path = Path(args.input).resolve()
+    output_path = Path(args.output).resolve()
+    if not input_path.exists():
+        print(f"trajectory input not found: {input_path}", file=sys.stderr)
+        return 2
+    count = write_clean_events(input_path, output_path)
+    if args.json:
+        print(json.dumps({"input": str(input_path), "output": str(output_path), "events": count}))
+    else:
+        print(f"clean trajectory: {output_path}")
+        print(f"events: {count}")
+    return 0
+
+
+def _discover_task_ids(repo_root: Path, tasks_root_arg: str | None) -> list[str]:
+    tasks_root = Path(tasks_root_arg).resolve() if tasks_root_arg else repo_root.parent / "tasks"
+    return sorted(p.name for p in tasks_root.iterdir() if p.is_dir())
+
+
+def cmd_prepare_tasks(args: argparse.Namespace) -> int:
+    import csv
+    import time
+
+    from .registration import RegistrationError, register_task
+    from .task_env import TaskEnvSetupError, setup_task_env, setup_shared_torch_env
+
+    repo_root = Path(args.repo_root).resolve()
+    tasks_root = Path(args.tasks_root).resolve() if args.tasks_root else repo_root.parent / "tasks"
+    task_ids = list(args.task_ids) if args.task_ids else _discover_task_ids(repo_root, args.tasks_root)
+
+    if args.setup_shared_torch:
+        try:
+            setup_shared_torch_env(
+                repo_root=repo_root,
+                force=bool(args.force_shared_torch),
+                base_python=Path(args.python) if args.python else None,
+                shared_torch_env=Path(args.shared_torch_env) if args.shared_torch_env else None,
+                torch_cuda_index_url=args.torch_cuda_index_url,
+                torch_version=args.torch_version,
+                require_gpu_torch=bool(args.require_gpu_torch),
+            )
+        except TaskEnvSetupError as exc:
+            print(f"shared torch setup failed: {exc}", file=sys.stderr)
+            return 2
+
+    rows: list[dict[str, Any]] = []
+    for task_id in task_ids:
+        row: dict[str, Any] = {
+            "task_id": task_id,
+            "setup": "PENDING",
+            "register": "PENDING",
+            "python_executable": "",
+            "manifest_path": "",
+            "error": "",
+        }
+        try:
+            env = setup_task_env(
+                repo_root=repo_root,
+                task_id=task_id,
+                tasks_root=tasks_root,
+                force=bool(args.force_env),
+                base_python=Path(args.python) if args.python else None,
+                shared_torch_env=Path(args.shared_torch_env) if args.shared_torch_env else None,
+                torch_cuda_index_url=args.torch_cuda_index_url,
+                torch_version=args.torch_version,
+                require_gpu_torch=bool(args.require_gpu_torch),
+                skip_notebook_packages=not bool(args.install_notebook_packages),
+            )
+            row["setup"] = "READY"
+            row["python_executable"] = str(env.python_executable)
+            if env.shared_torch_env:
+                row["shared_torch_env"] = str(env.shared_torch_env)
+            if env.torch_info:
+                row["torch_cuda"] = env.torch_info.get("torch_cuda")
+                row["torch_gpu"] = env.torch_info.get("device_name")
+        except TaskEnvSetupError as exc:
+            row["setup"] = "FAILED"
+            row["register"] = "SKIPPED"
+            row["error"] = str(exc)
+            rows.append(row)
+            print(f"[prepare] {task_id}: setup FAILED: {exc}", file=sys.stderr)
+            continue
+
+        try:
+            reg = register_task(
+                repo_root=repo_root,
+                task_id=task_id,
+                tasks_root=tasks_root,
+                force=True,
+                require_task_env=True,
+            )
+            row["register"] = "READY"
+            row["manifest_path"] = str(reg.manifest_path)
+        except RegistrationError as exc:
+            row["register"] = "FAILED"
+            row["error"] = str(exc)
+            print(f"[prepare] {task_id}: register FAILED: {exc}", file=sys.stderr)
+
+        rows.append(row)
+        print(f"[prepare] {task_id}: setup={row['setup']} register={row['register']}")
+
+    out_dir = repo_root / "artifacts" / "logs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = int(time.time())
+    json_path = out_dir / f"prepare_{stamp}.json"
+    csv_path = out_dir / f"prepare_{stamp}.csv"
+    payload = {"task_ids": task_ids, "rows": rows}
+    json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        fields = sorted({k for row in rows for k in row})
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    failed = [r for r in rows if r["setup"] != "READY" or r["register"] != "READY"]
+    print(f"prepare complete: {len(rows)} task(s), {len(failed)} failed.")
+    print(f"summary: {json_path}")
+    print(f"csv:     {csv_path}")
+    return 0 if not failed else 1
 
 
 def cmd_run_task(args: argparse.Namespace) -> int:
@@ -153,6 +312,7 @@ def cmd_run_task(args: argparse.Namespace) -> int:
         keep_workspace_on_success=bool(args.keep_workspace),
         sandbox_root=Path(args.sandbox_root) if args.sandbox_root else None,
         keep_sandbox=bool(args.keep_sandbox),
+        record_thinking=bool(args.record_thinking),
     )
 
     outcome = run_task_once(config)
@@ -199,6 +359,10 @@ def cmd_run_batch(args: argparse.Namespace) -> int:
         extra["judge-python"] = args.judge_python
     if args.keep_sandbox:
         extra["keep-sandbox"] = True
+    if args.record_thinking:
+        extra["record-thinking"] = True
+    if not args.keep_workspace:
+        extra["delete-workspace-on-success"] = True
 
     outcomes = run_tasks_parallel(
         repo_root=repo_root,
@@ -248,7 +412,64 @@ def build_parser() -> argparse.ArgumentParser:
     p_env.add_argument("--force", action="store_true")
     p_env.add_argument("--python", default=None,
                        help="base Python executable used to create the venv")
+    p_env.add_argument("--shared-torch-env", default=None,
+                       help="shared CUDA Torch venv reused by Torch tasks")
+    p_env.add_argument("--torch-cuda-index-url",
+                       default="https://download.pytorch.org/whl/cu118")
+    p_env.add_argument("--torch-version", default="2.5.1")
+    p_env.add_argument("--require-gpu-torch", action="store_true",
+                       help="for Torch tasks, fail setup unless torch sees a CUDA GPU")
+    p_env.add_argument("--install-notebook-packages", action="store_true",
+                       help="install jupyter/notebook packages from task requirements instead of filtering them")
     p_env.set_defaults(func=cmd_setup_task_env)
+
+    # setup-shared-torch-env
+    p_torch = sub.add_parser(
+        "setup-shared-torch-env",
+        help="create/update the shared CUDA Torch runtime venv",
+    )
+    p_torch.add_argument("--repo-root", default=".")
+    p_torch.add_argument("--force", action="store_true")
+    p_torch.add_argument("--python", default=None,
+                         help="base Python executable used to create the venv")
+    p_torch.add_argument("--shared-torch-env", default=None,
+                         help="default: .venvs/_torch-cu118-py310")
+    p_torch.add_argument("--torch-cuda-index-url",
+                         default="https://download.pytorch.org/whl/cu118")
+    p_torch.add_argument("--torch-version", default="2.5.1")
+    p_torch.add_argument("--require-gpu-torch", action="store_true", default=True)
+    p_torch.add_argument("--json", action="store_true")
+    p_torch.set_defaults(func=cmd_setup_shared_torch_env)
+
+    # export-trajectory
+    p_export = sub.add_parser(
+        "export-trajectory",
+        help="write a distillation-clean trajectory JSONL",
+    )
+    p_export.add_argument("--input", required=True, help="raw trajectory JSONL path")
+    p_export.add_argument("--output", required=True, help="clean trajectory JSONL path")
+    p_export.add_argument("--json", action="store_true", help="emit one JSON summary line")
+    p_export.set_defaults(func=cmd_export_trajectory)
+
+    # prepare-tasks
+    p_prepare = sub.add_parser(
+        "prepare-tasks",
+        help="setup per-task envs and register manifests, writing JSON/CSV summary",
+    )
+    p_prepare.add_argument("--repo-root", default=".")
+    p_prepare.add_argument("--tasks-root", default=None)
+    p_prepare.add_argument("--task-ids", nargs="+", default=None)
+    p_prepare.add_argument("--python", default=None)
+    p_prepare.add_argument("--force-env", action="store_true")
+    p_prepare.add_argument("--setup-shared-torch", action="store_true", default=True)
+    p_prepare.add_argument("--force-shared-torch", action="store_true")
+    p_prepare.add_argument("--shared-torch-env", default=None)
+    p_prepare.add_argument("--torch-cuda-index-url",
+                           default="https://download.pytorch.org/whl/cu118")
+    p_prepare.add_argument("--torch-version", default="2.5.1")
+    p_prepare.add_argument("--require-gpu-torch", action="store_true")
+    p_prepare.add_argument("--install-notebook-packages", action="store_true")
+    p_prepare.set_defaults(func=cmd_prepare_tasks)
 
     # register-task
     p_reg = sub.add_parser("register-task", help="register / refresh a task manifest")
@@ -277,12 +498,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--model", default=None)
     p_run.add_argument("--judge-python", default=None)
     p_run.add_argument("--show-metric-status", action="store_true")
-    p_run.add_argument("--keep-workspace", action="store_true")
+    p_run.add_argument(
+        "--keep-workspace",
+        dest="keep_workspace",
+        action="store_true",
+        default=True,
+        help="keep the run workspace after PASS (default)",
+    )
+    p_run.add_argument(
+        "--delete-workspace-on-success",
+        dest="keep_workspace",
+        action="store_false",
+        help="delete the run workspace after PASS to save disk",
+    )
     p_run.add_argument("--keep-sandbox", action="store_true",
                        help="do not wipe the per-run isolated $HOME on exit (debug only)")
     p_run.add_argument("--sandbox-root", default=None,
                        help="override sandbox dir (default: artifacts/sandboxes/<task>/<run>/home)")
     p_run.add_argument("--json", action="store_true", help="emit one JSON summary line at end")
+    p_run.add_argument("--record-thinking", action="store_true",
+                       help="debug only: keep SDK thinking blocks in raw trajectory")
     p_run.set_defaults(func=cmd_run_task)
 
     # run-batch
@@ -297,6 +532,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_batch.add_argument("--judge-python", default=None)
     p_batch.add_argument("--keep-sandbox", action="store_true",
                          help="propagate --keep-sandbox to every child run-task")
+    p_batch.add_argument("--record-thinking", action="store_true",
+                         help="propagate --record-thinking to every child run-task")
+    p_batch.add_argument(
+        "--keep-workspace",
+        dest="keep_workspace",
+        action="store_true",
+        default=True,
+        help="keep successful child workspaces after PASS (default)",
+    )
+    p_batch.add_argument(
+        "--delete-workspace-on-success",
+        dest="keep_workspace",
+        action="store_false",
+        help="propagate --delete-workspace-on-success to every child run-task",
+    )
     p_batch.set_defaults(func=cmd_run_batch)
 
     return parser

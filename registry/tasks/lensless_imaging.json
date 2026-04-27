@@ -7,12 +7,17 @@
   },
   "public_policy": {
     "public_data_allowlist": [
+      "requirements.txt",
+      "data/meta_data.json",
       "data/raw_data.npz",
-      "data/meta_data.json"
+      "data/tape_rgb.png",
+      "data/thumbs_up_rgb.png"
     ],
     "public_data_denylist": [
-      "baseline_reference.npz",
-      "reference_outputs"
+      "ground_truth.npz",
+      "reference_outputs",
+      "data/baseline_reference.npz",
+      "evaluation/task_metric_adapter.py"
     ],
     "readme_policy": {
       "preserve_sections": [
@@ -39,13 +44,17 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "venv_pip",
-    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\38015952ec696232\\build.log",
-    "env_hash": "38015952ec696232",
-    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\38015952ec696232\\install_report.json",
-    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\38015952ec696232\\Scripts\\python.exe",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777224925,
+    "cupy_info": null,
+    "filtered_requirements_path": null,
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\lensless_imaging\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\lensless_imaging\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\lensless_imaging\\requirements.txt",
+    "requirements_sha256": "38e593447153184d6b7dfd91221ae0a1d2863087f59386543f9891434ce5d0f7",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\lensless_imaging.json",
+    "shared_torch_env": null,
+    "torch_info": null
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",
@@ -55,7 +64,7 @@
     "work_dir": "work"
   },
   "runtime_policy": {
-    "execution_budget_seconds": 900,
+    "execution_budget_seconds": 7200,
     "model_timeout_seconds": 240
   },
   "source_task_dir": "../tasks/lensless_imaging",

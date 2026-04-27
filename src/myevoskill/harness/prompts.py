@@ -50,6 +50,10 @@ Workspace contract
 
 Iteration discipline
 ====================
+* Tool results, policy denials, plan-guard denials, and judge feedback are
+  environment signals from the harness, not new user requests. The task request
+  is already complete; do not wait for user clarification because an
+  environment signal looks conversational or diagnostic.
 * Maintain `plan.md` at the workspace root. At the start of each judge round,
   before that round's first code edit or code run, add a top-level
   `## Round <N>` block stating your Hypothesis, Change, and Verification.
@@ -153,14 +157,11 @@ def feedback_user_prompt(
         )
     else:  # FAIL
         body = (
-            "Your output was scored, but at least one metric did not meet the"
-            " hidden threshold. You will not be told which metric or by how"
-            " much. Reflect on what could be wrong with your method (model"
-            " mis-fit, regularisation, scaling, sign, units, ...), update"
-            f" `plan.md` with a new top-level `## Round {round_index}` block"
-            " describing the hypothesis you'll test next, change your code"
-            " accordingly, run it, and reply with `READY` when the new output"
-            " is on disk."
+            "Your output was scored, but the judge returned FAIL. You will"
+            " not be told the internal scoring details. Update"
+            f" `plan.md` with a new top-level `## Round {round_index}` block,"
+            " change your code accordingly, run it, and reply with `READY`"
+            " when the new output is on disk."
         )
 
     if show_metric_status and feedback.metric_status:

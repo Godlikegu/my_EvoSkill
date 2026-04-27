@@ -7,11 +7,14 @@
   },
   "public_policy": {
     "public_data_allowlist": [
-      "data/raw_data.npz",
-      "data/meta_data.json"
+      "requirements.txt",
+      "data/meta_data.json",
+      "data/raw_data.npz"
     ],
     "public_data_denylist": [
-      "reference_outputs"
+      "ground_truth.npz",
+      "reference_outputs",
+      "evaluation/task_metric_adapter.py"
     ],
     "readme_policy": {
       "preserve_sections": [
@@ -38,13 +41,17 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "venv_pip",
-    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\86ec990c0104d3e6\\build.log",
-    "env_hash": "86ec990c0104d3e6",
-    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\86ec990c0104d3e6\\install_report.json",
-    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\86ec990c0104d3e6\\Scripts\\python.exe",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777227753,
+    "cupy_info": null,
+    "filtered_requirements_path": null,
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\single_molecule_light_field\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\single_molecule_light_field\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\single_molecule_light_field\\requirements.txt",
+    "requirements_sha256": "1e4af278afafcec28d4d2d04e2b7bd9dfc4a83bdd55d53459413b5eb8de92886",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\single_molecule_light_field.json",
+    "shared_torch_env": null,
+    "torch_info": null
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",
@@ -54,7 +61,7 @@
     "work_dir": "work"
   },
   "runtime_policy": {
-    "execution_budget_seconds": 900,
+    "execution_budget_seconds": 7200,
     "model_timeout_seconds": 240
   },
   "source_task_dir": "../tasks/single_molecule_light_field",

@@ -916,8 +916,14 @@ def validate_output_payload_against_contract(
             )
         if not np.issubdtype(value.dtype, np.number):
             warnings.append(f"non-numeric field: {field_name}")
-        elif np.any(~np.isfinite(np.asarray(value, dtype=np.complex128).view(np.float64))):
-            warnings.append(f"nan_or_inf field: {field_name}")
+        else:
+            numeric = np.asarray(value)
+            if np.issubdtype(numeric.dtype, np.complexfloating):
+                finite = np.isfinite(numeric.real) & np.isfinite(numeric.imag)
+            else:
+                finite = np.isfinite(numeric)
+            if np.any(~finite):
+                warnings.append(f"nan_or_inf field: {field_name}")
         field_checks.append(
             {
                 "field": field_name,

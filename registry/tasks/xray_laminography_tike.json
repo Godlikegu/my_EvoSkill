@@ -7,12 +7,15 @@
   },
   "public_policy": {
     "public_data_allowlist": [
-      "data/raw_data.npz",
-      "data/meta_data.json"
+      "requirements.txt",
+      "data/meta_data.json",
+      "data/raw_data.npz"
     ],
     "public_data_denylist": [
       "ground_truth.npz",
-      "reference_outputs"
+      "reference_outputs",
+      "data/ground_truth.npz",
+      "evaluation/task_metric_adapter.py"
     ],
     "readme_policy": {
       "preserve_sections": [
@@ -39,13 +42,19 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "venv_pip",
-    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\7e3ef17a3909ee6f\\build.log",
-    "env_hash": "7e3ef17a3909ee6f",
-    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\7e3ef17a3909ee6f\\install_report.json",
-    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\7e3ef17a3909ee6f\\Scripts\\python.exe",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777228094,
+    "cupy_info": {
+      "device_count": 1
+    },
+    "filtered_requirements_path": null,
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\xray_laminography_tike\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\xray_laminography_tike\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\xray_laminography_tike\\requirements.txt",
+    "requirements_sha256": "f9a1a99c6ab6cfe89f7a271b340fe14abbc58f3bb015ca9ac9cda17a7c6e6fd3",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\xray_laminography_tike.json",
+    "shared_torch_env": null,
+    "torch_info": null
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",
@@ -55,7 +64,7 @@
     "work_dir": "work"
   },
   "runtime_policy": {
-    "execution_budget_seconds": 900,
+    "execution_budget_seconds": 7200,
     "model_timeout_seconds": 240
   },
   "source_task_dir": "../tasks/xray_laminography_tike",

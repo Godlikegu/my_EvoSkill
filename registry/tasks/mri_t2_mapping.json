@@ -7,12 +7,15 @@
   },
   "public_policy": {
     "public_data_allowlist": [
+      "requirements.txt",
       "data/raw_data.npz",
       "data/meta_data.json"
     ],
     "public_data_denylist": [
       "ground_truth.npz",
-      "reference_outputs"
+      "reference_outputs",
+      "data/ground_truth.npz",
+      "src/visualization.py"
     ],
     "readme_policy": {
       "preserve_sections": [
@@ -39,13 +42,17 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "venv_pip",
-    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\fdfc9b37f4397e37\\build.log",
-    "env_hash": "fdfc9b37f4397e37",
-    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\fdfc9b37f4397e37\\install_report.json",
-    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\fdfc9b37f4397e37\\Scripts\\python.exe",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777226248,
+    "cupy_info": null,
+    "filtered_requirements_path": null,
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\mri_t2_mapping\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_t2_mapping\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_t2_mapping\\requirements.txt",
+    "requirements_sha256": "39a61e9123524f7233472eda9b0b110f323b5b322321a2ad591e1a018caa4334",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_t2_mapping.json",
+    "shared_torch_env": null,
+    "torch_info": null
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",
@@ -55,7 +62,7 @@
     "work_dir": "work"
   },
   "runtime_policy": {
-    "execution_budget_seconds": 900,
+    "execution_budget_seconds": 7200,
     "model_timeout_seconds": 240
   },
   "source_task_dir": "../tasks/mri_t2_mapping",

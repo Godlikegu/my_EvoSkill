@@ -6,6 +6,7 @@ import pytest
 from myevoskill.task_contract import (
     derive_public_task_contract,
     evaluate_metric,
+    validate_output_payload_against_contract,
     validate_task_contract,
     validate_task_contract_shapes,
     validate_task_contract_task_paths,
@@ -15,6 +16,49 @@ from myevoskill.task_contract import (
 def _write_npz(path: Path, **arrays) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(path, **arrays)
+
+
+def test_validate_output_payload_accepts_finite_scalar_fields(tmp_path: Path) -> None:
+    output_path = tmp_path / "output" / "reconstruction.npz"
+    _write_npz(output_path, scalar=np.float64(1.25))
+    contract = {
+        "output": {
+            "fields": [
+                {
+                    "name": "scalar",
+                    "dtype": "float64",
+                    "shape": [],
+                }
+            ]
+        }
+    }
+
+    with np.load(output_path, allow_pickle=False) as payload:
+        result = validate_output_payload_against_contract(payload, contract)
+
+    assert result["missing_fields"] == []
+    assert result["warnings"] == []
+
+
+def test_validate_output_payload_flags_scalar_nan(tmp_path: Path) -> None:
+    output_path = tmp_path / "output" / "reconstruction.npz"
+    _write_npz(output_path, scalar=np.float64(np.nan))
+    contract = {
+        "output": {
+            "fields": [
+                {
+                    "name": "scalar",
+                    "dtype": "float64",
+                    "shape": [],
+                }
+            ]
+        }
+    }
+
+    with np.load(output_path, allow_pickle=False) as payload:
+        result = validate_output_payload_against_contract(payload, contract)
+
+    assert result["warnings"] == ["nan_or_inf field: scalar"]
 
 
 def test_evaluate_metric_supports_python_callable_kwargs_mapping_key(tmp_path):

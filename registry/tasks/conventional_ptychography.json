@@ -42,9 +42,21 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "conda_or_system",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777228399,
+    "cupy_info": null,
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\conventional_ptychography.requirements.filtered.txt",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\conventional_ptychography\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\conventional_ptychography\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\conventional_ptychography\\requirements.txt",
+    "requirements_sha256": "707813a55cc53f233ff64851ec238aef591d07a09aef5a4bc3244e6f4b5a72f4",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\conventional_ptychography.json",
+    "shared_torch_env": null,
+    "skipped_requirements": [
+      "jupyter>=1.0",
+      "ipykernel"
+    ],
+    "torch_info": null
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",

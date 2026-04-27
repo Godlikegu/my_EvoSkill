@@ -79,10 +79,11 @@ class HarnessConfig:
     model: str | None = None  # let SDK pick the default
     judge_python: str | None = None
     show_metric_status: bool = False  # if True, tell agent which metric failed (still no values)
-    keep_workspace_on_success: bool = False
+    keep_workspace_on_success: bool = True
     log_root: Path | None = None  # default: artifacts/logs/<task>/<run_id>
     sandbox_root: Path | None = None  # default: artifacts/sandboxes/<task>/<run>/home
     keep_sandbox: bool = False  # opt-out of post-run sandbox cleanup
+    record_thinking: bool = False  # debug only; default raw trajectories stay distillation-cleaner
 
 
 @dataclass
@@ -267,6 +268,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
         permission_mode="default",
         max_turns=config.max_turns_per_round,
         model=config.model,
+        thinking=None if config.record_thinking else {"type": "disabled"},
         hooks={
             "PreToolUse": [HookMatcher(matcher="*", hooks=[pre_hook])],
             "PostToolUse": [HookMatcher(matcher="*", hooks=[post_hook])],
@@ -325,6 +327,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                         round_index,
                         message,
                         task_registry=task_registry,
+                        record_thinking=config.record_thinking,
                     )
                     if isinstance(message, ResultMessage):
                         break
@@ -503,12 +506,18 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
         "skipped_files": list(build.skipped_files),
         "plan_history": plan_history.read_history(),
         "process_cleanup_errors": cleanup_errors,
+        "thinking": {
+            "sdk_thinking": "default" if config.record_thinking else "disabled",
+            "record_thinking": bool(config.record_thinking),
+        },
         "error": error_message,
     }
     summary_path = log_root / "run_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    # Optional cleanup of the workspace on PASS to save disk.
+    # Optional cleanup of the workspace on PASS to save disk. The default is
+    # to keep successful workspaces because they are valuable for debugging
+    # and skill distillation.
     if final_verdict == PASS and not config.keep_workspace_on_success:
         try:
             shutil.rmtree(build.agent_root, ignore_errors=True)
@@ -647,6 +656,7 @@ async def _drain_task_notifications(
             round_index,
             message,
             task_registry=task_registry,
+            record_thinking=False,
         )
 
 
@@ -683,6 +693,7 @@ def _record_message(
     message: Any,
     *,
     task_registry: ActiveTaskRegistry | None = None,
+    record_thinking: bool = False,
 ) -> None:
     """Translate an SDK message into trajectory events."""
 
@@ -691,7 +702,8 @@ def _record_message(
             if isinstance(block, TextBlock):
                 trajectory.assistant_text(round_index, block.text)
             elif isinstance(block, ThinkingBlock):
-                trajectory.assistant_thinking(round_index, getattr(block, "thinking", "") or "")
+                if record_thinking:
+                    trajectory.assistant_thinking(round_index, getattr(block, "thinking", "") or "")
     elif isinstance(message, TaskStartedMessage):
         task = task_registry.start(message) if task_registry is not None else None
         trajectory.env_feedback(

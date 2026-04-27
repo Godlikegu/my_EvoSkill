@@ -7,12 +7,16 @@
   },
   "public_policy": {
     "public_data_allowlist": [
+      "requirements.txt",
+      "data/meta_data.json",
       "data/raw_data.npz",
-      "data/meta_data.json"
+      "data/RealSN_DnCNN_noise15.pth"
     ],
     "public_data_denylist": [
       "ground_truth.npz",
-      "reference_outputs"
+      "reference_outputs",
+      "data/ground_truth.npz",
+      "evaluation/task_metric_adapter.py"
     ],
     "readme_policy": {
       "preserve_sections": [
@@ -39,13 +43,23 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "venv_pip",
-    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\c46c4e5b715dce1e\\build.log",
-    "env_hash": "c46c4e5b715dce1e",
-    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\c46c4e5b715dce1e\\install_report.json",
-    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\c46c4e5b715dce1e\\Scripts\\python.exe",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777225918,
+    "cupy_info": null,
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_pnp_admm.requirements.no-torch.txt",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\mri_pnp_admm\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_pnp_admm\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_pnp_admm\\requirements.txt",
+    "requirements_sha256": "8c95a517af837194fedde4dcbeea4818c7e4700291a710036a71f4ef0d4c6c2a",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_pnp_admm.json",
+    "shared_torch_env": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\_torch-cu118-py310",
+    "torch_info": {
+      "cuda_available": true,
+      "device_count": 1,
+      "device_name": "NVIDIA GeForce RTX 4080 SUPER",
+      "torch_cuda": "11.8",
+      "torch_version": "2.5.1+cu118"
+    }
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",
@@ -55,7 +69,7 @@
     "work_dir": "work"
   },
   "runtime_policy": {
-    "execution_budget_seconds": 900,
+    "execution_budget_seconds": 7200,
     "model_timeout_seconds": 240
   },
   "source_task_dir": "../tasks/mri_pnp_admm",

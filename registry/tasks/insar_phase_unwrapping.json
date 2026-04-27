@@ -7,12 +7,15 @@
   },
   "public_policy": {
     "public_data_allowlist": [
-      "data/raw_data.npz",
-      "data/meta_data.json"
+      "requirements.txt",
+      "data/meta_data.json",
+      "data/raw_data.npz"
     ],
     "public_data_denylist": [
-      "baseline_reference.npz",
-      "reference_outputs"
+      "ground_truth.npz",
+      "reference_outputs",
+      "data/baseline_reference.npz",
+      "evaluation/task_metric_adapter.py"
     ],
     "readme_policy": {
       "preserve_sections": [
@@ -39,13 +42,20 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "venv_pip",
-    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\1a95a6a98663e21e\\build.log",
-    "env_hash": "1a95a6a98663e21e",
-    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\1a95a6a98663e21e\\install_report.json",
-    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\1a95a6a98663e21e\\Scripts\\python.exe",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777228581,
+    "cupy_info": null,
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\insar_phase_unwrapping.requirements.filtered.txt",
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\insar_phase_unwrapping\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\insar_phase_unwrapping\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\insar_phase_unwrapping\\requirements.txt",
+    "requirements_sha256": "1dfd1b0521f902fd26e415a5e4f2225561b92c395601d21886406568335ed42f",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\insar_phase_unwrapping.json",
+    "shared_torch_env": null,
+    "skipped_requirements": [
+      "jupyter"
+    ],
+    "torch_info": null
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",
@@ -55,7 +65,7 @@
     "work_dir": "work"
   },
   "runtime_policy": {
-    "execution_budget_seconds": 900,
+    "execution_budget_seconds": 7200,
     "model_timeout_seconds": 240
   },
   "source_task_dir": "../tasks/insar_phase_unwrapping",

@@ -42,9 +42,17 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "conda_or_system",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777225473,
+    "cupy_info": null,
+    "filtered_requirements_path": null,
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\mri_grappa\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_grappa\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_grappa\\requirements.txt",
+    "requirements_sha256": "adb263bb4dc906bb0c54086e9323ef8c41992ae4b4d19950b7e1d9ec68f10b73",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_grappa.json",
+    "shared_torch_env": null,
+    "torch_info": null
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",

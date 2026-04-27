@@ -1,11 +1,12 @@
 """Trajectory writer.
 
-Records exactly the four event kinds we care about for skill distillation:
+Records the event kinds we care about for debugging and skill distillation:
 
-    1. ``assistant_text``   - assistant prose / "thinking"
-    2. ``tool_call``         - tool name + sanitised input
-    3. ``tool_result``       - stdout/stderr or text returned by the tool
-    4. ``env_feedback``      - synthetic message we inject (judge result,
+    1. ``assistant_text``   - assistant prose
+    2. ``assistant_thinking`` - raw SDK thinking blocks, debug only
+    3. ``tool_call``         - tool name + sanitised input
+    4. ``tool_result``       - stdout/stderr or text returned by the tool
+    5. ``env_feedback``      - synthetic message we inject (judge result,
                                plan-guard reminder, hook denial)
 
 Each event is one JSON line, written to ``trajectory.jsonl`` under the run's
@@ -148,3 +149,19 @@ def read_clean_events(path: Path) -> list[dict[str, Any]]:
                 seen_tool_calls.add(tool_use_id)
         out.append(rec)
     return out
+
+
+def write_clean_events(input_path: Path, output_path: Path) -> int:
+    """Write the distillation-clean trajectory view as JSONL.
+
+    The raw trajectory remains untouched. The clean view is intentionally
+    line-delimited JSON so it can be streamed by downstream distillation jobs.
+    """
+
+    events = read_clean_events(input_path)
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as fh:
+        for rec in events:
+            fh.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    return len(events)

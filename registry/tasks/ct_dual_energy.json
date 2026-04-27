@@ -7,12 +7,15 @@
   },
   "public_policy": {
     "public_data_allowlist": [
-      "data/raw_data.npz",
-      "data/meta_data.json"
+      "requirements.txt",
+      "data/meta_data.json",
+      "data/raw_data.npz"
     ],
     "public_data_denylist": [
       "ground_truth.npz",
-      "reference_outputs"
+      "reference_outputs",
+      "data/ground_truth.npz",
+      "evaluation/task_metric_adapter.py"
     ],
     "readme_policy": {
       "preserve_sections": [
@@ -39,13 +42,17 @@
   },
   "ready": true,
   "runtime_env": {
-    "backend": "venv_pip",
-    "build_log_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\00f8cb76b9531d41\\build.log",
-    "env_hash": "00f8cb76b9531d41",
-    "install_report_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\artifacts\\env_cache\\task_envs\\00f8cb76b9531d41\\install_report.json",
-    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.v\\00f8cb76b9531d41\\Scripts\\python.exe",
+    "backend": "per_task_venv",
+    "created_at_unix": 1777223293,
+    "cupy_info": null,
+    "filtered_requirements_path": null,
+    "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\ct_dual_energy\\Scripts\\python.exe",
     "ready": true,
-    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\ct_dual_energy\\requirements.txt"
+    "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\ct_dual_energy\\requirements.txt",
+    "requirements_sha256": "2ac83cf31b711ceb6de22458a6b4d7144ada9b952c8403749c4e6b97880cf571",
+    "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\ct_dual_energy.json",
+    "shared_torch_env": null,
+    "torch_info": null
   },
   "runtime_layout": {
     "checkpoints_dir": "checkpoints",
@@ -55,7 +62,7 @@
     "work_dir": "work"
   },
   "runtime_policy": {
-    "execution_budget_seconds": 900,
+    "execution_budget_seconds": 7200,
     "model_timeout_seconds": 240
   },
   "source_task_dir": "../tasks/ct_dual_energy",

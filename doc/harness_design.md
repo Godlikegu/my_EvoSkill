@@ -238,7 +238,9 @@ after the workspace is wiped on PASS. Snapshots are taken right after the
 agent finishes the round and before the judge runs, ensuring we capture the
 plan state the judge actually evaluated against. Kept on disk for debugging
 but never shown to
-the agent).  Workspaces are deleted on success unless `--keep-workspace`.
+the agent). Workspaces are kept on success by default; pass
+`--delete-workspace-on-success` only when disk pressure matters more than
+post-run debugging artifacts.
 
 ## 6. Concurrency + cleanup
 
