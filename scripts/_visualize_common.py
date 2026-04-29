@@ -39,12 +39,18 @@ def squeeze_first_axis(array: np.ndarray) -> np.ndarray:
 def ensure_2d_image(array: np.ndarray, *, prefer_last: bool = False) -> np.ndarray:
     arr = np.asarray(array)
     arr = np.real_if_close(arr)
+    if np.iscomplexobj(arr):
+        arr = np.abs(arr)
     while arr.ndim > 2 and arr.shape[0] == 1:
         arr = arr[0]
+    while arr.ndim > 3:
+        arr = arr[arr.shape[0] // 2]
     if arr.ndim == 2:
         return np.asarray(arr)
     if arr.ndim == 3:
         if prefer_last:
+            return np.asarray(arr[..., arr.shape[-1] // 2])
+        if arr.shape[-1] <= 64 and arr.shape[0] > arr.shape[-1] and arr.shape[1] > arr.shape[-1]:
             return np.asarray(arr[..., arr.shape[-1] // 2])
         return np.asarray(arr[arr.shape[0] // 2])
     if arr.ndim == 1:

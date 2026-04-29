@@ -12,12 +12,27 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from myevoskill.artifact_paths import model_slug
+
+SCRIPT_ROOT = Path(__file__).resolve().parent
+if str(SCRIPT_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_ROOT))
+
+from _visualize_common import (
+    ensure_2d_image,
+    load_npz,
+    render_agent_overview,
+    render_curve_triplet,
+    render_image_triplet,
+    squeeze_first_axis,
+)
 
 
 DEFAULT_VERDICT_ORDER = (
@@ -172,6 +187,144 @@ def _parse_last_json_line(stdout: str) -> dict[str, Any]:
     return {"error": "missing_json_stdout", "stdout_tail": stdout[-2000:]}
 
 
+def _field_name(field: dict[str, Any]) -> str:
+    return str(field.get("name") or "").strip()
+
+
+def _files_by_id(contract: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        str(entry.get("id")): entry
+        for entry in contract.get("files", [])
+        if isinstance(entry, dict) and entry.get("id")
+    }
+
+
+def _apply_selectors(array: Any, selectors: dict[str, Any] | None) -> Any:
+    arr = np.asarray(array)
+    selectors = selectors or {}
+    if "index" in selectors:
+        arr = arr[int(selectors["index"])]
+    return arr
+
+
+def _load_file_binding(task_root: Path, files: dict[str, dict[str, Any]], binding: dict[str, Any]) -> np.ndarray | None:
+    file_id = str(binding.get("file_id") or "")
+    field = str(binding.get("field") or "")
+    entry = files.get(file_id)
+    if not entry:
+        return None
+    path = task_root / str(entry.get("path") or "")
+    if not path.exists():
+        return None
+    suffix = path.suffix.lower()
+    if suffix == ".npz":
+        payload = load_npz(path)
+        if field in payload:
+            return np.asarray(_apply_selectors(payload[field], binding.get("selectors")))
+    if suffix == ".npy":
+        return np.asarray(_apply_selectors(np.load(path, allow_pickle=True), binding.get("selectors")))
+    return None
+
+
+def _reference_for_output_field(
+    *,
+    task_root: Path,
+    contract: dict[str, Any],
+    output_field: str,
+) -> np.ndarray | None:
+    files = _files_by_id(contract)
+    for metric in contract.get("metrics", []):
+        inputs = metric.get("inputs") if isinstance(metric, dict) else None
+        if not isinstance(inputs, dict):
+            continue
+        estimate = inputs.get("estimate")
+        reference = inputs.get("reference")
+        if not isinstance(estimate, dict) or not isinstance(reference, dict):
+            continue
+        if estimate.get("source") == "output" and str(estimate.get("field") or "") == output_field:
+            if reference.get("source") == "file":
+                loaded = _load_file_binding(task_root, files, reference)
+                if loaded is not None:
+                    return loaded
+    return None
+
+
+def _render_generic_visualization(
+    *,
+    task_root: Path,
+    task_id: str,
+    recon_path: Path,
+    output_dir: Path,
+) -> dict[str, Any]:
+    contract_path = task_root / "evaluation" / "task_contract.json"
+    if not contract_path.exists():
+        raise FileNotFoundError(f"missing task contract: {contract_path}")
+    contract = _load_json(contract_path)
+    recon = load_npz(recon_path)
+    fields = [
+        _field_name(field)
+        for field in (contract.get("output") or {}).get("fields", [])
+        if isinstance(field, dict) and _field_name(field)
+    ]
+    if not fields:
+        fields = list(recon)
+    if not fields:
+        raise ValueError("reconstruction.npz has no fields to visualize")
+
+    figures: list[str] = []
+    metrics: dict[str, Any] = {}
+    for field in fields:
+        if field not in recon:
+            metrics[f"{field}_missing"] = True
+            continue
+        agent = np.asarray(recon[field])
+        reference = _reference_for_output_field(task_root=task_root, contract=contract, output_field=field)
+        safe_field = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in field)
+
+        if agent.ndim <= 1:
+            dest = output_dir / f"{task_id}__{safe_field}__curve.png"
+            field_metrics = render_curve_triplet(
+                gt=squeeze_first_axis(reference) if reference is not None else None,
+                baseline=None,
+                agent=squeeze_first_axis(agent),
+                dest=dest,
+                title=f"{task_id}: {field}",
+                names=("Reference", "Baseline", "Agent"),
+            )
+        else:
+            dest = output_dir / f"{task_id}__{safe_field}__comparison.png"
+            try:
+                reference_image = ensure_2d_image(reference) if reference is not None else None
+                agent_image = ensure_2d_image(agent)
+                field_metrics = render_image_triplet(
+                    gt=reference_image,
+                    baseline=None,
+                    agent=agent_image,
+                    dest=dest,
+                    title=f"{task_id}: {field}",
+                    names=("Reference", "Baseline", "Agent"),
+                    notes=("Generic visualization derived from task_contract.json.",),
+                )
+            except ValueError:
+                dest = output_dir / f"{task_id}__{safe_field}__agent_overview.png"
+                field_metrics = render_agent_overview(
+                    agent=agent,
+                    dest=dest,
+                    title=f"{task_id}: {field}",
+                )
+        figures.append(str(dest))
+        metrics[field] = field_metrics
+
+    if not figures:
+        raise ValueError("no declared output fields were present in reconstruction.npz")
+    return {
+        "task_id": task_id,
+        "figures": figures,
+        "metrics": metrics,
+        "renderer": "generic_contract",
+    }
+
+
 def _run_one(
     *,
     repo_root: str,
@@ -236,13 +389,38 @@ def _run_one(
     task_root = tasks / task_id
     visualize_py = task_root / "visualize.py"
     if not visualize_py.exists():
-        status = {
-            **base_status,
-            "status": "skipped",
-            "error": "visualize_py_missing",
-            "figures": [],
-            "metrics": {},
-        }
+        try:
+            payload = _render_generic_visualization(
+                task_root=task_root,
+                task_id=task_id,
+                recon_path=selected.recon_path,
+                output_dir=output_dir,
+            )
+            status = {
+                **base_status,
+                "status": "ok",
+                "exit_code": 0,
+                "python_executable": str(Path(sys.executable)),
+                "figures": payload.get("figures") or [],
+                "metrics": payload.get("metrics") or {},
+                "renderer": payload.get("renderer"),
+                "error": None,
+                "stdout_tail": "",
+                "stderr_tail": "",
+            }
+        except Exception as exc:
+            status = {
+                **base_status,
+                "status": "failed",
+                "exit_code": None,
+                "python_executable": str(Path(sys.executable)),
+                "figures": [],
+                "metrics": {},
+                "renderer": "generic_contract",
+                "error": f"generic_render_failed: {type(exc).__name__}: {exc}",
+                "stdout_tail": "",
+                "stderr_tail": "",
+            }
         status_path.write_text(json.dumps(status, indent=2, ensure_ascii=False), encoding="utf-8")
         return status
 
