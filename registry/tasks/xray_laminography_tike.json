@@ -43,17 +43,18 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777228094,
+    "created_at_unix": 1777283509,
     "cupy_info": {
       "device_count": 1
     },
-    "filtered_requirements_path": null,
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\xray_laminography_tike.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\xray_laminography_tike\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\xray_laminography_tike\\requirements.txt",
     "requirements_sha256": "f9a1a99c6ab6cfe89f7a271b340fe14abbc58f3bb015ca9ac9cda17a7c6e6fd3",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\xray_laminography_tike.json",
     "shared_torch_env": null,
+    "skipped_requirements": [],
     "torch_info": null
   },
   "runtime_layout": {

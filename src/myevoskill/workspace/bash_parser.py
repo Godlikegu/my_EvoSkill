@@ -173,15 +173,80 @@ _REDIR_RE = re.compile(
 
 
 def _scan_redirections(command: str, access: BashAccess) -> None:
-    # Strip backslash-escaped redirects (rare in agent commands).
-    for match in _REDIR_RE.finditer(command):
-        target = match.group(2).strip().strip('"').strip("'")
-        if not target:
+    i = 0
+    quote: str | None = None
+    n = len(command)
+    while i < n:
+        ch = command[i]
+        if quote:
+            if ch == "\\" and quote == '"' and i + 1 < n:
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in {"'", '"'}:
+            quote = ch
+            i += 1
+            continue
+
+        op_start: int | None = None
+        if ch == ">":
+            op_start = i
+        elif ch == "&" and i + 1 < n and command[i + 1] == ">":
+            op_start = i + 1
+        elif ch.isdigit() and i + 1 < n and command[i + 1] == ">":
+            op_start = i + 1
+
+        if op_start is None:
+            i += 1
+            continue
+        if op_start > 0 and command[op_start - 1] in "<>":
+            i = op_start + 1
+            continue
+
+        j = op_start + 1
+        if j < n and command[j] == ">":
+            j += 1
+        while j < n and command[j].isspace():
+            j += 1
+        if j < n and command[j] == "&":
+            i = j + 1
+            continue
+
+        target, i = _read_redirection_target(command, j)
+        if not target or _is_null_sink(target):
             continue
         if "$" in target or "*" in target or "?" in target:
             access.dynamic.append(f"redir target uses expansion: {target}")
             continue
         access.writes.append(target)
+
+
+def _read_redirection_target(command: str, start: int) -> tuple[str, int]:
+    if start >= len(command):
+        return "", start
+    if command[start] in {"'", '"'}:
+        quote = command[start]
+        end = start + 1
+        while end < len(command):
+            if command[end] == "\\" and quote == '"' and end + 1 < len(command):
+                end += 2
+                continue
+            if command[end] == quote:
+                return command[start + 1 : end].strip(), end + 1
+            end += 1
+        return command[start + 1 :].strip(), len(command)
+
+    end = start
+    while end < len(command) and command[end] not in " \t\r\n|;&<>":
+        end += 1
+    return command[start:end].strip(), end
+
+
+def _is_null_sink(target: str) -> bool:
+    return target.replace("\\", "/").strip().lower() in {"/dev/null", "nul"}
 
 
 # ---------------------------------------------------------------------------- #

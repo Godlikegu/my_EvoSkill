@@ -43,15 +43,16 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777227153,
+    "created_at_unix": 1777282755,
     "cupy_info": null,
-    "filtered_requirements_path": null,
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\raman_cell_phenotyping.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\raman_cell_phenotyping\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\raman_cell_phenotyping\\requirements.txt",
     "requirements_sha256": "c3bc3dcd288f82347717014d3c95eb7d351237c73358987c9c184caacc38d240",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\raman_cell_phenotyping.json",
     "shared_torch_env": null,
+    "skipped_requirements": [],
     "torch_info": null
   },
   "runtime_layout": {

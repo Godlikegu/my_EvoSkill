@@ -197,8 +197,12 @@ def _run_one_subprocess(
                 error = payload.get("error")
         except json.JSONDecodeError as exc:
             error = f"unparsable cli json: {exc}"
-    elif not ok:
-        error = f"cli exited non-zero. stderr_tail={stderr[-500:]}"
+    else:
+        verdict = "MISSING_SUMMARY"
+        error = (
+            "child run-task did not emit a parseable final JSON summary line"
+            f" (returncode_ok={ok}). stderr_tail={stderr[-500:]}"
+        )
 
     return SubprocessOutcome(
         task_id=task_id,

@@ -44,15 +44,20 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777225918,
+    "created_at_unix": 1777282075,
     "cupy_info": null,
-    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_pnp_admm.requirements.no-torch.txt",
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_pnp_admm.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\mri_pnp_admm\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_pnp_admm\\requirements.txt",
     "requirements_sha256": "8c95a517af837194fedde4dcbeea4818c7e4700291a710036a71f4ef0d4c6c2a",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_pnp_admm.json",
     "shared_torch_env": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\_torch-cu118-py310",
+    "skipped_requirements": [
+      "torch>=2.0.0",
+      "jupyter>=1.0.0",
+      "nbconvert>=7.0.0"
+    ],
     "torch_info": {
       "cuda_available": true,
       "device_count": 1,

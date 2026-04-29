@@ -44,15 +44,18 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777224361,
+    "created_at_unix": 1777281096,
     "cupy_info": null,
-    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\era5_tensorvar.requirements.no-torch.txt",
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\era5_tensorvar.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\era5_tensorvar\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\era5_tensorvar\\requirements.txt",
     "requirements_sha256": "707052f6efdd69617ec5d67e6ab52e67f6c475af72a5dac04eb69e145bd34f5a",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\era5_tensorvar.json",
     "shared_torch_env": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\_torch-cu118-py310",
+    "skipped_requirements": [
+      "torch>=2.0"
+    ],
     "torch_info": {
       "cuda_available": true,
       "device_count": 1,

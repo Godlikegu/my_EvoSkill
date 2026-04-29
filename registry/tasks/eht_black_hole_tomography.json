@@ -44,15 +44,18 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777224184,
+    "created_at_unix": 1777280931,
     "cupy_info": null,
-    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\eht_black_hole_tomography.requirements.no-torch.txt",
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\eht_black_hole_tomography.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\eht_black_hole_tomography\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_tomography\\requirements.txt",
     "requirements_sha256": "890177f1eaa6eb8694557d146f23d17a9ec434df023588fe6a76936affb0f345",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\eht_black_hole_tomography.json",
     "shared_torch_env": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\_torch-cu118-py310",
+    "skipped_requirements": [
+      "torch>=1.9"
+    ],
     "torch_info": {
       "cuda_available": true,
       "device_count": 1,

@@ -43,15 +43,16 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777227577,
+    "created_at_unix": 1777283081,
     "cupy_info": null,
-    "filtered_requirements_path": null,
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\seismic_traveltime_tomography.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\seismic_traveltime_tomography\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\seismic_traveltime_tomography\\requirements.txt",
     "requirements_sha256": "a9adc3747277fab72bdc344b291cddcbdfc72f962d7e9adeb9febbe97d4fcbb1",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\seismic_traveltime_tomography.json",
     "shared_torch_env": null,
+    "skipped_requirements": [],
     "torch_info": null
   },
   "runtime_layout": {

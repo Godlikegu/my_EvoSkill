@@ -44,15 +44,18 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777224063,
+    "created_at_unix": 1777280806,
     "cupy_info": null,
-    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\eht_black_hole_feature_extraction_dynamic.requirements.no-torch.txt",
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\eht_black_hole_feature_extraction_dynamic.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\eht_black_hole_feature_extraction_dynamic\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\eht_black_hole_feature_extraction_dynamic\\requirements.txt",
     "requirements_sha256": "8b24cdc42581c33301a994fdaf103a1cfe8a47b7e4a1464a8b06f7a9db7dd775",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\eht_black_hole_feature_extraction_dynamic.json",
     "shared_torch_env": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\_torch-cu118-py310",
+    "skipped_requirements": [
+      "torch"
+    ],
     "torch_info": {
       "cuda_available": true,
       "device_count": 1,

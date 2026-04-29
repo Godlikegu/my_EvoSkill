@@ -108,6 +108,7 @@ def test_policy_dangerous_bash_blocks(tmp_path: Path, cmd: str) -> None:
         "ls work",
         "python -m pytest",
         "echo hello",
+        "cd /d C:\\work && python work\\main.py",
     ],
 )
 def test_policy_dangerous_bash_allows(tmp_path: Path, cmd: str) -> None:
@@ -643,6 +644,22 @@ def test_agent_runtime_env_uses_manifest_venv(tmp_path: Path, monkeypatch: pytes
 
     assert env["PATH"].split(";")[0] == str(scripts)
     assert env["VIRTUAL_ENV"] == str(tmp_path / ".venv")
+    assert env["MYEVOSKILL_TASK_PYTHON"] == str(python)
+
+
+def test_agent_runtime_env_strips_quoted_manifest_python(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    scripts = tmp_path / ".venv" / "Scripts"
+    scripts.mkdir(parents=True)
+    python = scripts / "python.exe"
+    python.write_text("", encoding="utf-8")
+    monkeypatch.setenv("PATH", "OLDPATH")
+
+    env = agent_runtime_env_overrides(
+        {"runtime_env": {"ready": True, "python_executable": f'"{python}"'}}
+    )
+
+    assert env["PATH"].split(";")[0] == str(scripts)
+    assert env["MYEVOSKILL_TASK_PYTHON"] == str(python)
 
 
 def test_agent_runtime_env_falls_back_without_ready_python(tmp_path: Path) -> None:
@@ -658,9 +675,12 @@ def test_prompts_prefer_workspace_root_execution(tmp_path: Path) -> None:
         primary_output_rel="output/x.npz",
         workspace_root=tmp_path,
         budget_seconds=60,
+        runtime_python_path=str(tmp_path / ".venv" / "Scripts" / "python.exe"),
     )
     assert "python work/main.py" in prompt
     assert "do not\n        `cd work`" in prompt
+    assert "Runtime Python" in prompt
+    assert "py -3" in SYSTEM_PROMPT
 
 
 def test_feedback_prompt_describes_previous_round() -> None:
@@ -703,3 +723,17 @@ def test_fail_feedback_remains_pass_fail_only_without_extra_hints() -> None:
     assert "units" not in lower
     assert "model assumption" not in lower
     assert "numeric values" not in lower
+
+
+def test_fail_feedback_defaults_to_metric_status_without_numbers() -> None:
+    prompt = feedback_user_prompt(
+        round_index=2,
+        feedback=JudgeFeedback(
+            verdict=FAIL,
+            metric_status={"ncc_vs_ref": True, "nrmse_vs_ref": False},
+        ),
+        primary_output_rel="output/x.npz",
+    )
+    assert "`ncc_vs_ref`: PASS" in prompt
+    assert "`nrmse_vs_ref`: FAIL" in prompt
+    assert "threshold" not in prompt.lower()

@@ -43,15 +43,16 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777227687,
+    "created_at_unix": 1777283186,
     "cupy_info": null,
-    "filtered_requirements_path": null,
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\shapelet_source_reconstruction.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\shapelet_source_reconstruction\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\shapelet_source_reconstruction\\requirements.txt",
     "requirements_sha256": "55a8bcbdb4d3bf2647d9dfc1d57fa3c018b605ca847722a51298854cf696c406",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\shapelet_source_reconstruction.json",
     "shared_torch_env": null,
+    "skipped_requirements": [],
     "torch_info": null
   },
   "runtime_layout": {

@@ -52,6 +52,7 @@ class JudgeFeedback:
     @property
     def is_infrastructure_error(self) -> bool:
         infra_tags = {
+            "judge_launch_error",
             "judge_runtime_error",
             "judge_timeout",
             "judge_unparsable",
@@ -70,6 +71,7 @@ class JudgeRunResult:
     stdout: str
     stderr: str
     success: bool
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 class JudgeRunner:
@@ -97,11 +99,11 @@ class JudgeRunner:
         manifest_py = ""
         runtime_env = self.manifest.get("runtime_env") or {}
         if isinstance(runtime_env, Mapping):
-            manifest_py = str(runtime_env.get("python_executable") or "").strip()
-        self.python_executable = (
-            python_executable
-            or (manifest_py if manifest_py and Path(manifest_py).exists() else "")
-            or sys.executable
+            manifest_py = str(runtime_env.get("python_executable") or "")
+        self.python_executable, self.python_diagnostics = _resolve_python_executable(
+            explicit=python_executable,
+            manifest=manifest_py,
+            fallback=sys.executable,
         )
         self.timeout_seconds = int(timeout_seconds)
 
@@ -187,20 +189,34 @@ class JudgeRunner:
             "task_id": task_id,
         }
 
+        command = [self.python_executable, "-c", driver]
+        cwd = str(self.repo_root)
+        diagnostics = self._run_diagnostics(command=command, cwd=cwd)
+
         start = time.time()
         try:
             completed = subprocess.run(
-                [self.python_executable, "-c", driver],
+                command,
                 input=json.dumps(payload),
                 capture_output=True,
                 text=True,
                 timeout=self.timeout_seconds,
                 env=env,
-                cwd=str(self.repo_root),
+                cwd=cwd,
             )
         except subprocess.TimeoutExpired as exc:
             return self._invalid(
-                round_index, "judge_timeout", f"judge timed out: {exc}"
+                round_index,
+                "judge_timeout",
+                f"judge timed out: {exc}",
+                diagnostics=diagnostics,
+            )
+        except OSError as exc:
+            return self._invalid(
+                round_index,
+                "judge_launch_error",
+                f"could not launch judge subprocess: {type(exc).__name__}: {exc}",
+                diagnostics=diagnostics,
             )
         runtime = time.time() - start
 
@@ -215,6 +231,7 @@ class JudgeRunner:
                 f"judge stdout not JSON. stderr={stderr[-500:]}",
                 stdout=stdout,
                 stderr=stderr,
+                diagnostics=diagnostics,
             )
 
         if not parsed.get("ok"):
@@ -224,6 +241,7 @@ class JudgeRunner:
                 str(parsed.get("error", "")),
                 stdout=stdout,
                 stderr=stderr,
+                diagnostics=diagnostics,
             )
 
         raw = parsed["judge_result"]
@@ -235,6 +253,7 @@ class JudgeRunner:
             stdout=stdout,
             stderr=stderr,
             success=True,
+            diagnostics=diagnostics,
         )
         self._persist(round_index, result)
         return result
@@ -296,6 +315,7 @@ class JudgeRunner:
         *,
         stdout: str = "",
         stderr: str = "",
+        diagnostics: Mapping[str, Any] | None = None,
     ) -> JudgeRunResult:
         feedback = JudgeFeedback(verdict=INVALID, failure_tags=(tag,))
         result = JudgeRunResult(
@@ -312,6 +332,10 @@ class JudgeRunner:
             stdout=stdout,
             stderr=stderr,
             success=False,
+            diagnostics=dict(
+                diagnostics
+                or self._run_diagnostics(command=[], cwd=str(self.repo_root))
+            ),
         )
         self._persist(round_index, result)
         return result
@@ -324,6 +348,66 @@ class JudgeRunner:
             "success": result.success,
             "stdout_tail": result.stdout[-2000:],
             "stderr_tail": result.stderr[-2000:],
+            "diagnostics": result.diagnostics,
         }
         path = self.log_root / f"judge_round_{round_index:02d}.json"
         path.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def _run_diagnostics(self, *, command: list[str], cwd: str) -> dict[str, Any]:
+        command_argv = list(command)
+        if len(command_argv) >= 3 and command_argv[1] == "-c":
+            command_argv[2] = "<judge-driver>"
+        return {
+            "python_executable": self.python_executable,
+            "python_resolution": self.python_diagnostics,
+            "command": command_argv,
+            "cwd": cwd,
+        }
+
+
+def _clean_python_path(value: str | None) -> str:
+    """Return a subprocess-safe interpreter path string."""
+
+    text = str(value or "").strip()
+    return text.strip("\"'").strip()
+
+
+def _resolve_python_executable(
+    *, explicit: str | None, manifest: str | None, fallback: str
+) -> tuple[str, dict[str, Any]]:
+    """Choose a judge interpreter and record why that choice was made."""
+
+    candidates = [
+        ("explicit", explicit, True),
+        ("manifest", manifest, True),
+        ("sys_executable", fallback, False),
+    ]
+    records: list[dict[str, Any]] = []
+    selected = _clean_python_path(fallback) or sys.executable
+    selected_source = "sys_executable"
+
+    for source, raw, require_exists in candidates:
+        cleaned = _clean_python_path(raw)
+        exists = bool(cleaned and Path(cleaned).exists())
+        usable = bool(cleaned and (exists or not require_exists))
+        record = {
+            "source": source,
+            "raw": "" if raw is None else str(raw),
+            "normalized": cleaned,
+            "exists": exists,
+            "requires_exists": require_exists,
+            "usable": usable,
+            "selected": False,
+        }
+        records.append(record)
+        if usable:
+            selected = cleaned
+            selected_source = source
+            record["selected"] = True
+            break
+
+    return selected, {
+        "selected_source": selected_source,
+        "fallback_used": selected_source != "explicit",
+        "candidates": records,
+    }

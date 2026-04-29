@@ -43,15 +43,19 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777226248,
+    "created_at_unix": 1777282224,
     "cupy_info": null,
-    "filtered_requirements_path": null,
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_t2_mapping.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\mri_t2_mapping\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_t2_mapping\\requirements.txt",
     "requirements_sha256": "39a61e9123524f7233472eda9b0b110f323b5b322321a2ad591e1a018caa4334",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_t2_mapping.json",
     "shared_torch_env": null,
+    "skipped_requirements": [
+      "jupyter",
+      "nbconvert"
+    ],
     "torch_info": null
   },
   "runtime_layout": {

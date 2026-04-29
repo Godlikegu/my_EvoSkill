@@ -15,7 +15,7 @@ def _base_args(repo_root: Path, **overrides):
         "model_id": None,
         "llm_config": None,
         "judge_python": None,
-        "show_metric_status": False,
+        "show_metric_status": True,
         "keep_workspace": True,
         "sandbox_root": None,
         "keep_sandbox": False,
@@ -154,6 +154,7 @@ def test_run_batch_model_id_forwards_model_args(tmp_path, monkeypatch):
         model_id="Vendor2/Gemini-3.1-pro",
         llm_config="config/llm.yaml",
         judge_python=None,
+        show_metric_status=True,
         keep_sandbox=False,
         record_thinking=False,
         keep_workspace=True,
@@ -164,3 +165,36 @@ def test_run_batch_model_id_forwards_model_args(tmp_path, monkeypatch):
     assert rc == 0
     assert captured["extra_run_args"]["model-id"] == "Vendor2/Gemini-3.1-pro"
     assert captured["extra_run_args"]["llm-config"] == "config/llm.yaml"
+    assert "hide-metric-status" not in captured["extra_run_args"]
+
+
+def test_run_batch_forwards_hide_metric_status(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run_tasks_parallel(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(cli, "run_tasks_parallel", fake_run_tasks_parallel)
+
+    args = SimpleNamespace(
+        repo_root=str(tmp_path),
+        task_ids=["task-a"],
+        max_workers=1,
+        max_rounds=1,
+        budget_seconds=60,
+        max_turns_per_round=2,
+        model=None,
+        model_id=None,
+        llm_config=None,
+        judge_python=None,
+        show_metric_status=False,
+        keep_sandbox=False,
+        record_thinking=False,
+        keep_workspace=True,
+    )
+
+    rc = cli.cmd_run_batch(args)
+
+    assert rc == 0
+    assert captured["extra_run_args"]["hide-metric-status"] is True

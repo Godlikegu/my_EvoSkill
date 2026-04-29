@@ -133,6 +133,22 @@ def test_h5_command_substitution_marked_dynamic() -> None:
     assert "command/process substitution" in access.dynamic[0]
 
 
+def test_redirection_to_null_sinks_is_ignored() -> None:
+    assert parse_bash_writes("python work/main.py 2>/dev/null").writes == []
+    assert parse_bash_writes("python work/main.py > NUL").writes == []
+
+
+def test_python_dash_c_comparison_is_not_redirection() -> None:
+    access = parse_bash_writes('python -c "print(1 > 0.01)"')
+    assert access.writes == []
+    assert access.dynamic == []
+
+
+def test_output_redirection_still_detected() -> None:
+    access = parse_bash_writes("python work/main.py > output/log.txt")
+    assert "output/log.txt" in access.writes
+
+
 def test_h5_eval_blocked_outright() -> None:
     cmd = "eval \"echo $HOME > /tmp/x\""
     access = parse_bash_writes(cmd)
@@ -161,6 +177,7 @@ def test_h5_tee_append_detected() -> None:
         "curl -O http://x/y",
         "pip install requests",
         "cd /etc",
+        "cd /",
         "cd C:\\Windows",
         "cd ..",
         "cd ../x",

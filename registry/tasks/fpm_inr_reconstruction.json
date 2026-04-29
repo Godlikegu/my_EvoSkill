@@ -43,15 +43,18 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777224586,
+    "created_at_unix": 1777281269,
     "cupy_info": null,
-    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\fpm_inr_reconstruction.requirements.no-torch.txt",
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\fpm_inr_reconstruction.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\fpm_inr_reconstruction\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\fpm_inr_reconstruction\\requirements.txt",
     "requirements_sha256": "8e2524b9cbdf3e07a4b3321f825e5640b6271a87fd4bc4bfb5586da174491e61",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\fpm_inr_reconstruction.json",
     "shared_torch_env": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\_torch-cu118-py310",
+    "skipped_requirements": [
+      "torch>=2.0"
+    ],
     "torch_info": {
       "cuda_available": true,
       "device_count": 1,

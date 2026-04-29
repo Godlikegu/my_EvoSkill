@@ -82,7 +82,7 @@ class HarnessConfig:
     model_provider_summary: Mapping[str, Any] = field(default_factory=dict)
     artifact_model_slug: str | None = None
     judge_python: str | None = None
-    show_metric_status: bool = False  # if True, tell agent which metric failed (still no values)
+    show_metric_status: bool = True  # if True, tell agent which metric failed (still no values)
     keep_workspace_on_success: bool = True
     log_root: Path | None = None  # default: artifacts/logs/<model>/<task>/<run>
     sandbox_root: Path | None = None  # default: artifacts/sandboxes/<model>/<task>/<run>/home
@@ -186,17 +186,62 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
         else model_artifact_root(repo_root, "logs", artifact_model_slug, task_id, run_id)
     )
     log_root.mkdir(parents=True, exist_ok=True)
+    summary_path = log_root / "run_summary.json"
+    started = time.time()
 
     # 1. Build the workspace.
     workspace_parent = (
         repo_root / "artifacts" / "workspaces" / artifact_model_slug / task_id
     )
-    build = build_workspace(
-        repo_root=repo_root,
-        manifest=manifest,
-        run_id=run_id,
-        workspace_parent=workspace_parent,
-    )
+    try:
+        build = build_workspace(
+            repo_root=repo_root,
+            manifest=manifest,
+            run_id=run_id,
+            workspace_parent=workspace_parent,
+        )
+    except KeyboardInterrupt as exc:
+        return _write_setup_failure_summary(
+            task_id=task_id,
+            run_id=run_id,
+            verdict="ABORTED",
+            started=started,
+            workspace_root=workspace_parent / run_id,
+            log_root=log_root,
+            summary_path=summary_path,
+            artifact_model_slug=artifact_model_slug,
+            model_provider_summary=config.model_provider_summary,
+            error="interrupted by KeyboardInterrupt",
+            exc=exc,
+        )
+    except SystemExit as exc:
+        return _write_setup_failure_summary(
+            task_id=task_id,
+            run_id=run_id,
+            verdict="KILLED",
+            started=started,
+            workspace_root=workspace_parent / run_id,
+            log_root=log_root,
+            summary_path=summary_path,
+            artifact_model_slug=artifact_model_slug,
+            model_provider_summary=config.model_provider_summary,
+            error=f"SystemExit: {exc.code}",
+            exc=exc,
+        )
+    except BaseException as exc:  # noqa: BLE001
+        return _write_setup_failure_summary(
+            task_id=task_id,
+            run_id=run_id,
+            verdict="CRASHED",
+            started=started,
+            workspace_root=workspace_parent / run_id,
+            log_root=log_root,
+            summary_path=summary_path,
+            artifact_model_slug=artifact_model_slug,
+            model_provider_summary=config.model_provider_summary,
+            error=repr(exc),
+            exc=exc,
+        )
     plan_guard = PlanGuard(build.agent_root)
     plan_history = PlanHistoryRecorder(
         workspace_root=build.agent_root, log_root=log_root
@@ -248,6 +293,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
 
     agent_env = env_overrides_for(sandbox)
     venv_env = agent_runtime_env_overrides(manifest)
+    runtime_python_path = venv_env.get("MYEVOSKILL_TASK_PYTHON")
     if venv_env:
         agent_env.update(venv_env)
     else:
@@ -293,12 +339,12 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
         setting_sources=None,  # don't pick up user-level CLAUDE.md etc.
     )
 
-    started = time.time()
     feedback_history: list[dict[str, Any]] = []
     final_verdict: str | None = None
     error_message: str | None = None
     claude_pid: int | None = None
     cleanup_errors: list[dict[str, Any]] = []
+    agent_failure: dict[str, Any] | None = None
 
     try:
       async with ClaudeSDKClient(options=options) as client:
@@ -320,6 +366,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                     workspace_root=build.agent_root,
                     task_spec_summary=build.agent_task_spec_summary,
                     budget_seconds=config.budget_seconds,
+                    runtime_python_path=runtime_python_path,
                 )
             else:
                 last = feedback_history[-1]["feedback"]
@@ -364,9 +411,19 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                 cleanup_errors.extend(clean.get("errors", []))
                 if clean["ok"]:
                     final_verdict = "TIMEOUT"
+                    agent_failure = {
+                        "phase": "agent_timeout",
+                        "verdict": final_verdict,
+                        "cleanup": clean,
+                    }
                 else:
                     final_verdict = "ERROR"
                     error_message = "process cleanup failed after agent timeout"
+                    agent_failure = {
+                        "phase": "agent_timeout",
+                        "verdict": final_verdict,
+                        "cleanup": clean,
+                    }
                 break
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Agent round failed")
@@ -392,6 +449,12 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                     else f"{repr(exc)}; process cleanup failed after agent error"
                 )
                 final_verdict = "ERROR"
+                agent_failure = {
+                    "phase": "agent_error",
+                    "exception_type": type(exc).__name__,
+                    "exception": repr(exc),
+                    "cleanup": clean,
+                }
                 break
 
             clean = await _cleanup_agent_processes(
@@ -410,6 +473,11 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
             if not clean["ok"]:
                 final_verdict = "ERROR"
                 error_message = "process cleanup failed before judge"
+                agent_failure = {
+                    "phase": "before_judge",
+                    "verdict": final_verdict,
+                    "cleanup": clean,
+                }
                 break
 
             # Round complete: snapshot plan.md *before* the judge runs so we
@@ -440,6 +508,7 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                 "feedback": asdict(judge_run.feedback),
                 "judge_runtime_seconds": judge_run.runtime_seconds,
                 "judge_success": judge_run.success,
+                "judge_diagnostics": judge_run.diagnostics,
             }
             feedback_history.append(entry)
             trajectory.round_marker(round_index, "judged", entry)
@@ -455,6 +524,12 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                     "judge infrastructure error: "
                     + ",".join(judge_run.feedback.failure_tags)
                 )
+                agent_failure = {
+                    "phase": "judge",
+                    "verdict": final_verdict,
+                    "failure_tags": list(judge_run.feedback.failure_tags),
+                    "judge_diagnostics": judge_run.diagnostics,
+                }
                 break
 
             if judge_run.feedback.verdict == PASS:
@@ -481,6 +556,31 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
             require_clean=False,
        )
        cleanup_errors.extend(final_clean.get("errors", []))
+    except KeyboardInterrupt as exc:
+        final_verdict = "ABORTED"
+        error_message = "interrupted by KeyboardInterrupt"
+        agent_failure = {
+            "phase": "interrupted",
+            "exception_type": type(exc).__name__,
+            "exception": repr(exc),
+        }
+    except SystemExit as exc:
+        final_verdict = "KILLED"
+        error_message = f"SystemExit: {exc.code}"
+        agent_failure = {
+            "phase": "system_exit",
+            "exception_type": type(exc).__name__,
+            "exception": repr(exc),
+            "code": exc.code,
+        }
+    except BaseException as exc:  # noqa: BLE001
+        final_verdict = "CRASHED"
+        error_message = repr(exc)
+        agent_failure = {
+            "phase": "crashed",
+            "exception_type": type(exc).__name__,
+            "exception": repr(exc),
+        }
     finally:
         if claude_pid is not None:
             final_reap = _reap_run_processes(
@@ -498,41 +598,60 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                 )
                 if not final_reap.ok:
                     cleanup_errors.append(final_reap.to_dict())
+                if agent_failure is not None:
+                    agent_failure["final_reap"] = final_reap.to_dict()
+
+        if final_verdict is None:
+            final_verdict = "ABORTED"
+            error_message = error_message or "run ended before a final verdict"
+            agent_failure = agent_failure or {
+                "phase": "unknown",
+                "exception": error_message,
+            }
+        runtime = time.time() - started
+        summary = {
+            "task_id": task_id,
+            "run_id": run_id,
+            "verdict": final_verdict,
+            "rounds_used": len(feedback_history) if feedback_history else 0,
+            "runtime_seconds": runtime,
+            "workspace_root": str(build.agent_root),
+            "log_root": str(log_root),
+            "model_slug": artifact_model_slug,
+            "artifact_layout_version": ARTIFACT_LAYOUT_VERSION,
+            "feedback_history": feedback_history,
+            "policy": {
+                "agent_root": str(build.policy.agent_root),
+                "primary_output_rel": build.policy.primary_output_rel,
+                "forbidden_substrings": list(build.policy.all_forbidden_substrings()),
+            },
+            "copied_files": list(build.copied_files),
+            "skipped_files": list(build.skipped_files),
+            "plan_history": plan_history.read_history(),
+            "process_cleanup_errors": cleanup_errors,
+            "agent_failure": agent_failure,
+            "thinking": {
+                "sdk_thinking": "default" if config.record_thinking else "disabled",
+                "record_thinking": bool(config.record_thinking),
+            },
+            "model_provider": dict(config.model_provider_summary),
+            "error": error_message,
+        }
+        summary_path.write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
         # Always wipe (or keep, with --keep-sandbox) the per-run isolated
         # $HOME so we never leak state between tasks. We do this in finally
         # so a crashed agent or SDK exception still cleans up.
-        cleanup_isolated_home(sandbox, keep=bool(config.keep_sandbox))
-
-    runtime = time.time() - started
-    summary = {
-        "task_id": task_id,
-        "run_id": run_id,
-        "verdict": final_verdict,
-        "rounds_used": len(feedback_history) if feedback_history else 0,
-        "runtime_seconds": runtime,
-        "workspace_root": str(build.agent_root),
-        "log_root": str(log_root),
-        "model_slug": artifact_model_slug,
-        "artifact_layout_version": ARTIFACT_LAYOUT_VERSION,
-        "feedback_history": feedback_history,
-        "policy": {
-            "agent_root": str(build.policy.agent_root),
-            "primary_output_rel": build.policy.primary_output_rel,
-            "forbidden_substrings": list(build.policy.all_forbidden_substrings()),
-        },
-        "copied_files": list(build.copied_files),
-        "skipped_files": list(build.skipped_files),
-        "plan_history": plan_history.read_history(),
-        "process_cleanup_errors": cleanup_errors,
-        "thinking": {
-            "sdk_thinking": "default" if config.record_thinking else "disabled",
-            "record_thinking": bool(config.record_thinking),
-        },
-        "model_provider": dict(config.model_provider_summary),
-        "error": error_message,
-    }
-    summary_path = log_root / "run_summary.json"
-    summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+        keep_sandbox = bool(config.keep_sandbox) or final_verdict in {
+            "ERROR",
+            "TIMEOUT",
+            "ABORTED",
+            "CRASHED",
+            "KILLED",
+        }
+        cleanup_isolated_home(sandbox, keep=keep_sandbox)
 
     # Optional cleanup of the workspace on PASS to save disk. The default is
     # to keep successful workspaces because they are valuable for debugging
@@ -559,6 +678,67 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
 
 
 # --------------------------------------------------------------------- helpers
+
+
+def _write_setup_failure_summary(
+    *,
+    task_id: str,
+    run_id: str,
+    verdict: str,
+    started: float,
+    workspace_root: Path,
+    log_root: Path,
+    summary_path: Path,
+    artifact_model_slug: str,
+    model_provider_summary: Mapping[str, Any],
+    error: str,
+    exc: BaseException,
+) -> HarnessOutcome:
+    runtime = time.time() - started
+    agent_failure = {
+        "phase": "build_workspace",
+        "exception_type": type(exc).__name__,
+        "exception": repr(exc),
+    }
+    summary = {
+        "task_id": task_id,
+        "run_id": run_id,
+        "verdict": verdict,
+        "rounds_used": 0,
+        "runtime_seconds": runtime,
+        "workspace_root": str(workspace_root),
+        "log_root": str(log_root),
+        "model_slug": artifact_model_slug,
+        "artifact_layout_version": ARTIFACT_LAYOUT_VERSION,
+        "feedback_history": [],
+        "policy": None,
+        "copied_files": [],
+        "skipped_files": [],
+        "plan_history": [],
+        "process_cleanup_errors": [],
+        "agent_failure": agent_failure,
+        "thinking": None,
+        "model_provider": dict(model_provider_summary),
+        "error": error,
+    }
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return HarnessOutcome(
+        task_id=task_id,
+        run_id=run_id,
+        verdict=verdict,
+        rounds_used=0,
+        runtime_seconds=runtime,
+        workspace_root=workspace_root,
+        log_root=log_root,
+        trajectory_path=log_root / "trajectory.jsonl",
+        summary_path=summary_path,
+        error=error,
+        feedback_history=[],
+    )
 
 
 async def _bounded_receive(client: ClaudeSDKClient, *, deadline: float):
@@ -793,7 +973,9 @@ def agent_runtime_env_overrides(manifest: Mapping[str, Any]) -> dict[str, str]:
         return {}
     if not bool(runtime_env.get("ready")):
         return {}
-    python_executable = str(runtime_env.get("python_executable") or "").strip()
+    python_executable = (
+        str(runtime_env.get("python_executable") or "").strip().strip("\"'").strip()
+    )
     if not python_executable:
         return {}
     python_path = Path(python_executable)
@@ -812,4 +994,5 @@ def agent_runtime_env_overrides(manifest: Mapping[str, Any]) -> dict[str, str]:
     return {
         "PATH": str(bin_dir) + os.pathsep + old_path,
         "VIRTUAL_ENV": str(venv_root),
+        "MYEVOSKILL_TASK_PYTHON": str(python_path),
     }

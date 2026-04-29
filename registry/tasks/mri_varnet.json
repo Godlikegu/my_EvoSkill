@@ -43,15 +43,20 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777226586,
+    "created_at_unix": 1777282385,
     "cupy_info": null,
-    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_varnet.requirements.no-torch.txt",
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_varnet.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\mri_varnet\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_varnet\\requirements.txt",
     "requirements_sha256": "efe506842fa73c9d4c155aae5aae1ce2fdd7768baa2229b9242f771d396e4aea",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_varnet.json",
     "shared_torch_env": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\_torch-cu118-py310",
+    "skipped_requirements": [
+      "torch>=2.0.0",
+      "jupyter>=1.0.0",
+      "nbconvert>=7.0.0"
+    ],
     "torch_info": {
       "cuda_available": true,
       "device_count": 1,

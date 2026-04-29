@@ -43,15 +43,19 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777226397,
+    "created_at_unix": 1777282282,
     "cupy_info": null,
-    "filtered_requirements_path": null,
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_tv.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\mri_tv\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\mri_tv\\requirements.txt",
     "requirements_sha256": "4a958b444db83cb90109566a36859c7280d973e7fd49838ed2f1ecd3712c5144",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\mri_tv.json",
     "shared_torch_env": null,
+    "skipped_requirements": [
+      "jupyter>=1.0.0",
+      "nbconvert>=7.0.0"
+    ],
     "torch_info": null
   },
   "runtime_layout": {

@@ -45,15 +45,19 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777228023,
+    "created_at_unix": 1777283455,
     "cupy_info": null,
-    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\weather_radar_data_assimilation.requirements.no-torch.txt",
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\weather_radar_data_assimilation.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\weather_radar_data_assimilation\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\weather_radar_data_assimilation\\requirements.txt",
     "requirements_sha256": "a24dd3eb73d588799b611b08258b80d4014ca079e904ed55986aa142bdf34675",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\weather_radar_data_assimilation.json",
     "shared_torch_env": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\_torch-cu118-py310",
+    "skipped_requirements": [
+      "torch>=2.0",
+      "torchvision>=0.15"
+    ],
     "torch_info": {
       "cuda_available": true,
       "device_count": 1,

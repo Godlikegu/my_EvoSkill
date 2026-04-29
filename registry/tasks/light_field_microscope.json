@@ -43,15 +43,16 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777224987,
+    "created_at_unix": 1777281523,
     "cupy_info": null,
-    "filtered_requirements_path": null,
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\light_field_microscope.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\light_field_microscope\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\light_field_microscope\\requirements.txt",
     "requirements_sha256": "fee7db4a77b35e2c60648aa2a5562cfc831741ef705cdaa8d8d8a481e11d3cc5",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\light_field_microscope.json",
     "shared_torch_env": null,
+    "skipped_requirements": [],
     "torch_info": null
   },
   "runtime_layout": {

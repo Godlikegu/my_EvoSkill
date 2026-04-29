@@ -68,7 +68,9 @@ Iteration discipline
 Coding style
 ============
 * Use the Python interpreter the harness pins via `PATH`. Do not install
-  packages (`pip install` / `conda install` are blocked).
+  packages (`pip install` / `conda install` are blocked). The `python`
+  command is already the task runtime; do not use `py -3` or hard-code a
+  system interpreter path.
 * Run commands from the workspace root. Prefer `python work/main.py`; do not
   `cd work` and then reach back into `../data` or `../output`.
 * Be deterministic: set seeds; write a single primary output file at the
@@ -84,6 +86,7 @@ def initial_user_prompt(
     workspace_root: Path,
     budget_seconds: int,
     task_spec_summary: str = "",
+    runtime_python_path: str | None = None,
 ) -> str:
     """First-round user message.
 
@@ -98,12 +101,20 @@ def initial_user_prompt(
     summary_block = ""
     if task_spec_summary:
         summary_block = "\n" + task_spec_summary.rstrip() + "\n"
+    runtime_block = ""
+    if runtime_python_path:
+        runtime_block = (
+            f"Runtime Python: `{runtime_python_path}`. Use the command"
+            " `python` from the workspace root; it is already pinned to this"
+            " interpreter.\n"
+        )
 
     return (
         f"Task: **{task_id}**\n\n"
         f"Workspace: `{workspace_root}` (your cwd)\n"
         f"Primary output: `{primary_output_rel}`\n"
         f"Wall-clock budget: {budget_seconds} seconds total across all rounds.\n"
+        + runtime_block
         + summary_block
         + "\nStep 1: read `agent_task_spec.json` for the machine-readable IO\n"
         "        contract, then `README.md` and `meta_data.json` for the\n"
@@ -129,13 +140,12 @@ def feedback_user_prompt(
     round_index: int,
     feedback: JudgeFeedback,
     primary_output_rel: str,
-    show_metric_status: bool = False,
+    show_metric_status: bool = True,
 ) -> str:
     """Build the follow-up user message after a failed round.
 
-    ``show_metric_status=False`` is the default and matches the
-    "pass/fail only" mode the user asked for. We tell the agent *which*
-    failure bucket it landed in (FAIL vs INVALID) and let it reflect.
+    ``show_metric_status=True`` tells the agent per-metric PASS/FAIL only:
+    never numeric metric values or thresholds.
     """
 
     head = (
@@ -158,7 +168,7 @@ def feedback_user_prompt(
     else:  # FAIL
         body = (
             "Your output was scored, but the judge returned FAIL. You will"
-            " not be told the internal scoring details. Update"
+            " not be told hidden scores or internal scoring details. Update"
             f" `plan.md` with a new top-level `## Round {round_index}` block,"
             " change your code accordingly, run it, and reply with `READY`"
             " when the new output is on disk."

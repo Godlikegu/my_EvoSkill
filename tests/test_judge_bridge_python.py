@@ -81,6 +81,69 @@ def test_explicit_argument_overrides_manifest(tmp_path: Path):
             python_executable=str(fake_python),
         ),
         log_root=tmp_path / "logs",
-        python_executable="/explicit/override/python",
+        python_executable=str(fake_python),
     )
-    assert runner.python_executable == "/explicit/override/python"
+    assert runner.python_executable == str(fake_python)
+    assert runner.python_diagnostics["selected_source"] == "explicit"
+
+
+def test_explicit_argument_with_quotes_is_normalized(tmp_path: Path):
+    fake_python = tmp_path / "Scripts" / "python.exe"
+    fake_python.parent.mkdir(parents=True)
+    fake_python.write_text("", encoding="utf-8")
+
+    runner = JudgeRunner(
+        repo_root=tmp_path,
+        manifest=_base_manifest(python_executable=""),
+        log_root=tmp_path / "logs",
+        python_executable=f'"{fake_python}"',
+    )
+
+    assert runner.python_executable == str(fake_python)
+    assert runner.python_diagnostics["candidates"][0]["raw"].startswith('"')
+
+
+def test_explicit_missing_falls_back_to_manifest(tmp_path: Path):
+    fake_python = tmp_path / "bin" / "python"
+    fake_python.parent.mkdir(parents=True)
+    fake_python.write_text("#!/usr/bin/env python\n", encoding="utf-8")
+
+    runner = JudgeRunner(
+        repo_root=tmp_path,
+        manifest=_base_manifest(ready=True, python_executable=str(fake_python)),
+        log_root=tmp_path / "logs",
+        python_executable=str(tmp_path / "missing" / "python"),
+    )
+
+    assert runner.python_executable == str(fake_python)
+    assert runner.python_diagnostics["selected_source"] == "manifest"
+
+
+def test_manifest_python_with_quotes_is_normalized(tmp_path: Path):
+    fake_python = tmp_path / "bin" / "python"
+    fake_python.parent.mkdir(parents=True)
+    fake_python.write_text("#!/usr/bin/env python\n", encoding="utf-8")
+
+    runner = JudgeRunner(
+        repo_root=tmp_path,
+        manifest=_base_manifest(ready=True, python_executable=f"'{fake_python}'"),
+        log_root=tmp_path / "logs",
+    )
+
+    assert runner.python_executable == str(fake_python)
+    assert runner.python_diagnostics["selected_source"] == "manifest"
+
+
+def test_persist_includes_judge_diagnostics(tmp_path: Path):
+    runner = JudgeRunner(
+        repo_root=tmp_path,
+        manifest=_base_manifest(python_executable=""),
+        log_root=tmp_path / "logs",
+    )
+
+    runner._invalid(1, "judge_launch_error", "boom")
+
+    text = (tmp_path / "logs" / "judge_round_01.json").read_text(encoding="utf-8")
+    assert "diagnostics" in text
+    assert "python_executable" in text
+    assert "cwd" in text

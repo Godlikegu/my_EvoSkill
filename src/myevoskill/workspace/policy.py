@@ -84,7 +84,7 @@ DANGEROUS_BASH_PATTERNS: tuple[str, ...] = (
     r"(?i)\bconda\s+install\b",
     # Block leaving the workspace via cd. The harness pins cwd inside the
     # workspace; we additionally forbid `cd <abs path>` and `cd ..` chains.
-    r"(?i)(^|;|&&|\|\|)\s*cd\s+/",
+    r"(?i)(^|;|&&|\|\|)\s*cd\s+/(?![dD]\b)",
     r"(?i)(^|;|&&|\|\|)\s*cd\s+[A-Za-z]:[\\/]",
     r"(?i)(^|;|&&|\|\|)\s*cd\s+\.\.(?:$|\s|[\\/])",
     r"(?i)(^|;|&&|\|\|)\s*cd\s+\.\.(\\|/)?\.\.",

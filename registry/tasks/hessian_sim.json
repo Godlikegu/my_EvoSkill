@@ -10,7 +10,6 @@
       "requirements.txt",
       "data/meta_data.json",
       "data/metadata/488OTF_512.tif",
-      "data/metadata/config.json",
       "data/observation/Simulation_twobeam_noise_NA0.9.tif",
       "data/raw_data.npz"
     ],
@@ -46,15 +45,18 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777224752,
+    "created_at_unix": 1777281339,
     "cupy_info": null,
-    "filtered_requirements_path": null,
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\hessian_sim.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\hessian_sim\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\hessian_sim\\requirements.txt",
     "requirements_sha256": "e37d2bd831a784a0a1f9f69ad247ab0bc03dbfa75cacbbdbf63ac78681f99114",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\hessian_sim.json",
     "shared_torch_env": null,
+    "skipped_requirements": [
+      "jupyter>=1.0"
+    ],
     "torch_info": null
   },
   "runtime_layout": {

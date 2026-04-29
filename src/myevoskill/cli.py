@@ -428,6 +428,8 @@ def cmd_run_batch(args: argparse.Namespace) -> int:
             extra["model"] = resolved_model
     if args.judge_python:
         extra["judge-python"] = args.judge_python
+    if not bool(getattr(args, "show_metric_status", True)):
+        extra["hide-metric-status"] = True
     if args.keep_sandbox:
         extra["keep-sandbox"] = True
     if args.record_thinking:
@@ -572,7 +574,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--llm-config", default=None,
                        help="path to llm.yaml (default: <repo_root>/config/llm.yaml)")
     p_run.add_argument("--judge-python", default=None)
-    p_run.add_argument("--show-metric-status", action="store_true")
+    p_run.add_argument(
+        "--show-metric-status",
+        dest="show_metric_status",
+        action="store_true",
+        default=True,
+        help="show per-metric pass/fail feedback without numeric values (default)",
+    )
+    p_run.add_argument(
+        "--hide-metric-status",
+        dest="show_metric_status",
+        action="store_false",
+        help="hide per-metric pass/fail feedback from the agent",
+    )
     p_run.add_argument(
         "--keep-workspace",
         dest="keep_workspace",
@@ -609,6 +623,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_batch.add_argument("--llm-config", default=None,
                          help="path to llm.yaml (default: <repo_root>/config/llm.yaml)")
     p_batch.add_argument("--judge-python", default=None)
+    p_batch.add_argument(
+        "--show-metric-status",
+        dest="show_metric_status",
+        action="store_true",
+        default=True,
+        help="show per-metric pass/fail feedback without numeric values (default)",
+    )
+    p_batch.add_argument(
+        "--hide-metric-status",
+        dest="show_metric_status",
+        action="store_false",
+        help="propagate --hide-metric-status to every child run-task",
+    )
     p_batch.add_argument("--keep-sandbox", action="store_true",
                          help="propagate --keep-sandbox to every child run-task")
     p_batch.add_argument("--record-thinking", action="store_true",

@@ -43,15 +43,20 @@
   "ready": true,
   "runtime_env": {
     "backend": "per_task_venv",
-    "created_at_unix": 1777223293,
+    "created_at_unix": 1777280307,
     "cupy_info": null,
-    "filtered_requirements_path": null,
+    "filtered_requirements_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\ct_dual_energy.requirements.filtered.txt",
     "python_executable": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\.venvs\\ct_dual_energy\\Scripts\\python.exe",
     "ready": true,
     "requirements_path": "D:\\yan1\\agent\\AutoSkill\\tasks\\ct_dual_energy\\requirements.txt",
     "requirements_sha256": "2ac83cf31b711ceb6de22458a6b4d7144ada9b952c8403749c4e6b97880cf571",
     "setup_state_path": "D:\\yan1\\agent\\AutoSkill\\MyEvoSkill\\runtime_logs\\setup\\ct_dual_energy.json",
     "shared_torch_env": null,
+    "skipped_requirements": [
+      "jupyter",
+      "nbconvert",
+      "ipykernel"
+    ],
     "torch_info": null
   },
   "runtime_layout": {

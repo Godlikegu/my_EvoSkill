@@ -83,6 +83,10 @@ def test_env_overrides_sets_home_and_userprofile(tmp_path: Path) -> None:
     env = env_overrides_for(home)
     assert env["HOME"] == str(home.home_root)
     assert env["USERPROFILE"] == str(home.home_root)
+    assert env["TEMP"] == str(home.home_root / "tmp")
+    assert env["TMP"] == str(home.home_root / "tmp")
+    assert env["TMPDIR"] == str(home.home_root / "tmp")
+    assert (home.home_root / "tmp").exists()
     assert env["PYTHONIOENCODING"] == "utf-8"
 
 

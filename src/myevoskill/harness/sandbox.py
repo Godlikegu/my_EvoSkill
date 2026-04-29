@@ -146,10 +146,16 @@ def env_overrides_for(home: IsolatedHome) -> dict[str, str]:
     same code works on either platform.
     """
 
+    tmp = home.home_root / "tmp"
+    tmp.mkdir(parents=True, exist_ok=True)
     h = str(home.home_root)
+    t = str(tmp)
     return {
         "HOME": h,
         "USERPROFILE": h,
+        "TEMP": t,
+        "TMP": t,
+        "TMPDIR": t,
         # Pin a Unicode-safe encoding for the Node child process - the
         # claude CLI emits emoji / non-ASCII tool output that otherwise
         # crashes on cp936 Windows shells.
