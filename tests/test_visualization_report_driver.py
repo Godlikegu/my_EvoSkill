@@ -31,10 +31,13 @@ def _load_common():
     return module
 
 
-def test_parse_last_json_line_ignores_progress_text():
+def test_visualization_registry_is_strict_and_complete():
     driver = _load_driver()
-    payload = driver._parse_last_json_line('hello\n{"ok": false}\nprogress\n{"ok": true}\n')
-    assert payload == {"ok": True}
+    ids = driver.registered_task_ids()
+
+    assert len(ids) == 57
+    assert "ct_poisson_lowdose" in ids
+    assert driver.get_renderer("not_a_task") is None
 
 
 def test_select_run_prefers_latest_pass(tmp_path: Path):

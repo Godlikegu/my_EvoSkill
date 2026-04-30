@@ -1,18 +1,24 @@
-"""Batch driver for operator-only per-task reconstruction visualizations."""
+"""Render notebook-oriented PNG visualizations for one model's task outputs.
+
+This is an operator-only offline tool.  It reads hidden ground truth/reference
+files and must not be called from agent sandboxes.  The driver intentionally
+does not fall back to a generic contract renderer: if a task has no registered
+renderer, it records a failure instead of producing a plausible-looking but
+misleading figure.
+"""
 
 from __future__ import annotations
 
 import argparse
 import concurrent.futures
 import json
-import subprocess
+import shutil
 import sys
 import time
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
-import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = ROOT / "src"
@@ -25,14 +31,7 @@ SCRIPT_ROOT = Path(__file__).resolve().parent
 if str(SCRIPT_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPT_ROOT))
 
-from _visualize_common import (
-    ensure_2d_image,
-    load_npz,
-    render_agent_overview,
-    render_curve_triplet,
-    render_image_triplet,
-    squeeze_first_axis,
-)
+from task_visualizers import RenderContext, get_renderer, registered_task_ids
 
 
 DEFAULT_VERDICT_ORDER = (
@@ -84,17 +83,6 @@ def _manifest(repo_root: Path, task_id: str) -> dict[str, Any]:
     return _load_json(path)
 
 
-def _task_python(repo_root: Path, task_id: str, manifest: dict[str, Any]) -> Path:
-    runtime_env = manifest.get("runtime_env") if isinstance(manifest, dict) else {}
-    manifest_python = Path(str((runtime_env or {}).get("python_executable") or ""))
-    if manifest_python.exists():
-        return manifest_python
-    fallback = repo_root / ".venvs" / task_id / "Scripts" / "python.exe"
-    if fallback.exists():
-        return fallback
-    return Path(sys.executable)
-
-
 def _primary_output_path(manifest: dict[str, Any]) -> Path:
     value = manifest.get("primary_output_path") if isinstance(manifest, dict) else None
     return Path(str(value or "output/reconstruction.npz"))
@@ -137,192 +125,57 @@ def _select_run(
     if not rows:
         return None
 
-    order: tuple[str, ...]
     if prefer_verdict.upper() == "LATEST":
-        order = ()
+        chosen_summary, chosen_data = rows[0]
+        reason = "latest_summary"
     else:
         preferred = prefer_verdict.upper()
-        tail = tuple(v for v in DEFAULT_VERDICT_ORDER if v != preferred)
-        order = (preferred,) + tail
-
-    chosen: tuple[Path, dict[str, Any], str] | None = None
-    if order:
+        order = (preferred,) + tuple(v for v in DEFAULT_VERDICT_ORDER if v != preferred)
+        chosen_summary = rows[0][0]
+        chosen_data = rows[0][1]
+        reason = "latest_summary"
         for verdict in order:
             candidates = [(p, data) for p, data in rows if str(data.get("verdict") or "").upper() == verdict]
             if candidates:
-                summary, data = candidates[0]
-                chosen = (summary, data, f"latest_{verdict.lower()}")
+                chosen_summary, chosen_data = candidates[0]
+                reason = f"latest_{verdict.lower()}"
                 break
-    if chosen is None:
-        summary, data = rows[0]
-        chosen = (summary, data, "latest_summary")
 
-    summary, data, reason = chosen
-    workspace_root = Path(str(data.get("workspace_root") or ""))
+    workspace_root = Path(str(chosen_data.get("workspace_root") or ""))
     if not workspace_root.exists():
         return None
     recon_path = workspace_root / _primary_output_path(manifest)
     return SelectedRun(
         task_id=task_id,
-        run_id=str(data.get("run_id") or summary.parent.name),
-        verdict=str(data.get("verdict") or "UNKNOWN"),
-        summary_path=summary,
+        run_id=str(chosen_data.get("run_id") or chosen_summary.parent.name),
+        verdict=str(chosen_data.get("verdict") or "UNKNOWN"),
+        summary_path=chosen_summary,
         workspace_root=workspace_root,
         recon_path=recon_path,
         selected_reason=reason,
     )
 
 
-def _parse_last_json_line(stdout: str) -> dict[str, Any]:
-    for line in reversed(stdout.splitlines()):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            data = json.loads(stripped)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(data, dict):
-            return data
-    return {"error": "missing_json_stdout", "stdout_tail": stdout[-2000:]}
+def _mark_legacy_output_deprecated(repo_root: Path, model_slug_value: str) -> None:
+    legacy = repo_root / "artifacts" / "visualizations" / model_slug_value
+    if not legacy.exists():
+        return
+    marker = legacy / "DEPRECATED.txt"
+    marker.write_text(
+        "Deprecated visualization output. These images may have been produced by the old generic_contract renderer "
+        "and should not be used for notebook-faithful review. Use artifacts/visualizations_notebook instead.\n",
+        encoding="utf-8",
+    )
 
 
-def _field_name(field: dict[str, Any]) -> str:
-    return str(field.get("name") or "").strip()
-
-
-def _files_by_id(contract: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {
-        str(entry.get("id")): entry
-        for entry in contract.get("files", [])
-        if isinstance(entry, dict) and entry.get("id")
-    }
-
-
-def _apply_selectors(array: Any, selectors: dict[str, Any] | None) -> Any:
-    arr = np.asarray(array)
-    selectors = selectors or {}
-    if "index" in selectors:
-        arr = arr[int(selectors["index"])]
-    return arr
-
-
-def _load_file_binding(task_root: Path, files: dict[str, dict[str, Any]], binding: dict[str, Any]) -> np.ndarray | None:
-    file_id = str(binding.get("file_id") or "")
-    field = str(binding.get("field") or "")
-    entry = files.get(file_id)
-    if not entry:
-        return None
-    path = task_root / str(entry.get("path") or "")
+def _clear_pngs(path: Path) -> None:
     if not path.exists():
-        return None
-    suffix = path.suffix.lower()
-    if suffix == ".npz":
-        payload = load_npz(path)
-        if field in payload:
-            return np.asarray(_apply_selectors(payload[field], binding.get("selectors")))
-    if suffix == ".npy":
-        return np.asarray(_apply_selectors(np.load(path, allow_pickle=True), binding.get("selectors")))
-    return None
-
-
-def _reference_for_output_field(
-    *,
-    task_root: Path,
-    contract: dict[str, Any],
-    output_field: str,
-) -> np.ndarray | None:
-    files = _files_by_id(contract)
-    for metric in contract.get("metrics", []):
-        inputs = metric.get("inputs") if isinstance(metric, dict) else None
-        if not isinstance(inputs, dict):
-            continue
-        estimate = inputs.get("estimate")
-        reference = inputs.get("reference")
-        if not isinstance(estimate, dict) or not isinstance(reference, dict):
-            continue
-        if estimate.get("source") == "output" and str(estimate.get("field") or "") == output_field:
-            if reference.get("source") == "file":
-                loaded = _load_file_binding(task_root, files, reference)
-                if loaded is not None:
-                    return loaded
-    return None
-
-
-def _render_generic_visualization(
-    *,
-    task_root: Path,
-    task_id: str,
-    recon_path: Path,
-    output_dir: Path,
-) -> dict[str, Any]:
-    contract_path = task_root / "evaluation" / "task_contract.json"
-    if not contract_path.exists():
-        raise FileNotFoundError(f"missing task contract: {contract_path}")
-    contract = _load_json(contract_path)
-    recon = load_npz(recon_path)
-    fields = [
-        _field_name(field)
-        for field in (contract.get("output") or {}).get("fields", [])
-        if isinstance(field, dict) and _field_name(field)
-    ]
-    if not fields:
-        fields = list(recon)
-    if not fields:
-        raise ValueError("reconstruction.npz has no fields to visualize")
-
-    figures: list[str] = []
-    metrics: dict[str, Any] = {}
-    for field in fields:
-        if field not in recon:
-            metrics[f"{field}_missing"] = True
-            continue
-        agent = np.asarray(recon[field])
-        reference = _reference_for_output_field(task_root=task_root, contract=contract, output_field=field)
-        safe_field = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in field)
-
-        if agent.ndim <= 1:
-            dest = output_dir / f"{task_id}__{safe_field}__curve.png"
-            field_metrics = render_curve_triplet(
-                gt=squeeze_first_axis(reference) if reference is not None else None,
-                baseline=None,
-                agent=squeeze_first_axis(agent),
-                dest=dest,
-                title=f"{task_id}: {field}",
-                names=("Reference", "Baseline", "Agent"),
-            )
-        else:
-            dest = output_dir / f"{task_id}__{safe_field}__comparison.png"
-            try:
-                reference_image = ensure_2d_image(reference) if reference is not None else None
-                agent_image = ensure_2d_image(agent)
-                field_metrics = render_image_triplet(
-                    gt=reference_image,
-                    baseline=None,
-                    agent=agent_image,
-                    dest=dest,
-                    title=f"{task_id}: {field}",
-                    names=("Reference", "Baseline", "Agent"),
-                    notes=("Generic visualization derived from task_contract.json.",),
-                )
-            except ValueError:
-                dest = output_dir / f"{task_id}__{safe_field}__agent_overview.png"
-                field_metrics = render_agent_overview(
-                    agent=agent,
-                    dest=dest,
-                    title=f"{task_id}: {field}",
-                )
-        figures.append(str(dest))
-        metrics[field] = field_metrics
-
-    if not figures:
-        raise ValueError("no declared output fields were present in reconstruction.npz")
-    return {
-        "task_id": task_id,
-        "figures": figures,
-        "metrics": metrics,
-        "renderer": "generic_contract",
-    }
+        return
+    for child in path.iterdir():
+        if child.is_file() and child.suffix.lower() == ".png":
+            child.unlink()
+        elif child.is_dir():
+            shutil.rmtree(child)
 
 
 def _run_one(
@@ -332,10 +185,35 @@ def _run_one(
     model_slug_value: str,
     task_id: str,
     prefer_verdict: str,
-    timeout_seconds: int,
+    output_root: str,
+    strict_renderer: bool,
 ) -> dict[str, Any]:
     repo = Path(repo_root)
     tasks = Path(tasks_root)
+    output_task_root = Path(output_root) / task_id
+    output_task_root.mkdir(parents=True, exist_ok=True)
+    _clear_pngs(output_task_root)
+    status_path = output_task_root / "status.json"
+
+    base_status: dict[str, Any] = {
+        "task_id": task_id,
+        "model_slug": model_slug_value,
+        "status_path": str(status_path),
+        "figures": [],
+        "metrics": {},
+    }
+
+    renderer = get_renderer(task_id)
+    if renderer is None:
+        status = {
+            **base_status,
+            "status": "failed" if strict_renderer else "skipped",
+            "error": "missing_registered_renderer",
+            "available_renderer_count": len(registered_task_ids()),
+        }
+        status_path.write_text(json.dumps(status, indent=2, ensure_ascii=False), encoding="utf-8")
+        return status
+
     manifest = _manifest(repo, task_id)
     selected = _select_run(
         repo_root=repo,
@@ -344,24 +222,8 @@ def _run_one(
         manifest=manifest,
         prefer_verdict=prefer_verdict,
     )
-    output_root = repo / "artifacts" / "visualizations" / model_slug_value / task_id
-    output_dir = output_root / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    status_path = output_root / "status.json"
-
-    base_status: dict[str, Any] = {
-        "task_id": task_id,
-        "model_slug": model_slug_value,
-        "status_path": str(status_path),
-    }
     if selected is None:
-        status = {
-            **base_status,
-            "status": "skipped",
-            "error": "no_complete_run",
-            "figures": [],
-            "metrics": {},
-        }
+        status = {**base_status, "status": "skipped", "error": "no_complete_run"}
         status_path.write_text(json.dumps(status, indent=2, ensure_ascii=False), encoding="utf-8")
         return status
 
@@ -376,131 +238,43 @@ def _run_one(
         }
     )
     if not selected.recon_path.exists():
-        status = {
-            **base_status,
-            "status": "skipped",
-            "error": "recon_missing",
-            "figures": [],
-            "metrics": {},
-        }
+        status = {**base_status, "status": "skipped", "error": "recon_missing"}
         status_path.write_text(json.dumps(status, indent=2, ensure_ascii=False), encoding="utf-8")
         return status
 
     task_root = tasks / task_id
-    visualize_py = task_root / "visualize.py"
-    if not visualize_py.exists():
-        try:
-            payload = _render_generic_visualization(
-                task_root=task_root,
-                task_id=task_id,
-                recon_path=selected.recon_path,
-                output_dir=output_dir,
-            )
-            status = {
-                **base_status,
-                "status": "ok",
-                "exit_code": 0,
-                "python_executable": str(Path(sys.executable)),
-                "figures": payload.get("figures") or [],
-                "metrics": payload.get("metrics") or {},
-                "renderer": payload.get("renderer"),
-                "error": None,
-                "stdout_tail": "",
-                "stderr_tail": "",
-            }
-        except Exception as exc:
-            status = {
-                **base_status,
-                "status": "failed",
-                "exit_code": None,
-                "python_executable": str(Path(sys.executable)),
-                "figures": [],
-                "metrics": {},
-                "renderer": "generic_contract",
-                "error": f"generic_render_failed: {type(exc).__name__}: {exc}",
-                "stdout_tail": "",
-                "stderr_tail": "",
-            }
-        status_path.write_text(json.dumps(status, indent=2, ensure_ascii=False), encoding="utf-8")
-        return status
-
-    python_exe = _task_python(repo, task_id, manifest)
-    cmd = [
-        str(python_exe),
-        str(visualize_py),
-        "--recon",
-        str(selected.recon_path),
-        "--output-dir",
-        str(output_dir),
-        "--task-root",
-        str(task_root),
-    ]
     try:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(task_root),
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
+        payload = renderer(
+            RenderContext(
+                task_id=task_id,
+                task_root=task_root,
+                recon_path=selected.recon_path,
+                output_dir=output_task_root,
+                repo_root=repo,
+                run_id=selected.run_id,
+                verdict=selected.verdict,
+            )
         )
-        payload = _parse_last_json_line(proc.stdout)
+        figures = [str(Path(fig)) for fig in payload.get("figures") or []]
         status = {
             **base_status,
-            "status": "ok" if proc.returncode == 0 else "failed",
-            "exit_code": proc.returncode,
-            "python_executable": str(python_exe),
-            "figures": payload.get("figures") or [],
+            "status": "ok",
+            "renderer": payload.get("renderer") or task_id,
+            "figures": figures,
             "metrics": payload.get("metrics") or {},
-            "error": payload.get("error"),
-            "stdout_tail": proc.stdout[-2000:],
-            "stderr_tail": proc.stderr[-4000:],
+            "error": None,
         }
-    except subprocess.TimeoutExpired as exc:
+    except Exception as exc:
         status = {
             **base_status,
             "status": "failed",
-            "exit_code": None,
-            "python_executable": str(python_exe),
-            "figures": [],
-            "metrics": {},
-            "error": "visualize_timeout",
-            "stdout_tail": (exc.stdout or "")[-2000:] if isinstance(exc.stdout, str) else "",
-            "stderr_tail": (exc.stderr or "")[-4000:] if isinstance(exc.stderr, str) else "",
+            "renderer": task_id,
+            "error": f"{type(exc).__name__}: {exc}",
+            "traceback_tail": traceback.format_exc()[-4000:],
         }
 
     status_path.write_text(json.dumps(status, indent=2, ensure_ascii=False), encoding="utf-8")
     return status
-
-
-def _write_index(output_root: Path, records: list[dict[str, Any]]) -> None:
-    lines = [
-        "<!doctype html>",
-        "<meta charset=\"utf-8\">",
-        "<title>Model Reconstruction Visualizations</title>",
-        "<style>body{font-family:Segoe UI,Arial,sans-serif;margin:24px} .task{border-top:1px solid #ddd;padding:18px 0} img{max-width:100%;height:auto;border:1px solid #ddd} code{background:#f5f5f5;padding:2px 4px}</style>",
-        "<h1>Model Reconstruction Visualizations</h1>",
-    ]
-    for record in records:
-        task_id = record.get("task_id")
-        lines.append(f"<section class=\"task\"><h2>{task_id}</h2>")
-        lines.append(
-            "<p>"
-            f"status: <code>{record.get('status')}</code> "
-            f"verdict: <code>{record.get('verdict', '')}</code> "
-            f"run: <code>{record.get('selected_run_id', '')}</code>"
-            "</p>"
-        )
-        if record.get("error"):
-            lines.append(f"<p>error: <code>{record.get('error')}</code></p>")
-        for fig in record.get("figures") or []:
-            fig_path = Path(fig)
-            try:
-                rel = fig_path.resolve().relative_to(output_root.resolve()).as_posix()
-            except ValueError:
-                rel = fig_path.as_posix()
-            lines.append(f"<figure><img src=\"{rel}\" alt=\"{task_id}\"><figcaption>{fig_path.name}</figcaption></figure>")
-        lines.append("</section>")
-    (output_root / "index.html").write_text("\n".join(lines), encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -511,7 +285,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--task-ids", nargs="+", default=None)
     parser.add_argument("--max-workers", type=int, default=4)
     parser.add_argument("--prefer-verdict", default="PASS")
-    parser.add_argument("--timeout-seconds", type=int, default=120)
+    parser.add_argument("--images-only", action="store_true", help="Accepted for clarity; PNG output is the default.")
+    parser.add_argument("--strict-renderer", dest="strict_renderer", action="store_true", default=True)
+    parser.add_argument("--no-strict-renderer", dest="strict_renderer", action="store_false")
+    parser.add_argument("--output-root", default=None)
     args = parser.parse_args(argv)
 
     repo = _repo_root(args.repo_root)
@@ -519,8 +296,11 @@ def main(argv: list[str] | None = None) -> int:
     slug = model_slug(args.model_id)
     log_model_root = repo / "artifacts" / "logs" / slug
     task_ids = _discover_task_ids(log_model_root, args.task_ids)
-    output_root = repo / "artifacts" / "visualizations" / slug
+    output_root = Path(args.output_root) if args.output_root else repo / "artifacts" / "visualizations_notebook" / slug
+    if not output_root.is_absolute():
+        output_root = (Path.cwd() / output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
+    _mark_legacy_output_deprecated(repo, slug)
 
     started = time.time()
     records: list[dict[str, Any]] = []
@@ -533,7 +313,8 @@ def main(argv: list[str] | None = None) -> int:
                 model_slug_value=slug,
                 task_id=task_id,
                 prefer_verdict=args.prefer_verdict,
-                timeout_seconds=args.timeout_seconds,
+                output_root=str(output_root),
+                strict_renderer=bool(args.strict_renderer),
             )
             for task_id in task_ids
         ]
@@ -544,7 +325,9 @@ def main(argv: list[str] | None = None) -> int:
     summary = {
         "model_id": args.model_id,
         "model_slug": slug,
+        "output_root": str(output_root),
         "task_count": len(task_ids),
+        "registered_renderer_count": len(registered_task_ids()),
         "ok_count": sum(1 for r in records if r.get("status") == "ok"),
         "skipped_count": sum(1 for r in records if r.get("status") == "skipped"),
         "failed_count": sum(1 for r in records if r.get("status") == "failed"),
@@ -552,7 +335,6 @@ def main(argv: list[str] | None = None) -> int:
         "records": records,
     }
     (output_root / "_summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
-    _write_index(output_root, records)
     print(json.dumps(summary, ensure_ascii=False))
     return 0 if summary["failed_count"] == 0 else 1
 
