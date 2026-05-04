@@ -10,6 +10,9 @@ Subcommands
                        deleting per-run claude history afterwards.
 * ``setup-task-env``   Build the per-task venv consumed by registration.
 * ``export-trajectory`` Write a distillation-clean trajectory JSONL.
+* ``validate-skill``   Valid-split gate: run +skill on selected valid tasks
+                       by default; optionally run baseline vs +skill with
+                       ``--compare-baseline``.
 
 Everything else (compilation, visualisation, legacy bootstrap, ...) lives in
 its own module under ``myevoskill/`` and is invoked directly via
@@ -24,7 +27,8 @@ import logging
 import sys
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
+
 
 from .concurrency import run_tasks_parallel
 from .artifact_paths import model_slug
@@ -361,6 +365,8 @@ def cmd_run_task(args: argparse.Namespace) -> int:
     else:
         resolved_model = _resolve_default_model(args.model)
         artifact_model_slug = model_slug(resolved_model)
+    if getattr(args, "artifact_model_slug", None):
+        artifact_model_slug = model_slug(args.artifact_model_slug)
     if resolved_model:
         logger.info("using model: %s", resolved_model)
     config = HarnessConfig(
@@ -372,6 +378,11 @@ def cmd_run_task(args: argparse.Namespace) -> int:
         model=resolved_model,
         model_provider_env=model_provider_env,
         model_provider_summary=model_provider_summary,
+        skill_pack_dir=(
+            Path(args.skill_pack_dir).resolve()
+            if getattr(args, "skill_pack_dir", None)
+            else None
+        ),
         artifact_model_slug=artifact_model_slug,
         judge_python=args.judge_python,
         show_metric_status=bool(args.show_metric_status),
@@ -460,6 +471,488 @@ def cmd_run_batch(args: argparse.Namespace) -> int:
     for o in outcomes:
         print(f"  {o.task_id:30s} {o.verdict:8s} ({o.runtime_seconds:6.1f}s)")
     return 0 if not failures else 1
+
+
+def _build_anthropic_polish(
+    *, repo_root: Path, model_id: str | None, llm_config: str | None
+):
+    """Construct an LLMPolishFn backed by the project's llm.yaml gateway.
+
+    Returns ``None`` if ``model_id`` is falsy or the SDK / config is
+    missing; in that case the synthesizer falls back to the deterministic
+    playbook draft (no LLM calls, still produces a valid SKILL.md).
+    """
+
+    if not model_id:
+        return None
+    try:
+        config_path = (
+            Path(llm_config).resolve()
+            if llm_config
+            else default_llm_config_path(repo_root).resolve()
+        )
+        registry = load_model_provider_registry(config_path)
+        runtime = registry.resolve_claude_gateway_runtime(model_id)
+    except (FileNotFoundError, ModelProviderError) as exc:
+        logger.warning("distill-skill: cannot load model_id=%s (%s); "
+                       "falling back to deterministic draft", model_id, exc)
+        return None
+
+    try:
+        # The Anthropic SDK is an optional dependency. Import lazily so
+        # that running `distill-skill` without `--model-id` works on
+        # machines that never installed it.
+        import anthropic  # type: ignore
+    except Exception as exc:  # pragma: no cover - import-time only
+        logger.warning("distill-skill: anthropic SDK not importable (%s); "
+                       "falling back to deterministic draft", exc)
+        return None
+
+    api_key = runtime.env.get("ANTHROPIC_API_KEY") or runtime.model_config.api_key
+    base_url = runtime.env.get("ANTHROPIC_BASE_URL") or runtime.model_config.base_url
+    model_name = runtime.model_config.model_name
+
+    client = anthropic.Anthropic(api_key=api_key, base_url=base_url)
+
+    SYSTEM_PROMPT = (
+        "You are an expert curriculum author distilling a *transferable* "
+        "skill from successful agent trajectories AND the train-task "
+        "source code that produced them.\n"
+        "\n"
+        "INPUT you receive: (a) a deterministic Markdown draft we already "
+        "wrote, and (b) JSON evidence with two parts:\n"
+        "  - `episodes`: per-train-task tool-use signatures and judge "
+        "feedback tags;\n"
+        "  - `source_evidence`: per-train-task scrubbed snippets of the "
+        "actual reference source files (README, agent_task_spec.json, "
+        "and files the agent opened during the run);\n"
+        "  - `train_gap_evidence`: train-only failed/timeout attempts "
+        "compared against train source, used for generic anti-patterns.\n"
+        "\n"
+        "GOAL: rewrite the draft into a tight, *non-hardcoded* Markdown "
+        "playbook that helps a future agent on a *different* but related "
+        "task in the same domain family. Cross-check the draft against "
+        "what the source actually requires (forward model shapes, primary "
+        "output schema, common pitfalls). Use train_gap_evidence to add "
+        "missing algorithm families and timeout-avoidance tactics. "
+        "Make the first screen actionable: tell the future agent to load the "
+        "skill before writing the solver, run bundled helper scripts for "
+        "npz inspection, schema-shaped guard outputs from public arrays, "
+        "FFT-grid/Stolt mapping checks, SSNP/ODT sampling checks, CFL checks, "
+        "and simple tomography baselines, then choose a physics route. "
+        "Generalise across tasks; do "
+        "not paste literal code or task_ids; do not invent thresholds. "
+        "The polished skill MUST include `## Routes`, `## Metric Diagnostic`, "
+        "and `## Anti-Patterns` sections. `Routes` must map public README/data "
+        "signals to algorithm routes and required checks. `Metric Diagnostic` "
+        "must map failed metric patterns to first diagnostic checks, next "
+        "actions, and give-up signals. `Anti-Patterns` must come from "
+        "train-only failures/timeouts and must not mention task ids. "
+        "hard anti-timeout lessons from failed train attempts: for large 3D "
+        "diffraction/tomography volumes, write an intensity/projection guard "
+        "once and avoid full-volume autograd through all slices, angles, and "
+        "iterations unless cropped/downsampled timing probes prove the exact "
+        "loop is cheap. If the guard fails, do not resubmit it unchanged; "
+        "switch routes. For f-k/Stolt "
+        "migration, emphasize axis/FFT/interpolation/Jacobian checks plus delay/TOF "
+        "alignment before cropping and round-trip or virtual-wave speed. For "
+        "waveform inversion, emphasize saving any same-shaped public initial "
+        "or smoothed model as a one-time schema guard before solver work; "
+        "only refine after a tiny timing probe proves the full loop is cheap. "
+        "If a timing probe estimates the documented optimization will exceed "
+        "budget, do not implement a shortened CPML/FWI solver just to fit "
+        "the clock. If CFL substeps, memory, or single-shot runtime look risky, "
+        "stop the long path and revise the solver rather than repeating the guard. Also "
+        "emphasize adjoint-state gradients and sparse checkpointing instead "
+        "of black-box autograd through every timestep. "
+        "Make this visible in the Outline, before any solver-family details, "
+        "so a future agent writes the first `plan.md` around probes and cheap "
+        "guards rather than copying an expensive README hint.\n"
+        "\n"
+        "HARD CONSTRAINTS:\n"
+        "- Output ONLY Markdown body content (no YAML frontmatter, no "
+        "code fences around the whole reply).\n"
+        "- Do NOT mention any train-task id or valid-task id by name.\n"
+        "- Do NOT include absolute filesystem paths or API keys.\n"
+        "- Keep total length under ~6000 characters.\n"
+        "- Preserve `## When to use`, `## Outline`, `## Helper scripts`, "
+        "`## Routes`, `## Metric Diagnostic`, `## Anti-Patterns`, "
+        "and `## Self-check` sections; you may add others.\n"
+        "- Do NOT write that a baseline or guard is a final/default final "
+        "answer. It is a one-time schema guard; if it fails, route to the "
+        "algorithmic solver instead of repeating it.\n"
+    )
+
+    def polish(draft: str, evidence: Mapping[str, object]) -> str:
+        # Compact the evidence so we don't blow the context window.
+        # Truncate snippets aggressively; the LLM only needs the gist.
+        compact_episodes: list[dict[str, object]] = []
+        for ep in evidence.get("episodes", []) or []:  # type: ignore[union-attr]
+            if not isinstance(ep, Mapping):
+                continue
+            tools = list(ep.get("tools", []) or [])[:8]
+            failures = list(ep.get("failures", []) or [])[:6]
+            compact_episodes.append({
+                "task_tag": "train-task-#" + str(len(compact_episodes) + 1),
+                "rounds_used": ep.get("rounds_used"),
+                "metrics_actual": ep.get("metrics_actual"),
+                "metric_status": ep.get("metric_status"),
+                "plan_summary": ep.get("plan_summary"),
+                "main_py_digest": ep.get("main_py_digest"),
+                "tools": tools,
+                "failures": failures,
+            })
+        compact_sources: list[dict[str, object]] = []
+        for item in evidence.get("source_evidence", []) or []:  # type: ignore[union-attr]
+            if not isinstance(item, Mapping):
+                continue
+            snips = []
+            for s in item.get("snippets", []) or []:
+                if not isinstance(s, Mapping):
+                    continue
+                txt = str(s.get("snippet") or "")
+                snips.append({
+                    "rel_path": s.get("rel_path"),
+                    "kind": s.get("kind"),
+                    "bytes": s.get("bytes"),
+                    "snippet": txt[:1500],  # extra cap on top of the
+                                            # 4 KB cap from the collector
+                })
+            compact_sources.append({
+                "task_tag": "train-task-#" + str(len(compact_sources) + 1),
+                "primary_output_rel": item.get("primary_output_rel"),
+                "snippets": snips,
+            })
+        compact_gaps: list[dict[str, object]] = []
+        for item in evidence.get("train_gap_evidence", []) or []:  # type: ignore[union-attr]
+            if not isinstance(item, Mapping):
+                continue
+            gap_sources = []
+            for s in item.get("source_hint", []) or []:
+                if not isinstance(s, Mapping):
+                    continue
+                gap_sources.append({
+                    "rel_path": s.get("rel_path"),
+                    "bytes": s.get("bytes"),
+                    "snippet": str(s.get("snippet") or "")[:1200],
+                })
+            attempt = item.get("agent_attempt") or {}
+            if not isinstance(attempt, Mapping):
+                attempt = {}
+            compact_gaps.append({
+                "task_tag": "train-gap-#" + str(len(compact_gaps) + 1),
+                "failure_mode": item.get("failure_mode"),
+                "metric_statuses": item.get("metric_statuses"),
+                "metrics_actual": item.get("metrics_actual"),
+                "agent_attempt": {
+                    "plan": str(attempt.get("plan") or "")[:1200],
+                    "trajectory": str(attempt.get("trajectory") or "")[:1800],
+                    "main_py_digest": attempt.get("main_py_digest") or {},
+                },
+                "source_hint": gap_sources[:6],
+                "transferable_lesson": item.get("transferable_lesson"),
+            })
+
+        user_payload = (
+            "## Deterministic draft\n\n" + draft + "\n\n"
+            "## Evidence (JSON)\n\n```json\n"
+            + json.dumps(
+                {
+                    "episodes": compact_episodes,
+                    "source_evidence": compact_sources,
+                    "train_gap_evidence": compact_gaps,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )[:60_000]
+            + "\n```\n"
+        )
+        msg = client.messages.create(
+            model=model_name,
+            max_tokens=4_096,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_payload}],
+        )
+        # Concatenate any text blocks from the response.
+        out_parts: list[str] = []
+        for block in getattr(msg, "content", []) or []:
+            text = getattr(block, "text", None)
+            if isinstance(text, str):
+                out_parts.append(text)
+        return "".join(out_parts).strip()
+
+    return polish
+
+
+def cmd_distill_skill(args: argparse.Namespace) -> int:
+    """Mine train-split episodes, synthesise a SKILL pack, sanitise, write.
+
+    Does NOT run any harness; pure offline derivation from existing
+    trajectories + train-task source. Output: a directory under
+    ``--out-root`` named after ``--skill-id`` containing SKILL.md.
+
+    Use ``--model-id`` to enable the LLM polish layer (writes a richer,
+    cross-checked SKILL.md). Without it, you get the deterministic
+    playbook draft (still a valid Anthropic-format skill, just terser).
+    """
+
+    from .distill import (
+        DistillUniverse,
+        SanitizationError,
+        ValidationLeakError,
+        mine_train_split,
+        synthesize_skill,
+        write_skill_pack,
+    )
+
+    repo_root = Path(args.repo_root).resolve()
+    split_path = Path(args.split).resolve()
+    out_root = Path(args.out_root).resolve()
+    audit_path = (
+        Path(args.audit_log).resolve()
+        if args.audit_log
+        else (out_root / "_audit" / f"{args.skill_id}.audit.jsonl")
+    )
+
+    if not split_path.exists():
+        print(f"split file not found: {split_path}", file=sys.stderr)
+        return 2
+
+    universe = DistillUniverse.from_split_file(repo_root, split_path)
+    universe.bind_audit_log(audit_path)
+
+    episodes = mine_train_split(universe)
+    pass_episodes = [e for e in episodes if e.final_verdict == "PASS"]
+    gap_episodes = [e for e in episodes if e.final_verdict != "PASS"]
+    if not pass_episodes:
+        print(
+            f"no passing train episodes found under "
+            f"artifacts/logs/{universe.model_slug}/<train_task>/run-* "
+            f"for split {split_path.name}",
+            file=sys.stderr,
+        )
+        print("hint: run `myevoskill run-task` on at least one train task "
+              "until it PASSES, then retry distill-skill", file=sys.stderr)
+        return 1
+
+    logger.info(
+        "distill-skill: mined %d passing episode(s) and %d train-only gap episode(s) across %d train task(s)",
+        len(pass_episodes), len(gap_episodes), len({e.task_id for e in episodes}),
+    )
+
+    polish_fn = _build_anthropic_polish(
+        repo_root=repo_root,
+        model_id=getattr(args, "model_id", None),
+        llm_config=getattr(args, "llm_config", None),
+    )
+    if polish_fn is None:
+        logger.info("distill-skill: deterministic draft only (no LLM polish)")
+    else:
+        logger.info("distill-skill: LLM polish enabled (model_id=%s)", args.model_id)
+
+    try:
+        spec = synthesize_skill(
+            skill_id=args.skill_id,
+            episodes=episodes,
+            universe=universe,
+            llm_polish=polish_fn,
+        )
+    except (PermissionError, ValueError) as exc:
+        print(f"distill-skill failed: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        pack_dir = write_skill_pack(
+            spec,
+            out_root,
+            valid_task_ids=universe.valid_task_ids,
+            train_task_ids=universe.train_task_ids,
+        )
+    except SanitizationError as exc:
+        print(f"distill-skill: sanitizer rejected the synthesised pack: {exc}",
+              file=sys.stderr)
+        print("inspect the *.rejected/ dir alongside the target out-root for "
+              "the offending bytes.", file=sys.stderr)
+        return 3
+
+    # Defence-in-depth tail check: confirm the audit recorded zero allowed
+    # accesses to valid-split tasks.
+    try:
+        universe.assert_no_valid_access()
+    except ValidationLeakError as exc:
+        print(f"distill-skill: AUDIT LEAK: {exc}", file=sys.stderr)
+        return 4
+
+    payload = {
+        "skill_id": spec.skill_id,
+        "pack_dir": str(pack_dir),
+        "skill_md": str(pack_dir / "SKILL.md"),
+        "train_task_count": len(spec.train_task_ids),
+        "primary_output_rel": spec.primary_output_rel,
+        "audit_log": str(audit_path),
+        "polish_used": polish_fn is not None,
+    }
+    if args.json:
+        print(json.dumps(payload))
+    else:
+        print(f"skill_id:        {payload['skill_id']}")
+        print(f"pack_dir:        {payload['pack_dir']}")
+        print(f"SKILL.md:        {payload['skill_md']}")
+        print(f"trained_on:      {payload['train_task_count']} train task(s)")
+        print(f"primary_output:  {payload['primary_output_rel']}")
+        print(f"audit_log:       {payload['audit_log']}")
+        print(f"llm_polish:      {payload['polish_used']}")
+        print()
+        print("next: validate with")
+        print(f"  python -m myevoskill.cli validate-skill \\")
+        print(f"    --skill-pack-dir {pack_dir} \\")
+        print(f"    --split {split_path}")
+    return 0
+
+
+def cmd_validate_skill(args: argparse.Namespace) -> int:
+
+    """Validation gate for a freshly distilled skill pack.
+
+    By default this runs each selected valid-split task once with
+    ``--skill-pack-dir`` injected. ``--compare-baseline`` restores the
+    original baseline-vs-skill transfer comparison.
+    """
+
+    from .distill.transfer_validator import (
+        VERDICT_PROMOTE,
+        stamp_promotion,
+        validate_skill,
+        write_transfer_report,
+    )
+    from .distill.universe import DistillUniverse
+
+    repo_root = Path(args.repo_root).resolve()
+    pack_dir = Path(args.skill_pack_dir).resolve()
+    split_path = Path(args.split).resolve()
+
+    if not pack_dir.exists():
+        print(f"skill pack not found: {pack_dir}", file=sys.stderr)
+        return 2
+    if not split_path.exists():
+        print(f"split file not found: {split_path}", file=sys.stderr)
+        return 2
+
+    # Build the universe (we only consult `is_train` / `valid_task_ids`
+    # here; no source-code reads happen).
+    universe = DistillUniverse.from_split_file(repo_root, split_path)
+
+    # Resolve the model once so both baseline and +skill runs use the
+    # same routing / artifact slug.
+    try:
+        provider_runtime = _resolve_model_provider_for_cli(
+            repo_root=repo_root,
+            model_id=getattr(args, "model_id", None),
+            llm_config=getattr(args, "llm_config", None),
+        )
+    except (FileNotFoundError, ModelProviderError) as exc:
+        print(f"model provider error: {exc}", file=sys.stderr)
+        return 2
+
+    if provider_runtime is not None:
+        (
+            resolved_model,
+            model_provider_env,
+            model_provider_summary,
+            artifact_model_slug,
+        ) = provider_runtime
+    else:
+        resolved_model = _resolve_default_model(args.model)
+        model_provider_env = {}
+        model_provider_summary = {}
+        artifact_model_slug = model_slug(resolved_model)
+    if getattr(args, "artifact_model_slug", None):
+        artifact_model_slug = model_slug(args.artifact_model_slug)
+
+    if resolved_model:
+        logger.info("validate-skill using model: %s", resolved_model)
+
+    valid_ids = (
+        list(args.valid_task_ids) if args.valid_task_ids else list(universe.valid_task_ids)
+    )
+
+    # Build the per-task runner closure. It calls ``run_task_once`` with
+    # exactly the same options run-task uses, plus skill_pack_dir when
+    # ``with_skill`` is True. Verdict strings come straight from the
+    # HarnessOutcome.
+    def _runner(task_id: str, with_skill: bool) -> str:
+        manifest = _load_manifest(repo_root, task_id)
+        config = HarnessConfig(
+            repo_root=repo_root,
+            manifest=manifest,
+            max_rounds=args.max_rounds,
+            budget_seconds=args.budget_seconds,
+            max_turns_per_round=args.max_turns_per_round,
+            model=resolved_model,
+            model_provider_env=model_provider_env,
+            model_provider_summary=model_provider_summary,
+            skill_pack_dir=pack_dir if with_skill else None,
+            artifact_model_slug=artifact_model_slug,
+            judge_python=args.judge_python,
+            show_metric_status=bool(args.show_metric_status),
+            keep_workspace_on_success=bool(args.keep_workspace),
+            keep_sandbox=False,
+            record_thinking=False,
+        )
+        outcome = run_task_once(config)
+        logger.info(
+            "[validate] %s with_skill=%s -> %s (run_id=%s, log=%s)",
+            task_id, with_skill, outcome.verdict, outcome.run_id, outcome.log_root,
+        )
+        return outcome.verdict
+
+    try:
+        report = validate_skill(
+            universe=universe,
+            skill_pack_dir=pack_dir,
+            runner=_runner,
+            valid_task_ids=valid_ids,
+            compare_baseline=bool(args.compare_baseline),
+        )
+    except (FileNotFoundError, PermissionError, ValueError) as exc:
+        print(f"validate-skill failed: {exc}", file=sys.stderr)
+        return 2
+
+    out_path = (
+        Path(args.report_path).resolve()
+        if args.report_path
+        else None
+    )
+    written = write_transfer_report(report, out_path=out_path)
+    promo_path = stamp_promotion(report, model_slug=artifact_model_slug or "unknown")
+
+    if args.json:
+        print(json.dumps({
+            "verdict": report.verdict,
+            "summary": report.summary(),
+            "report_path": str(written),
+            "promotion_path": str(promo_path) if promo_path else None,
+        }))
+    else:
+        s = report.summary()
+        print(f"verdict:    {report.verdict}")
+        print(f"mode:       {report.mode}")
+        print(f"valid:      {s['n_valid']}")
+        if report.mode == "compare":
+            print(f"baseline:   {s['n_baseline_pass']} PASS")
+        else:
+            print("baseline:   SKIPPED")
+        print(f"+skill:     {s['n_plus_skill_pass']} PASS")
+        if report.mode == "compare":
+            print(f"new_pass:   {s['n_new_pass']}")
+            print(f"regression: {s['n_regression']}")
+        print(f"report:     {written}")
+        if promo_path is not None:
+            print(f"promotion:  {promo_path}")
+        for reason in report.rejection_reasons:
+            print(f"reject:     {reason}")
+
+    return 0 if report.verdict == VERDICT_PROMOTE else 1
 
 
 # --------------------------------------------------------------------- argparse
@@ -573,6 +1066,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="model id from config/llm.yaml; requires an Anthropic-compatible gateway")
     p_run.add_argument("--llm-config", default=None,
                        help="path to llm.yaml (default: <repo_root>/config/llm.yaml)")
+    p_run.add_argument("--artifact-model-slug", default=None,
+                       help="override artifacts/logs/<model_slug>/ and artifacts/workspaces/<model_slug>/")
     p_run.add_argument("--judge-python", default=None)
     p_run.add_argument(
         "--show-metric-status",
@@ -602,6 +1097,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_run.add_argument("--keep-sandbox", action="store_true",
                        help="do not wipe the per-run isolated $HOME on exit (debug only)")
+    p_run.add_argument("--skill-pack-dir", default=None,
+                       help="optional directory containing a sanitised .claude/skills/ pack to inject into the workspace")
     p_run.add_argument("--sandbox-root", default=None,
                        help="override sandbox dir (default: artifacts/sandboxes/<model>/<task>/<run>/home)")
     p_run.add_argument("--json", action="store_true", help="emit one JSON summary line at end")
@@ -654,6 +1151,84 @@ def build_parser() -> argparse.ArgumentParser:
         help="propagate --delete-workspace-on-success to every child run-task",
     )
     p_batch.set_defaults(func=cmd_run_batch)
+
+    # distill-skill
+    p_dist = sub.add_parser(
+        "distill-skill",
+        help="mine train-split passing runs into a sanitised SKILL pack",
+    )
+    p_dist.add_argument("--repo-root", default=".")
+    p_dist.add_argument("--split", required=True,
+                        help="path to the train/valid split JSON")
+    p_dist.add_argument("--skill-id", required=True,
+                        help="slug for the skill pack directory (lowercase a-z 0-9 _)")
+    p_dist.add_argument("--out-root", default="artifacts/skills",
+                        help="parent dir for skill packs (default: artifacts/skills)")
+    p_dist.add_argument("--audit-log", default=None,
+                        help="audit JSONL path (default: <out_root>/_audit/<skill_id>.audit.jsonl)")
+    p_dist.add_argument("--model-id", default=None,
+                        help="optional llm.yaml model id for the polish pass; "
+                             "if omitted, ships the deterministic playbook draft")
+    p_dist.add_argument("--llm-config", default=None,
+                        help="path to llm.yaml (default: <repo_root>/config/llm.yaml)")
+    p_dist.add_argument("--json", action="store_true",
+                        help="emit one JSON summary line")
+    p_dist.set_defaults(func=cmd_distill_skill)
+
+    # validate-skill
+    p_val = sub.add_parser(
+        "validate-skill",
+
+        help="run the skill pack on selected valid tasks",
+    )
+    p_val.add_argument("--repo-root", default=".")
+    p_val.add_argument("--skill-pack-dir", required=True,
+                       help="distilled skill pack dir containing SKILL.md")
+    p_val.add_argument("--split", required=True,
+                       help="path to the train/valid split JSON (e.g. registry/splits/wave_optics_v1.json)")
+    p_val.add_argument("--valid-task-ids", nargs="+", default=None,
+                       help="optional subset of valid task_ids to evaluate (default: all)")
+    p_val.add_argument("--compare-baseline", action="store_true",
+                       help=("also run a no-skill baseline and apply the original "
+                             "baseline-vs-skill promotion rule"))
+    p_val.add_argument("--max-rounds", type=int, default=4)
+    p_val.add_argument("--budget-seconds", type=int, default=7200)
+    p_val.add_argument("--max-turns-per-round", type=int, default=60)
+    p_val.add_argument("--model", default=None)
+    p_val.add_argument("--model-id", default=None,
+                       help="model id from config/llm.yaml; requires an Anthropic-compatible gateway")
+    p_val.add_argument("--llm-config", default=None,
+                       help="path to llm.yaml (default: <repo_root>/config/llm.yaml)")
+    p_val.add_argument("--artifact-model-slug", default=None,
+                       help="override artifacts/logs/<model_slug>/ and artifacts/workspaces/<model_slug>/ for validation runs")
+    p_val.add_argument("--judge-python", default=None)
+    p_val.add_argument(
+        "--show-metric-status",
+        dest="show_metric_status",
+        action="store_true",
+        default=True,
+    )
+    p_val.add_argument(
+        "--hide-metric-status",
+        dest="show_metric_status",
+        action="store_false",
+    )
+    p_val.add_argument(
+        "--keep-workspace",
+        dest="keep_workspace",
+        action="store_true",
+        default=True,
+    )
+    p_val.add_argument(
+        "--delete-workspace-on-success",
+        dest="keep_workspace",
+        action="store_false",
+    )
+    p_val.add_argument("--report-path", default=None,
+                       help="output path for the TransferReport JSON "
+                            "(default: <skill_pack_dir>/transfer_report.json)")
+    p_val.add_argument("--json", action="store_true", help="emit one JSON summary line")
+    p_val.set_defaults(func=cmd_validate_skill)
 
     return parser
 

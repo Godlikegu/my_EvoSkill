@@ -7,10 +7,36 @@ The repository enforces:
 
 - explicit `distill_train` and `transfer_val` splits
 - hidden judging where a task passes only if all user metrics pass
-- monotonic transfer validation: `success(no-skill) <= success(with-skill)`
-- promotion of permanent skills only when they improve validation coverage
-  without regressions
+- domain-level skill distillation from train-only evidence, including
+  successful train episodes and train-only failure gap evidence
+- native Anthropic skill-pack injection under `.claude/skills/<skill-name>/`
+- skill-only valid evaluation by default, with baseline-vs-skill comparison
+  available explicitly through `validate-skill --compare-baseline`
 - isolation between public task bundles and hidden reference implementations
+
+For the current domain-skill flow, see `doc/skill_distill_pipeline.md`.
+
+## Domain Skill Flow
+
+The current skill pipeline is:
+
+`distill-skill -> scripts/train_domain_skill.py -> validate-skill`
+
+Key behavior:
+
+- distillation produces one domain skill per split, not one skill per task
+- the skill pack follows Anthropic's native layout:
+  `.claude/skills/<skill-name>/SKILL.md`
+- `validate-skill` defaults to skill-only validation
+- the older baseline-vs-skill comparison is available only when
+  `--compare-baseline` is passed explicitly
+
+Current wave-optics status:
+
+- the train gate has been reproduced to `TRAIN passing : 6/6`
+- the latest valid end-to-end evaluation is still `0/4`
+- therefore the current wave-optics skill should be treated as a reusable
+  `draft`, not as validated transfer success
 
 See `doc/` for the design specifications that govern the implementation.
 
@@ -156,6 +182,9 @@ That means:
 
 ## Documentation
 
+- [doc/skill_distill_pipeline.md](doc/skill_distill_pipeline.md)
+  Domain-skill distillation, train gate, validation gate, and Anthropic skill
+  injection.
 - [doc/task_registration.md](doc/task_registration.md)
   Canonical registration flow and contract responsibilities.
 - [doc/task_bundle_spec.md](doc/task_bundle_spec.md)

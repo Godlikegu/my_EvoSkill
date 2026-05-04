@@ -362,6 +362,7 @@ def build_workspace(
     manifest: Mapping[str, object],
     run_id: str,
     workspace_parent: Path | None = None,
+    skill_pack_dir: Path | None = None,
 ) -> WorkspaceBuild:
     """Materialise a clean per-run workspace and return its policy."""
 
@@ -469,6 +470,24 @@ def build_workspace(
                 encoding="utf-8",
             )
             agent_spec_summary = render_summary(spec)
+
+    # 7. Inject skill pack (optional).
+    if skill_pack_dir is not None:
+        skill_pack_dir = Path(skill_pack_dir).resolve()
+        if skill_pack_dir.is_dir():
+            dst_skills = workspace_root / ".claude" / "skills"
+            if dst_skills.exists():
+                shutil.rmtree(dst_skills)
+            dst_skills.mkdir(parents=True, exist_ok=True)
+            if (skill_pack_dir / "SKILL.md").exists():
+                shutil.copytree(skill_pack_dir, dst_skills / skill_pack_dir.name)
+            else:
+                for child in skill_pack_dir.iterdir():
+                    dst = dst_skills / child.name
+                    if child.is_dir():
+                        shutil.copytree(child, dst)
+                    else:
+                        shutil.copy2(child, dst)
 
     return WorkspaceBuild(
         task_id=task_id,

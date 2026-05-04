@@ -87,6 +87,8 @@ def initial_user_prompt(
     budget_seconds: int,
     task_spec_summary: str = "",
     runtime_python_path: str | None = None,
+    skill_pack_active: bool = False,
+    skill_name: str | None = None,
 ) -> str:
     """First-round user message.
 
@@ -108,6 +110,14 @@ def initial_user_prompt(
             " `python` from the workspace root; it is already pinned to this"
             " interpreter.\n"
         )
+    skill_block = ""
+    if skill_pack_active:
+        name_part = f" `{skill_name}`" if skill_name else ""
+        skill_block = (
+            f"A domain skill{name_part} is pinned for this run through the "
+            "native Skill tool. Load it before coding; do not copy skill files "
+            "into the prompt or answer.\n"
+        )
 
     return (
         f"Task: **{task_id}**\n\n"
@@ -115,6 +125,7 @@ def initial_user_prompt(
         f"Primary output: `{primary_output_rel}`\n"
         f"Wall-clock budget: {budget_seconds} seconds total across all rounds.\n"
         + runtime_block
+        + skill_block
         + summary_block
         + "\nStep 1: read `agent_task_spec.json` for the machine-readable IO\n"
         "        contract, then `README.md` and `meta_data.json` for the\n"

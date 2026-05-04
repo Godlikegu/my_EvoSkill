@@ -8,6 +8,9 @@ Unit tests must cover:
 - no validation leakage into distillation
 - all-metrics-pass success semantics
 - transfer validation subset enforcement
+- skill-only validation mode
+- train-only failure gap evidence
+- Anthropic skill-pack injection under `.claude/skills/<skill-name>/`
 - rejection on regression
 - registry promotion and draft behavior
 - task compiler leakage controls
@@ -39,6 +42,7 @@ Unit tests must cover:
 
 Integration tests must cover:
 
+- skill-only validation where every selected valid task must PASS
 - a candidate that improves validation and becomes `validated`
 - a candidate that regresses and becomes `rejected`
 - a candidate that ties and remains `draft`
@@ -89,11 +93,23 @@ Persistent live and manual runs should write under:
 - `artifacts/workspaces/<model_slug>/<task_id>/<run_id>/`
 - `artifacts/logs/<model_slug>/<task_id>/<run_id>/`
 
+Domain-skill experiments add two more persistent layouts:
+
+- `artifacts/logs/_domain_train/<skill_run_slug>/...`
+- `artifacts/logs/_valid_runs/<validation_run_slug>/...`
+
 Older runs may still exist under `artifacts/workspaces/<task_id>/<run_id>/`
 and `artifacts/logs/<task_id>/<run_id>/`; helper scripts should treat those as
 read-only legacy fallback paths.
 
-Validation summaries must preserve:
+Skill-only validation summaries must preserve:
+
+- selected valid task ids
+- with-skill success set
+- failed selected tasks
+- final decision reason
+
+Comparison-mode validation summaries must preserve:
 
 - baseline success set
 - with-skill success set
@@ -107,6 +123,19 @@ Timeout failures must additionally preserve:
 - `stderr.log` with timeout message
 - effective timeout metadata in executor artifacts
 - Claude SDK protocol diagnostics and any process cleanup failures
+
+Operational analysis scripts currently expected in the repository:
+
+- `scripts/check_train_status.py`
+- `scripts/diagnose_valid_failures.py`
+- `scripts/visualize_train_pass_results.py`
+- `scripts/visualize_valid_results.py`
+- `scripts/reproduce_wave_optics_train_gate.py`
+
+Their outputs such as diagnosis markdown, HTML visualizations, generated skill
+packs, and large run logs are experiment artifacts and should normally stay
+under `artifacts/`. They are useful for local analysis and reproduction, but
+they are not part of the default source commit.
 
 ## Testing Policy Notes
 

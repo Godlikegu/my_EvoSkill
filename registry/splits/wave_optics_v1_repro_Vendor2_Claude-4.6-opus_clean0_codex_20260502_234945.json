@@ -1,0 +1,27 @@
+{
+  "split_id": "wave_optics_v1",
+  "model_slug": "Vendor2_Claude-4.6-opus_clean0_codex_20260502_234945",
+  "description": "Wave-optics / wave-physics inverse-imaging family. Same algorithmic skeleton (forward operator + iterative inversion) across modalities. Train and valid tasks are paired across optical/seismic/ultrasound modalities so distilled skills must transfer non-trivially. Isolated reproduction artifact slug: Vendor2_Claude-4.6-opus_clean0_codex_20260502_234945.",
+  "train": [
+    "SSNP_ODT",
+    "conventional_ptychography",
+    "confocal-nlos-fk",
+    "seismic_lsrtm_original",
+    "ultrasound_sos_tomography",
+    "seismic_FWI_original"
+  ],
+  "valid": [
+    "reflection_ODT",
+    "xray_ptychography_tike",
+    "plane_wave_ultrasound",
+    "usct_FWI"
+  ],
+  "promotion_rule": "non_regressive_and_at_least_one_new_pass",
+  "skill_format": "anthropic_native",
+  "skill_assets_allowed": [
+    "SKILL.md",
+    "references/",
+    "scripts/",
+    "meta.json"
+  ]
+}

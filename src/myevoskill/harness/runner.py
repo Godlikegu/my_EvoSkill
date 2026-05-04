@@ -44,6 +44,7 @@ from claude_agent_sdk import (
     TaskProgressMessage,
     TaskStartedMessage,
 )
+from claude_agent_sdk.types import AgentDefinition
 
 from ..judge.bridge import JudgeFeedback, JudgeRunner, FAIL, INVALID, PASS
 from ..artifact_paths import ARTIFACT_LAYOUT_VERSION, model_artifact_root, model_slug
@@ -79,6 +80,7 @@ class HarnessConfig:
     max_turns_per_round: int = DEFAULT_MAX_TURNS_PER_ROUND
     model: str | None = None  # let SDK pick the default
     model_provider_env: Mapping[str, str] = field(default_factory=dict)
+    skill_pack_dir: Path | None = None
     model_provider_summary: Mapping[str, Any] = field(default_factory=dict)
     artifact_model_slug: str | None = None
     judge_python: str | None = None
@@ -199,6 +201,11 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
             manifest=manifest,
             run_id=run_id,
             workspace_parent=workspace_parent,
+            skill_pack_dir=(
+                Path(config.skill_pack_dir).resolve()
+                if config.skill_pack_dir is not None
+                else None
+            ),
         )
     except KeyboardInterrupt as exc:
         return _write_setup_failure_summary(
@@ -311,21 +318,12 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
         agent_env.update(dict(config.model_provider_env))
 
     options = ClaudeAgentOptions(
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=_system_prompt_for_run(config.skill_pack_dir),
         cwd=build.agent_root,
         # Restrict the agent to the workspace via add_dirs (positive list) and
         # disallow tools that bypass the sandbox.
         add_dirs=[],
-        allowed_tools=[
-            "Read",
-            "Write",
-            "Edit",
-            "MultiEdit",
-            "Glob",
-            "Grep",
-            "Bash",
-            "TodoWrite",
-        ],
+        allowed_tools=_allowed_tools_for_run(config.skill_pack_dir),
         disallowed_tools=["WebSearch", "WebFetch"],
         permission_mode="default",
         max_turns=config.max_turns_per_round,
@@ -336,7 +334,9 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
             "PostToolUse": [HookMatcher(matcher="*", hooks=[post_hook])],
         },
         env=agent_env,
-        setting_sources=None,  # don't pick up user-level CLAUDE.md etc.
+        agents=_agents_for_run(config.skill_pack_dir),
+        extra_args=_extra_args_for_run(config.skill_pack_dir),
+        setting_sources=_setting_sources_for_run(config.skill_pack_dir),
     )
 
     feedback_history: list[dict[str, Any]] = []
@@ -367,6 +367,12 @@ async def _run_task_async(config: HarnessConfig) -> HarnessOutcome:
                     task_spec_summary=build.agent_task_spec_summary,
                     budget_seconds=config.budget_seconds,
                     runtime_python_path=runtime_python_path,
+                    skill_pack_active=config.skill_pack_dir is not None,
+                    skill_name=(
+                        Path(config.skill_pack_dir).name
+                        if config.skill_pack_dir is not None
+                        else None
+                    ),
                 )
             else:
                 last = feedback_history[-1]["feedback"]
@@ -996,3 +1002,65 @@ def agent_runtime_env_overrides(manifest: Mapping[str, Any]) -> dict[str, str]:
         "VIRTUAL_ENV": str(venv_root),
         "MYEVOSKILL_TASK_PYTHON": str(python_path),
     }
+
+
+def _allowed_tools_for_run(skill_pack_dir: Path | None) -> list[str]:
+    """Return the Claude Code tools allowed for a harness run.
+
+    Anthropic skills are exposed through the native ``Skill`` tool. Copying a
+    pack into ``.claude/skills`` is insufficient when the SDK invocation also
+    constrains ``allowed_tools``; the tool must be allowed explicitly.
+    """
+
+    tools = [
+        "Read",
+        "Write",
+        "Edit",
+        "MultiEdit",
+        "Glob",
+        "Grep",
+        "Bash",
+        "TodoWrite",
+    ]
+    if skill_pack_dir is not None:
+        tools.append("Skill")
+    return tools
+
+
+def _system_prompt_for_run(skill_pack_dir: Path | None) -> Any:
+    """Use Claude Code's native skill discovery for skill-injected runs."""
+
+    if skill_pack_dir is not None:
+        return {"type": "preset", "append": SYSTEM_PROMPT}
+    return SYSTEM_PROMPT
+
+
+def _setting_sources_for_run(skill_pack_dir: Path | None) -> list[str] | None:
+    """Load project-level Claude settings only when project skills are used."""
+
+    if skill_pack_dir is not None:
+        return ["project"]
+    # Preserve the pre-skill behavior for baseline runs.
+    return None
+
+
+def _agents_for_run(skill_pack_dir: Path | None) -> dict[str, AgentDefinition] | None:
+    """Pin the domain skill through the SDK's native agent skill field."""
+
+    if skill_pack_dir is None:
+        return None
+    skill_name = Path(skill_pack_dir).name
+    return {
+        "myevoskill-domain": AgentDefinition(
+            description="Solve computational-imaging tasks with the injected domain skill.",
+            prompt=SYSTEM_PROMPT,
+            tools=_allowed_tools_for_run(skill_pack_dir),
+            skills=[skill_name],
+        )
+    }
+
+
+def _extra_args_for_run(skill_pack_dir: Path | None) -> dict[str, str]:
+    if skill_pack_dir is None:
+        return {}
+    return {"agent": "myevoskill-domain"}

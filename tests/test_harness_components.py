@@ -24,6 +24,13 @@ from myevoskill.harness.plan_guard import PLAN_FILENAME, PlanGuard
 from myevoskill.cli import main as cli_main
 from myevoskill.harness.prompts import SYSTEM_PROMPT, feedback_user_prompt, initial_user_prompt
 from myevoskill.harness.runner import _record_message, agent_runtime_env_overrides
+from myevoskill.harness.runner import (
+    _agents_for_run,
+    _allowed_tools_for_run,
+    _extra_args_for_run,
+    _setting_sources_for_run,
+    _system_prompt_for_run,
+)
 from myevoskill.harness.trajectory import TrajectoryWriter, read_clean_events, write_clean_events
 from myevoskill.judge.bridge import FAIL, INVALID, PASS, JudgeFeedback, JudgeRunner
 from myevoskill.workspace.policy import WorkspacePolicy
@@ -669,6 +676,29 @@ def test_agent_runtime_env_falls_back_without_ready_python(tmp_path: Path) -> No
     assert env == {}
 
 
+def test_skill_tool_allowed_only_when_skill_pack_is_injected(tmp_path: Path) -> None:
+    assert "Skill" not in _allowed_tools_for_run(None)
+    assert "Skill" in _allowed_tools_for_run(tmp_path / "skills" / "wave-optics-recon-v1")
+
+
+def test_skill_runs_append_harness_prompt_to_native_claude_prompt(tmp_path: Path) -> None:
+    skill_pack = tmp_path / "skills" / "wave-optics-recon-v1"
+    assert _system_prompt_for_run(None) == SYSTEM_PROMPT
+    with_skill_prompt = _system_prompt_for_run(skill_pack)
+    assert with_skill_prompt == {"type": "preset", "append": SYSTEM_PROMPT}
+    assert _setting_sources_for_run(skill_pack) == ["project"]
+
+
+def test_skill_runs_pin_domain_skill_via_sdk_agent(tmp_path: Path) -> None:
+    skill_pack = tmp_path / "skills" / "wave-optics-recon-v1"
+    agents = _agents_for_run(skill_pack)
+    assert agents is not None
+    agent = agents["myevoskill-domain"]
+    assert agent.skills == ["wave-optics-recon-v1"]
+    assert "Skill" in (agent.tools or [])
+    assert _extra_args_for_run(skill_pack) == {"agent": "myevoskill-domain"}
+
+
 def test_prompts_prefer_workspace_root_execution(tmp_path: Path) -> None:
     prompt = initial_user_prompt(
         task_id="demo",
@@ -681,6 +711,30 @@ def test_prompts_prefer_workspace_root_execution(tmp_path: Path) -> None:
     assert "do not\n        `cd work`" in prompt
     assert "Runtime Python" in prompt
     assert "py -3" in SYSTEM_PROMPT
+
+
+def test_initial_prompt_only_points_to_native_skill_tool_when_active(tmp_path: Path) -> None:
+    baseline = initial_user_prompt(
+        task_id="demo",
+        primary_output_rel="output/x.npz",
+        workspace_root=tmp_path,
+        budget_seconds=60,
+    )
+    with_skill = initial_user_prompt(
+        task_id="demo",
+        primary_output_rel="output/x.npz",
+        workspace_root=tmp_path,
+        budget_seconds=60,
+        skill_pack_active=True,
+        skill_name="wave-optics-recon-v1",
+    )
+    assert "native Skill tool" not in baseline
+    assert "native Skill tool" in with_skill
+    assert "wave-optics-recon-v1" in with_skill
+    assert "Load it before coding" in with_skill
+    assert "first action" not in with_skill
+    assert "anti-timeout" not in with_skill
+    assert "full-volume black-box autograd" not in with_skill
 
 
 def test_feedback_prompt_describes_previous_round() -> None:

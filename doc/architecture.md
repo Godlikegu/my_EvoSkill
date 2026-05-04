@@ -259,9 +259,9 @@ passes only when every user metric passes.
 
 ## Skill Lifecycle
 
-Skills are not snapshots of one successful implementation. They are distilled
-from multiple successful or repaired runs, with an emphasis on reusable
-capabilities:
+Skills are not snapshots of one successful implementation. A domain split
+produces one reusable domain skill, distilled from train-only evidence with an
+emphasis on reusable capabilities:
 
 - workflow structure
 - diagnostics
@@ -269,22 +269,54 @@ capabilities:
 - training and checkpoint routines
 - scientific debugging strategies
 
-Candidate sources must be:
+PASS train runs provide success episodes. FAIL/TIMEOUT train runs may provide
+gap evidence for missing algorithms and failure anti-patterns, but they do not
+count as PASS episodes.
+
+Candidate evidence must be:
 
 - legal
 - reusable
 - non-cheating
 - sourced from `distill_train`
+- isolated from `transfer_val`
 
-Promotion on `transfer_val` uses:
+The current default validation gate on `transfer_val` is skill-only: each
+selected valid task runs once with the skill pack injected, and every selected
+task must PASS. Validation results are evaluation feedback only and must not
+be used to author or edit the skill.
+
+An explicit comparison mode is available for promotion experiments. In that
+mode:
 
 - `S0 = success(no-skill)`
 - `S1 = success(with-skill)`
 
 Rules:
 
-- if `S0 ⊄ S1`: reject
+- if `S0` is not a subset of `S1`: reject
 - if `S0 = S1`: draft
-- if `S0 ⊂ S1`: validated
+- if `S0` is a strict subset of `S1`: validated
 
-Permanent registry storage requires the `validated` case.
+Permanent registry storage requires the configured validation gate to pass,
+plus sanitizer acceptance and a zero-valid-read distillation audit.
+
+The control-plane components in that lifecycle are:
+
+- `distill/episode_miner.py`
+  Mines PASS train episodes plus recent FAIL/TIMEOUT train-only gap evidence.
+- `distill/universe.py`
+  Enforces audited train-only reads and rejects valid-side access.
+- `distill/skill_synthesizer.py`
+  Builds the structured `SKILL.md` and optional pack assets from train-only
+  evidence.
+- `workspace/builder.py`
+  Injects the chosen skill pack into `.claude/skills/<skill-name>/...` inside
+  the runtime workspace.
+- `validate-skill`
+  Runs the transfer gate in skill-only mode by default, or in explicit
+  comparison mode when `--compare-baseline` is requested.
+
+This means a domain skill is a control-plane artifact: it is versioned,
+audited, sanitized, and injected as a reusable capability. It is not a
+task-specific hardcoded answer or a copy of one train task's solver.
